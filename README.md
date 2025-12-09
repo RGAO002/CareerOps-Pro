@@ -34,6 +34,20 @@ CareerOps Pro is an intelligent resume assistant that analyzes your resume, scor
 - **Scanned PDF Support** - Upload image-based PDFs
 - **GPT-4 Vision** - Automatically extracts text from scanned documents
 
+### 🎙️ AI Mock Interview
+- **Voice-Powered Practice** - Practice with CareerOps Pro that speaks questions aloud using text-to-speech
+- **Auto-Play Questions** - Questions automatically play after generation, no manual interaction needed
+- **Real-time Recording** - Start recording automatically after question audio completes
+- **Live Transcription** - See your words transcribed in real-time as you speak using Web Speech API
+- **Volume Visualization** - Dynamic visual bars show your voice level with color-coded feedback (blue → green → orange → red)
+- **Real-time Feedback** - CareerOps Pro provides intelligent reactions during your answer based on content analysis
+- **Content-Based Reactions** - AI analyzes what you say (not just voice patterns) to give appropriate feedback
+- **60-Second Countdown** - Automatic recording with visual countdown timer and progress bar
+- **Personalized Questions** - Questions tailored to your resume gaps and target job requirements
+- **Detailed Evaluation** - Get comprehensive scores (Relevance, Depth, Structure, Authenticity) after each answer
+- **Instant Feedback** - Receive strengths, improvements, sample better answers, and actionable tips
+- **Interview Summary** - Complete performance report with overall assessment and recommendations
+
 ---
 
 ## 🛠️ Installation
@@ -100,7 +114,13 @@ CareerOps-Pro/
 │   ├── resume_parser.py       # PDF text extraction + OCR
 │   ├── resume_analyzer.py     # Resume scoring & feedback
 │   ├── resume_editor.py       # AI-powered editing
-│   └── job_matcher.py         # Job matching engine
+│   ├── job_matcher.py         # Job matching engine
+│   └── mock_interview.py      # Mock interview service
+│       ├── Question generation
+│       ├── Text-to-Speech (TTS)
+│       ├── Speech-to-Text (STT)
+│       ├── Answer evaluation
+│       └── Interview summary
 │
 ├── utils/                      # Utilities
 │   ├── diff.py                # Change detection
@@ -137,6 +157,18 @@ CareerOps-Pro/
 ### 5. Download
 - Click "Download" to get your optimized PDF
 
+### 6. Practice Interview
+- After selecting a job, click "🎙️ Mock Interview" in the navigation
+- Choose the number of questions (3-10) and interviewer voice (onyx, echo, alloy, fable, nova, shimmer)
+- Click "🚀 Start Interview" to generate personalized questions
+- Questions automatically play via text-to-speech - just listen!
+- Click "🎤 Start Answer" to begin recording (60-second countdown)
+- Speak naturally - see live transcription and real-time interviewer reactions
+- Watch the volume bars change color based on your voice level
+- Click "⏹️ Finish & Submit" to end recording early, or wait for automatic submission
+- Click "🔄 Check Results" to view your evaluation (scores, feedback, tips)
+- After all questions, receive a comprehensive interview summary
+
 ---
 
 ## 🔧 Configuration
@@ -160,8 +192,14 @@ The app uses OpenAI's API for:
 - Job matching
 - Resume editing suggestions
 - OCR (GPT-4 Vision for scanned PDFs)
+- **Mock Interview:**
+  - Question generation (GPT-4o)
+  - Text-to-Speech (OpenAI TTS) for speaking questions
+  - Speech-to-Text (Whisper) for transcribing answers
+  - Answer evaluation (GPT-4o) for scoring and feedback
+  - Interview summary generation (GPT-4o)
 
-**Estimated cost per session:** $0.05 - $0.20 (depending on resume length and edits)
+**Estimated cost per session:** $0.05 - $0.50 (depending on resume length, edits, and interview duration)
 
 ---
 
@@ -185,9 +223,11 @@ This project is for educational purposes (BIA 810 Final Project).
 
 - [Streamlit](https://streamlit.io/) - Web framework
 - [LangChain](https://langchain.com/) - LLM orchestration
-- [OpenAI](https://openai.com/) - GPT-4 API
+- [OpenAI](https://openai.com/) - GPT-4o, TTS, and Whisper APIs
 - [WeasyPrint](https://weasyprint.org/) - PDF generation
 - [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF processing
+- [streamlit-js-eval](https://github.com/whitphx/streamlit-js-eval) - JavaScript evaluation bridge
+- Web Audio API & Web Speech API - Real-time audio processing and transcription
 
 ---
 

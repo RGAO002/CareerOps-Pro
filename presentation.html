@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerOps Pro - BIA 810 Final Project</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/theme/black.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --r-background-color: #0a0a0f;
+            --r-main-font: 'Space Grotesk', sans-serif;
+            --r-main-font-size: 30px; /* Reduced base font size */
+            --r-main-color: #e2e8f0;
+            --r-heading-font: 'Space Grotesk', sans-serif;
+            --r-heading-color: #fff;
+            --r-heading-text-transform: none;
+            --r-link-color: #818cf8;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --gradient-3: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .reveal {
+            background: radial-gradient(ellipse at bottom, #1b1b2f 0%, #0a0a0f 100%);
+        }
+        
+        .reveal h1, .reveal h2, .reveal h3 {
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5em; /* Reduced heading bottom margin */
+        }
+        
+        .reveal h1 {
+            font-size: 2.5em; /* Reduced H1 */
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.2em;
+        }
+        
+        .reveal h2 {
+            font-size: 1.8em; /* Reduced H2 */
+            color: #fff;
+        }
+        
+        .reveal h3 {
+            font-size: 1.2em;
+            color: #a5b4fc;
+        }
+        
+        .reveal p, .reveal li {
+            line-height: 1.4; /* Slightly compact line height */
+            color: #cbd5e1;
+            font-size: 0.9em; /* Slightly reduced body text */
+        }
+        
+        .reveal ul {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 0;
+        }
+        
+        .reveal ul li {
+            padding-left: 1.2em;
+            position: relative;
+            margin-bottom: 0.4em; /* Reduced list item spacing */
+        }
+        
+        .reveal ul li::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #818cf8;
+            font-weight: bold;
+        }
+        
+        .title-slide h1 {
+            font-size: 3.5em !important;
+            margin-bottom: 0.2em;
+        }
+        
+        .title-slide .subtitle {
+            font-size: 1.2em;
+            color: #94a3b8;
+            margin-bottom: 1.5em;
+        }
+        
+        /* Optimized card layout */
+        .feature-card, .problem-card, .solution-card, .architecture-box {
+            padding: 1em; /* Reduced padding */
+            margin: 0.3em;
+            border-radius: 12px;
+        }
+        
+        .feature-card h4, .problem-card h4, .solution-card h4, .architecture-box h4 {
+            margin-bottom: 0.3em;
+            font-size: 1em;
+        }
+        
+        .feature-card p, .problem-card p, .solution-card p {
+            font-size: 0.8em; /* Smaller text inside cards */
+            margin: 0;
+            line-height: 1.3;
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.8em; /* Reduced grid gap */
+        }
+        
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.8em;
+        }
+        
+        .code-block {
+            font-size: 0.65em; /* Smaller code block font */
+            padding: 0.8em;
+            margin: 0.8em auto;
+            max-width: 90%;
+            max-height: 300px;
+            overflow-y: auto; /* Allow scrolling */
+        }
+
+        /* Fix icon and text alignment */
+        .flow-diagram {
+            gap: 0.8em;
+            margin: 1.5em 0;
+            flex-wrap: wrap; /* Allow wrapping on small screens */
+        }
+        
+        .flow-step {
+            padding: 0.8em 1em;
+        }
+        
+        .stat-row {
+            margin: 1.5em 0;
+            gap: 2em;
+        }
+        
+        .stat-item .value {
+            font-size: 2em;
+        }
+
+        /* Ensure vertical centering but avoid overflow */
+        .reveal .slides > section {
+            top: 50% !important;
+            transform: translate(0, -50%) !important;
+            padding: 0;
+            height: auto !important; /* Prevent truncation from fixed height */
+            min-height: auto !important;
+        }
+    </style>
+        
+        .thank-you h1 {
+            font-size: 4em !important;
+        }
+        
+        .contact-info {
+            margin-top: 2em;
+            font-size: 0.9em;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+            
+            <!-- Slide 1: Title -->
+            <section class="title-slide">
+                <h1>🚀 CareerOps Pro</h1>
+                <div class="subtitle">AI-Powered Resume Analysis & Optimization Platform</div>
+                <div class="authors">
+                    <strong>Ruoping Gao</strong> · <strong>Shuang Liu</strong> · <strong>Zhenyan Yao</strong>
+                </div>
+                <div class="course">BIA 810 · Fall 2025 · Final Project</div>
+            </section>
+            
+            <!-- Slide 2: Problem Statement -->
+            <section>
+                <h2><span class="emoji">❓</span> The Problem</h2>
+                <div class="grid-2" style="margin-top: 1.5em;">
+                    <div class="problem-card">
+                        <h4 style="color: #f87171; margin-bottom: 0.5em;">⏰ Time-Consuming</h4>
+                        <p style="font-size: 0.85em;">Tailoring resumes for each job application takes hours of manual work</p>
+                    </div>
+                    <div class="problem-card">
+                        <h4 style="color: #f87171; margin-bottom: 0.5em;">🎯 Guesswork</h4>
+                        <p style="font-size: 0.85em;">Job seekers don't know how well their resume matches job requirements</p>
+                    </div>
+                    <div class="problem-card">
+                        <h4 style="color: #f87171; margin-bottom: 0.5em;">📝 No Feedback</h4>
+                        <p style="font-size: 0.85em;">No objective way to assess resume quality or identify weaknesses</p>
+                    </div>
+                    <div class="problem-card">
+                        <h4 style="color: #f87171; margin-bottom: 0.5em;">🔄 Repetitive</h4>
+                        <p style="font-size: 0.85em;">Making similar edits across multiple versions is tedious and error-prone</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 3: Solution Overview -->
+            <section>
+                <h2><span class="emoji">💡</span> Our Solution</h2>
+                <p style="font-size: 1.1em; color: #a5b4fc; margin-bottom: 1.5em;">
+                    An intelligent platform that leverages <span class="highlight-box">GPT-4</span> to automate resume optimization
+                </p>
+                <div class="grid-2" style="margin-top: 1em;">
+                    <div class="solution-card">
+                        <h4 style="color: #34d399; margin-bottom: 0.5em;">✅ Automated Analysis</h4>
+                        <p style="font-size: 0.85em;">Get instant scores and actionable feedback</p>
+                    </div>
+                    <div class="solution-card">
+                        <h4 style="color: #34d399; margin-bottom: 0.5em;">✅ Smart Matching</h4>
+                        <p style="font-size: 0.85em;">AI finds best-fit jobs from 20+ categories</p>
+                    </div>
+                    <div class="solution-card">
+                        <h4 style="color: #34d399; margin-bottom: 0.5em;">✅ Natural Language Editing</h4>
+                        <p style="font-size: 0.85em;">"Add Python to skills" - just tell the AI</p>
+                    </div>
+                    <div class="solution-card">
+                        <h4 style="color: #34d399; margin-bottom: 0.5em;">✅ Live Preview</h4>
+                        <p style="font-size: 0.85em;">See PDF changes in real-time with diff highlighting</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 4: How It Works -->
+            <section>
+                <h2><span class="emoji">⚙️</span> How It Works</h2>
+                <div class="flow-diagram">
+                    <div class="flow-step">
+                        <div class="icon">📄</div>
+                        <div class="text">Upload PDF</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="icon">🤖</div>
+                        <div class="text">AI Analysis</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="icon">🎯</div>
+                        <div class="text">Job Matching</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="icon">✏️</div>
+                        <div class="text">AI Editing</div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step">
+                        <div class="icon">⬇️</div>
+                        <div class="text">Download</div>
+                    </div>
+                </div>
+                <p style="text-align: center; color: #94a3b8; margin-top: 2em;">
+                    Entire process: <span class="highlight-box">Under 2 minutes</span>
+                </p>
+            </section>
+            
+            <!-- Slide 5: Feature 1 - Resume Analysis -->
+            <section>
+                <h2><span class="emoji">📊</span> Feature 1: Resume Analysis</h2>
+                <div style="display: flex; gap: 2em; align-items: center; margin-top: 1.5em;">
+                    <div style="flex: 1;">
+                        <div class="score-demo">
+                            <div class="number">85</div>
+                            <div class="label">Score</div>
+                        </div>
+                    </div>
+                    <div style="flex: 2;">
+                        <h3 style="margin-bottom: 0.8em;">Scoring Categories</h3>
+                        <ul>
+                            <li><strong>Experience</strong> - Relevance & achievements</li>
+                            <li><strong>Skills</strong> - Technical depth & variety</li>
+                            <li><strong>Education</strong> - Relevance & certifications</li>
+                            <li><strong>Presentation</strong> - Clarity & organization</li>
+                            <li><strong>Impact</strong> - Quantified results</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 6: Feature 2 - Job Matching -->
+            <section>
+                <h2><span class="emoji">🎯</span> Feature 2: Smart Job Matching</h2>
+                <div class="stat-row">
+                    <div class="stat-item">
+                        <div class="value">20+</div>
+                        <div class="label">Job Categories</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="value">100%</div>
+                        <div class="label">Match Scoring</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="value">AI</div>
+                        <div class="label">Gap Analysis</div>
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-top: 1em; font-size: 0.9em;">
+                    <div class="feature-card">
+                        <h4>🖥️ Engineering</h4>
+                        <p>Software, Data Science, Full Stack</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>💼 Business</h4>
+                        <p>Finance, Marketing, Operations</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎨 Creative</h4>
+                        <p>UX Design, Graphics, Content</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 7: Feature 3 - AI Editor -->
+            <section>
+                <h2><span class="emoji">✏️</span> Feature 3: AI Resume Editor</h2>
+                <p style="color: #94a3b8; margin-bottom: 1.5em;">Natural language editing with live preview</p>
+                <div class="code-block" style="margin: 1em auto; max-width: 700px;">
+                    <span class="comment"># Example commands:</span><br><br>
+                    <span class="string">"Add Python and AWS to my skills"</span><br>
+                    <span class="string">"Make my summary more impactful"</span><br>
+                    <span class="string">"Add a certification section with AWS Solutions Architect"</span><br>
+                    <span class="string">"Reorder sections: summary, experience, projects, education"</span><br>
+                    <span class="string">"Quantify my achievements with metrics"</span>
+                </div>
+                <div class="grid-2" style="margin-top: 1em;">
+                    <div class="feature-card">
+                        <h4>🔄 Undo/Redo</h4>
+                        <p>Revert any change with one click</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🟡 Diff Highlighting</h4>
+                        <p>Yellow highlights show what changed</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 8: Feature 4 - OCR Support -->
+            <section>
+                <h2><span class="emoji">📷</span> Feature 4: OCR Support</h2>
+                <p style="color: #94a3b8; margin-bottom: 1.5em;">Works with scanned documents too!</p>
+                <div style="display: flex; gap: 2em; align-items: center; justify-content: center;">
+                    <div class="flow-step" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3);">
+                        <div class="icon">📄</div>
+                        <div class="text">Scanned PDF<br><small style="color: #94a3b8;">(Image-based)</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(102, 126, 234, 0.2);">
+                        <div class="icon">👁️</div>
+                        <div class="text">GPT-4 Vision<br><small style="color: #94a3b8;">OCR Processing</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3);">
+                        <div class="icon">✅</div>
+                        <div class="text">Structured Data<br><small style="color: #94a3b8;">Ready to edit</small></div>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 2em; color: #64748b; font-size: 0.9em;">
+                    Automatic detection of scanned vs. text-based PDFs
+                </p>
+            </section>
+            
+            <!-- Slide 9: Feature 5 - AI Mock Interview -->
+            <section>
+                <h2><span class="emoji">🎙️</span> Feature 5: AI Mock Interview</h2>
+                <p style="color: #94a3b8; margin-bottom: 1em;">Voice-powered interview practice with real-time feedback</p>
+                <div style="display: flex; gap: 1em; align-items: center; justify-content: center; margin: 1.5em 0;">
+                    <div class="flow-step" style="background: rgba(102, 126, 234, 0.15);">
+                        <div class="icon">🎯</div>
+                        <div class="text">AI Generates<br><small style="color: #94a3b8;">Questions</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(16, 185, 129, 0.15);">
+                        <div class="icon">🔊</div>
+                        <div class="text">Auto-Play<br><small style="color: #94a3b8;">TTS</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(239, 68, 68, 0.15);">
+                        <div class="icon">🎤</div>
+                        <div class="text">Record<br><small style="color: #94a3b8;">60s</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(245, 158, 11, 0.15);">
+                        <div class="icon">📝</div>
+                        <div class="text">Transcribe<br><small style="color: #94a3b8;">STT</small></div>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-step" style="background: rgba(102, 126, 234, 0.15);">
+                        <div class="icon">⭐</div>
+                        <div class="text">Evaluate<br><small style="color: #94a3b8;">Feedback</small></div>
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-top: 1.5em;">
+                    <div class="feature-card">
+                        <h4>🧠 Personalized Questions</h4>
+                        <p>Targets resume gaps & job requirements</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>💬 Real-time Feedback</h4>
+                        <p>Live reactions & volume visualization</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📊 Detailed Scoring</h4>
+                        <p>Relevance, Depth, Structure, Authenticity</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 10: System Architecture -->
+            <section>
+                <h2><span class="emoji">🏗️</span> System Architecture</h2>
+                <div class="grid-3" style="margin-top: 1.5em;">
+                    <div class="architecture-box">
+                        <h4>Frontend</h4>
+                        <ul>
+                            <li>Streamlit UI</li>
+                            <li>Custom CSS/JS</li>
+                            <li>Live PDF Preview</li>
+                            <li>Web Audio API</li>
+                            <li>Web Speech API</li>
+                        </ul>
+                    </div>
+                    <div class="architecture-box">
+                        <h4>Services</h4>
+                        <ul>
+                            <li>Resume Parser</li>
+                            <li>Resume Analyzer</li>
+                            <li>Job Matcher</li>
+                            <li>Mock Interview</li>
+                            <li>Question Generator</li>
+                            <li>Answer Evaluator</li>
+                        </ul>
+                    </div>
+                    <div class="architecture-box">
+                        <h4>AI / External</h4>
+                        <ul>
+                            <li>GPT-4o (Analysis)</li>
+                            <li>GPT-4 Vision (OCR)</li>
+                            <li>OpenAI TTS</li>
+                            <li>Whisper (STT)</li>
+                            <li>streamlit-js-eval</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="tech-stack" style="margin-top: 1.5em;">
+                    <span class="tech-badge">Python 3.9+</span>
+                    <span class="tech-badge">Streamlit</span>
+                    <span class="tech-badge">LangChain</span>
+                    <span class="tech-badge">OpenAI API</span>
+                    <span class="tech-badge">PyMuPDF</span>
+                    <span class="tech-badge">WeasyPrint</span>
+                    <span class="tech-badge">streamlit-js-eval</span>
+                </div>
+            </section>
+            
+            <!-- Slide 10: Code Highlights -->
+            <section>
+                <h2><span class="emoji">💻</span> Key Implementation</h2>
+                <div class="grid-2" style="margin-top: 1em;">
+                    <div>
+                        <h3 style="font-size: 1em; margin-bottom: 0.5em;">Resume Parsing with GPT</h3>
+                        <div class="code-block">
+<span class="keyword">def</span> <span class="function">parse_resume</span>(raw_text, model, api_key):
+    llm = get_llm(model, api_key)
+    
+    system_text = <span class="string">f"""
+    Extract ALL resume data into JSON.
+    Schema: {RESUME_SCHEMA}
+    """</span>
+    
+    res = llm.invoke(messages,
+        response_format={<span class="string">"type"</span>: <span class="string">"json_object"</span>})
+    <span class="keyword">return</span> clean_json(res.content)
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1em; margin-bottom: 0.5em;">Mock Interview Evaluation</h3>
+                        <div class="code-block">
+<span class="keyword">def</span> <span class="function">evaluate_answer</span>(question, answer, resume, job, api_key):
+    <span class="comment"># AI evaluates answer based on:</span>
+    <span class="comment"># - Relevance to question</span>
+    <span class="comment"># - Depth & specificity</span>
+    <span class="comment"># - Structure & clarity</span>
+    <span class="comment"># - Authenticity vs resume</span>
+    
+    <span class="keyword">return</span> {{
+        <span class="string">"score"</span>: 1-10,
+        <span class="string">"strengths"</span>: [...],
+        <span class="string">"improvements"</span>: [...]
+    }}
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 11: Key Innovations -->
+            <section>
+                <h2><span class="emoji">🌟</span> Key Innovations</h2>
+                <div style="margin-top: 1.5em;">
+                    <div class="grid-2">
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>🛡️ Bullet Point Protection</h4>
+                            <p>Custom algorithm prevents AI from accidentally shortening resume content</p>
+                        </div>
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>🔍 Smart Diff Detection</h4>
+                            <p>Tracks changes at field-level granularity with visual highlighting</p>
+                        </div>
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>📄 Dynamic Section Support</h4>
+                            <p>AI can create ANY new section (certifications, awards, languages, etc.)</p>
+                        </div>
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>🎯 Job-Targeted Tailoring</h4>
+                            <p>AI considers target job requirements when making edits</p>
+                        </div>
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>🎙️ Real-time Voice Feedback</h4>
+                            <p>Content-based interviewer reactions during speech with volume visualization</p>
+                        </div>
+                        <div class="feature-card" style="margin-bottom: 1em;">
+                            <h4>🧠 Intelligent Question Generation</h4>
+                            <p>AI generates questions targeting resume gaps and job requirements</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 12: Demo Preview -->
+            <section>
+                <h2><span class="emoji">🖥️</span> Live Demo</h2>
+                <div style="margin: 2em auto; padding: 2em; background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div class="flow-diagram" style="margin-bottom: 1.5em;">
+                        <div class="flow-step">
+                            <div class="text">1. Upload Resume</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="text">2. View Analysis</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="text">3. Select Job</div>
+                        </div>
+                        <div class="flow-arrow">→</div>
+                        <div class="flow-step">
+                            <div class="text">4. Edit & Download</div>
+                        </div>
+                    </div>
+                    <p style="text-align: center; color: #94a3b8;">
+                        <code>streamlit run app.py</code>
+                    </p>
+                </div>
+            </section>
+            
+            <!-- Slide 13: Future Work -->
+            <section>
+                <h2><span class="emoji">🔮</span> Future Enhancements</h2>
+                <div class="grid-2" style="margin-top: 1.5em;">
+                    <div class="feature-card">
+                        <h4>🌐 Real Job API Integration</h4>
+                        <p>Connect to LinkedIn, Indeed, Glassdoor for live job data</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📊 ATS Compatibility Checker</h4>
+                        <p>Ensure resume passes Applicant Tracking Systems</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎨 Multiple Templates</h4>
+                        <p>Choose from various professional resume designs</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📧 Cover Letter Generator</h4>
+                        <p>Auto-generate matching cover letters</p>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Slide 14: Team -->
+            <section>
+                <h2><span class="emoji">👥</span> Our Team</h2>
+                <div class="grid-3" style="margin-top: 2em;">
+                    <div class="team-member">
+                        <div style="font-size: 4em; margin-bottom: 0.3em;">👨‍💻</div>
+                        <div class="name">Ruoping Gao</div>
+                    </div>
+                    <div class="team-member">
+                        <div style="font-size: 4em; margin-bottom: 0.3em;">👩‍💻</div>
+                        <div class="name">Shuang Liu</div>
+                    </div>
+                    <div class="team-member">
+                        <div style="font-size: 4em; margin-bottom: 0.3em;">👨‍💻</div>
+                        <div class="name">Zhenyan Yao</div>
+                    </div>
+                </div>
+                <p style="text-align: center; color: #64748b; margin-top: 2em;">
+                    Stevens Institute of Technology · BIA 810
+                </p>
+            </section>
+            
+            <!-- Slide 15: Thank You -->
+            <section class="thank-you">
+                <h1>Thank You! 🙏</h1>
+                <p style="font-size: 1.2em; color: #94a3b8; margin-top: 1em;">Questions?</p>
+                <div class="contact-info">
+                    <p>🔗 GitHub: <code>github.com/RGAO002/CareerOps-Pro</code></p>
+                </div>
+                <div class="tech-stack" style="margin-top: 2em;">
+                    <span class="tech-badge">Python</span>
+                    <span class="tech-badge">Streamlit</span>
+                    <span class="tech-badge">LangChain</span>
+                    <span class="tech-badge">GPT-4</span>
+                </div>
+            </section>
+            
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            transition: 'slide',
+            transitionSpeed: 'default',
+            backgroundTransition: 'fade',
+            controls: true,
+            progress: true,
+            center: true,
+            slideNumber: 'c/t',
+            width: 1280,
+            height: 720,
+            margin: 0.1,
+        });
+    </script>
+</body>
+</html>
+
