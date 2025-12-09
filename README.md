@@ -47,7 +47,7 @@ CareerOps Pro is an intelligent resume assistant that analyzes your resume, scor
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd "Final Project"
+   cd "CareerOps-Pro"
    ```
 
 2. **Install dependencies**
@@ -76,7 +76,7 @@ CareerOps Pro is an intelligent resume assistant that analyzes your resume, scor
 ## 📁 Project Structure
 
 ```
-Final Project/
+CareerOps-Pro/
 ├── app.py                      # Main entry point
 ├── requirements.txt            # Python dependencies
 ├── .env                        # API keys (create this)
@@ -177,5 +177,5 @@ This project is for educational purposes (BIA 810 Final Project).
 
 ---
 
-**Built with ❤️ for BIA 810**
+**Built by Ruoping Gao, Shuang Liu & Zhenyan Yao for BIA 810**
 
