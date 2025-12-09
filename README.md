@@ -41,6 +41,20 @@ CareerOps Pro is an intelligent resume assistant that analyzes your resume, scor
 ### Prerequisites
 - Python 3.9+
 - OpenAI API Key
+- **macOS**: System libraries for PDF generation (see below)
+
+### macOS System Dependencies
+
+WeasyPrint requires native libraries for PDF generation. Install via Homebrew:
+
+```bash
+brew install cairo pango gdk-pixbuf libffi
+```
+
+> **Note**: If you don't have Homebrew, install it first:
+> ```bash
+> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
 
 ### Setup
 
