@@ -1,0 +1,9 @@
+streamlit
+langchain-openai
+langchain-anthropic
+langchain-core
+openai
+pypdf
+pymupdf
+python-dotenv
+weasyprint
