@@ -898,23 +898,72 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                     
                     // Speech Recognition for real-time transcription
                     let recog = null;
-                    if ('webkitSpeechRecognition' in window) {{
-                        recog = new webkitSpeechRecognition();
-                        recog.continuous = true;
-                        recog.interimResults = true;
-                        recog.lang = 'en-US';
-                        recog.onresult = function(e) {{
-                            tempText = '';
-                            for (let i = e.resultIndex; i < e.results.length; i++) {{
-                                if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
-                                else tempText += e.results[i][0].transcript;
-                            }}
-                            const full = (finalText + tempText).trim();
-                            transcript.innerHTML = finalText + '<span style="color:#94a3b8">' + tempText + '</span>';
-                            updateReaction(full);
-                        }};
-                        recog.onerror = function(e) {{ if (e.error === 'no-speech' && isRecording) try {{ recog.start(); }} catch(x) {{}} }};
-                        recog.onend = function() {{ if (isRecording) try {{ recog.start(); }} catch(x) {{}} }};
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    
+                    if (SpeechRecognition) {{
+                        try {{
+                            recog = new SpeechRecognition();
+                            recog.continuous = true;
+                            recog.interimResults = true;
+                            recog.lang = 'en-US';
+                            
+                            recog.onresult = function(e) {{
+                                tempText = '';
+                                for (let i = e.resultIndex; i < e.results.length; i++) {{
+                                    if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
+                                    else tempText += e.results[i][0].transcript;
+                                }}
+                                const full = (finalText + tempText).trim();
+                                transcript.innerHTML = finalText + '<span style="color:#94a3b8">' + tempText + '</span>';
+                                updateReaction(full);
+                            }};
+                            
+                            recog.onerror = function(e) {{
+                                console.error('Speech recognition error:', e.error);
+                                if (e.error === 'not-allowed') {{
+                                    transcript.innerHTML = '<span style="color:#ef4444">⚠️ Microphone permission denied. Please allow microphone access.</span>';
+                                }} else if (e.error === 'network') {{
+                                    // Network error - Web Speech API requires internet connection to Google servers
+                                    transcript.innerHTML = '<span style="color:#f59e0b">⚠️ Network error: Cannot connect to speech recognition service. Audio is still being recorded and will be transcribed after submission.</span>';
+                                    // Stop trying to restart recognition on network errors
+                                    if (recog) {{
+                                        try {{ recog.stop(); }} catch(x) {{}}
+                                    }}
+                                }} else if (e.error === 'no-speech' && isRecording) {{
+                                    // No speech detected - try to restart (this is normal)
+                                    try {{ recog.start(); }} catch(x) {{ 
+                                        console.error('Failed to restart:', x);
+                                        // If restart fails, stop trying
+                                        if (x.name === 'InvalidStateError') {{
+                                            // Already started, ignore
+                                        }}
+                                    }}
+                                }} else if (e.error === 'aborted') {{
+                                    // Recognition was aborted - this is normal when stopping
+                                    // Don't show error for this
+                                }} else if (e.error !== 'no-speech') {{
+                                    transcript.innerHTML = '<span style="color:#f59e0b">⚠️ Speech recognition error: ' + e.error + '. Audio is still being recorded.</span>';
+                                }}
+                            }};
+                            
+                            recog.onend = function() {{
+                                if (isRecording) {{
+                                    try {{ 
+                                        recog.start(); 
+                                    }} catch(x) {{
+                                        console.error('Failed to restart recognition:', x);
+                                        if (x.name === 'InvalidStateError') {{
+                                            // Recognition already started, ignore
+                                        }}
+                                    }}
+                                }}
+                            }};
+                        }} catch(err) {{
+                            console.error('Failed to initialize speech recognition:', err);
+                            transcript.innerHTML = '<span style="color:#ef4444">⚠️ Speech recognition not available: ' + err.message + '</span>';
+                        }}
+                    }} else {{
+                        transcript.innerHTML = '<span style="color:#f59e0b">⚠️ Speech recognition not supported in this browser. Audio is still being recorded.</span>';
                     }}
                     
                     function updateReaction(txt) {{
@@ -997,7 +1046,22 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                         statusText.style.color = '#dc2626';
                         reaction.textContent = '👂 Listening...';
                         reaction.style.color = 'white';
-                        transcript.textContent = 'Speak now...';
+                        if (recog) {{
+                            try {{
+                                recog.start();
+                                transcript.textContent = 'Speak now...';
+                            }} catch(err) {{
+                                console.error('Failed to start recognition:', err);
+                                if (err.name === 'InvalidStateError') {{
+                                    // Already started, this is fine
+                                    transcript.textContent = 'Speak now...';
+                                }} else {{
+                                    transcript.innerHTML = '<span style="color:#f59e0b">⚠️ Live transcription unavailable. Audio is still being recorded and will be transcribed after submission.</span>';
+                                }}
+                            }}
+                        }} else {{
+                            transcript.innerHTML = '<span style="color:#f59e0b">⚠️ Live transcription not available in this browser. Audio is still being recorded and will be transcribed after submission.</span>';
+                        }}
                         
                         try {{
                             audioStream = await navigator.mediaDevices.getUserMedia({{audio: true}});
@@ -1012,8 +1076,17 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                             return;
                         }}
                         
-                        // Start speech recognition
-                        if (recog) try {{ recog.start(); }} catch(e) {{}}
+                        // Start speech recognition (if not already started)
+                        if (recog) {{
+                            try {{ 
+                                recog.start(); 
+                            }} catch(e) {{
+                                // Ignore if already started (InvalidStateError)
+                                if (e.name !== 'InvalidStateError') {{
+                                    console.error('Recognition start error:', e);
+                                }}
+                            }}
+                        }}
                         visualize();
                         
                         // Start countdown
@@ -1171,7 +1244,7 @@ Return ONLY valid JSON.`
                 
                 components.html(interview_ui, height=500)
                 
-                # === 使用原生 Streamlit 按钮 (最可靠的方式) ===
+                # Use native Streamlit buttons for reliability
                 col_check, col_skip = st.columns(2)
                 
                 with col_check:
