@@ -174,7 +174,8 @@ CareerOps-Pro/
 ## 🔧 Configuration
 
 ### Supported AI Models
-- `gpt-4o` (default, recommended)
+- `gpt-5.2` (default, recommended)
+- `gpt-4o`
 - `gpt-3.5-turbo` (faster, cheaper)
 - `claude-3-5-sonnet-20241022` (requires Anthropic key)
 

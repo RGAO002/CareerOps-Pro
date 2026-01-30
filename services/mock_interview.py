@@ -105,7 +105,7 @@ Make questions conversational and professional, as a real interviewer would ask 
 Return ONLY valid JSON."""
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.2",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"}
     )
@@ -166,7 +166,7 @@ Be constructive and encouraging while being honest about areas for improvement.
 Return ONLY valid JSON."""
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.2",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"}
     )
@@ -221,7 +221,7 @@ Provide a comprehensive summary:
 Return ONLY valid JSON."""
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.2",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"}
     )

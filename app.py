@@ -30,7 +30,7 @@ from streamlit_js_eval import streamlit_js_eval
 
 from services.resume_parser import parse_resume, parse_resume_from_image, is_scanned_pdf
 from services.resume_analyzer import analyze_resume
-from services.job_matcher import match_jobs, SAMPLE_JOBS
+from services.job_matcher import match_jobs, parse_custom_jd, SAMPLE_JOBS
 from services.resume_editor import edit_resume
 from services.mock_interview import (
     text_to_speech, speech_to_text,
@@ -305,7 +305,7 @@ with st.sidebar:
     
     st.divider()
     
-    model = st.selectbox("🧠 Brain", ["gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
+    model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
     default_key = os.getenv("OPENAI_API_KEY", "")
     api_key = st.text_input("🔑 API Key", value=default_key, type="password")
     
@@ -438,6 +438,98 @@ if st.session_state.page == "analysis" and st.session_state.resume_data:
             st.markdown("### 🎯 Quick Wins")
             for i, tip in enumerate(analysis.get("quick_wins", []), 1):
                 st.markdown(f"**{i}.** {tip}")
+    
+    # Custom JD Section
+    st.divider()
+    st.markdown("## ✨ Tailor Resume with Custom JD")
+    st.caption("Paste a job description URL or text to get personalized resume suggestions")
+    
+    # Initialize custom job state
+    if 'custom_job' not in st.session_state:
+        st.session_state.custom_job = None
+    
+    with st.expander("📝 Enter Job Description", expanded=st.session_state.custom_job is None):
+        jd_input = st.text_area(
+            "Paste JD URL or text",
+            height=150,
+            placeholder="Paste a job posting URL (e.g., https://linkedin.com/jobs/...) or paste the full job description text here...",
+            help="You can paste a URL to a job posting or copy-paste the entire job description text"
+        )
+        
+        col_parse, col_clear = st.columns([1, 1])
+        with col_parse:
+            if st.button("🔍 Analyze JD", type="primary", use_container_width=True, disabled=not jd_input):
+                with st.spinner("Analyzing job description..."):
+                    result = parse_custom_jd(jd_input, st.session_state.resume_data, model, api_key)
+                    if result["success"]:
+                        st.session_state.custom_job = result["job"]
+                        st.success("✅ JD analyzed successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {result['error']}")
+        
+        with col_clear:
+            if st.session_state.custom_job and st.button("🗑️ Clear", use_container_width=True):
+                st.session_state.custom_job = None
+                st.rerun()
+    
+    # Display custom job card if available
+    if st.session_state.custom_job:
+        job = st.session_state.custom_job
+        score = job.get("match_score", 0)
+        score_class = "" if score >= 80 else "medium" if score >= 60 else "low"
+        
+        st.markdown(f"""
+            <div class="job-card" style="border: 2px solid #667eea; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: #667eea; font-weight: 600; margin-bottom: 5px;">📌 CUSTOM JD</div>
+                        <div class="job-title">{job.get('title', 'Unknown Position')}</div>
+                        <div class="job-company">{job.get('company', 'Unknown Company')} • {job.get('location', 'Not specified')}</div>
+                    </div>
+                    <div class="match-score {score_class}">{score}% Match</div>
+                </div>
+                <div class="job-meta">
+                    <span>💰 {job.get('salary', 'Not specified')}</span>
+                    <span>📋 {job.get('type', 'Full-time')}</span>
+                    <span>🏷️ {job.get('category', 'Other')}</span>
+                </div>
+                <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 10px;">{job.get('description', '')[:200]}...</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            with st.expander("View Details", expanded=True):
+                st.markdown("**Requirements:**")
+                for req in job.get("requirements", []):
+                    st.markdown(f"- {req}")
+                
+                st.markdown("**Why You Match:**")
+                for reason in job.get("match_reasons", []):
+                    st.markdown(f"✅ {reason}")
+                
+                if job.get("gaps"):
+                    st.markdown("**Gaps to Address:**")
+                    for gap in job.get("gaps", []):
+                        st.markdown(f"⚠️ {gap}")
+                
+                if job.get("tailoring_tips"):
+                    st.markdown("**Tailoring Tips:**")
+                    for tip in job.get("tailoring_tips", []):
+                        st.markdown(f"💡 {tip}")
+        
+        with col_b:
+            if st.button("✨ Tailor Resume", key="tailor_custom", type="primary"):
+                st.session_state.selected_job = job
+                st.session_state.page = "editor"
+                st.session_state.timeline = []
+                
+                html = render_resume_html(st.session_state.resume_data)
+                st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                st.session_state.current_diff = {}
+                
+                st.rerun()
     
     # Job Matching
     if matches:
@@ -1142,7 +1234,7 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                                     'Content-Type': 'application/json'
                                 }},
                                 body: JSON.stringify({{
-                                    model: 'gpt-4o',
+                                    model: 'gpt-5.2',
                                     messages: [{{
                                         role: 'user',
                                         content: `You are an expert interviewer evaluating a candidate's response for the position of ${{jobData.title || 'Unknown'}}.

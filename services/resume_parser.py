@@ -94,7 +94,7 @@ Return ONLY valid JSON, no other text."""
             })
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.2",
             messages=[{"role": "user", "content": content}],
             max_tokens=4096,
             response_format={"type": "json_object"}

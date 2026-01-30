@@ -9,3 +9,5 @@ python-dotenv
 weasyprint
 audio-recorder-streamlit
 streamlit-js-eval
+requests
+beautifulsoup4

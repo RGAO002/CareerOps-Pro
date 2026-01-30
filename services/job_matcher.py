@@ -2,8 +2,169 @@
 Job Matcher Service - Match resume to job opportunities
 """
 import json
+import re
+import requests
+from bs4 import BeautifulSoup
 from langchain_core.messages import SystemMessage
 from services.llm import get_llm, clean_json
+
+
+def fetch_jd_from_url(url):
+    """Fetch job description content from a URL."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove script and style elements
+        for element in soup(['script', 'style', 'nav', 'footer', 'header']):
+            element.decompose()
+        
+        # Try to find main content area (common job site patterns)
+        main_content = None
+        
+        # Common job posting containers
+        selectors = [
+            'article', 
+            '[class*="job-description"]',
+            '[class*="jobDescription"]',
+            '[class*="job_description"]',
+            '[class*="description"]',
+            '[id*="job-description"]',
+            '[id*="jobDescription"]',
+            'main',
+            '.content',
+            '#content'
+        ]
+        
+        for selector in selectors:
+            main_content = soup.select_one(selector)
+            if main_content and len(main_content.get_text(strip=True)) > 200:
+                break
+        
+        if main_content:
+            text = main_content.get_text(separator='\n', strip=True)
+        else:
+            # Fallback: get body text
+            text = soup.get_text(separator='\n', strip=True)
+        
+        # Clean up excessive whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r' {2,}', ' ', text)
+        
+        # Limit text length to avoid token limits
+        if len(text) > 8000:
+            text = text[:8000] + "..."
+        
+        return {"success": True, "content": text}
+        
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Request timed out. Please try pasting the JD text directly."}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": f"Failed to fetch URL: {str(e)}"}
+    except Exception as e:
+        return {"success": False, "error": f"Error processing URL: {str(e)}"}
+
+
+def parse_custom_jd(jd_input, resume_data, model_choice, api_key):
+    """
+    Parse a custom JD (from URL or text) and return a structured job object
+    with match analysis against the provided resume.
+    """
+    llm = get_llm(model_choice, api_key)
+    
+    # Check if input is a URL
+    jd_text = jd_input.strip()
+    is_url = jd_text.startswith('http://') or jd_text.startswith('https://')
+    
+    if is_url:
+        fetch_result = fetch_jd_from_url(jd_text)
+        if not fetch_result["success"]:
+            return {"success": False, "error": fetch_result["error"]}
+        jd_text = fetch_result["content"]
+    
+    resume_json = json.dumps(resume_data, ensure_ascii=False, indent=2)
+    
+    system_text = f"""You are an expert career advisor. Your task is to:
+1. Parse the job description and extract structured information
+2. Analyze how well the candidate's resume matches this job
+
+JOB DESCRIPTION TEXT:
+{jd_text}
+
+CANDIDATE'S RESUME:
+{resume_json}
+
+Return a JSON object with the following structure:
+{{
+    "id": "custom_1",
+    "title": "<Job Title>",
+    "company": "<Company Name or 'Unknown Company' if not found>",
+    "location": "<Location or 'Not specified'>",
+    "salary": "<Salary range or 'Not specified'>",
+    "description": "<Brief 1-2 sentence summary of the role>",
+    "requirements": ["Requirement 1", "Requirement 2", "..."],
+    "type": "<Full-time/Part-time/Contract/Not specified>",
+    "category": "<Engineering/Marketing/Finance/Healthcare/Design/Business/Sales/HR/Other>",
+    "match_score": <0-100 based on how well resume matches>,
+    "match_reasons": ["Why candidate is a good fit 1", "Why 2", "Why 3"],
+    "gaps": ["Gap or missing qualification 1", "Gap 2"],
+    "tailoring_tips": ["Specific tip to improve resume for this job 1", "Tip 2", "Tip 3"]
+}}
+
+EXTRACTION GUIDELINES:
+- Extract the job title exactly as stated
+- Identify company name from the JD
+- List 5-8 key requirements/qualifications
+- Be specific in match_reasons (reference actual skills/experience from resume)
+- Be specific in gaps (what's required but missing from resume)
+- Provide actionable tailoring_tips (how to modify resume for this specific job)
+
+MATCHING CRITERIA:
+- Skills match: Technical and soft skills alignment
+- Experience level: Years and type of experience
+- Domain knowledge: Industry relevance
+- Keywords: Important terms from JD that should be in resume
+
+Return ONLY valid JSON.
+"""
+    
+    messages = [SystemMessage(content=system_text)]
+    
+    try:
+        res = llm.invoke(messages, response_format={"type": "json_object"})
+        result = clean_json(res.content)
+        
+        # Ensure all required fields exist
+        required_fields = {
+            "id": "custom_1",
+            "title": "Unknown Position",
+            "company": "Unknown Company",
+            "location": "Not specified",
+            "salary": "Not specified",
+            "description": "",
+            "requirements": [],
+            "type": "Full-time",
+            "category": "Other",
+            "match_score": 50,
+            "match_reasons": [],
+            "gaps": [],
+            "tailoring_tips": []
+        }
+        
+        for field, default in required_fields.items():
+            if field not in result:
+                result[field] = default
+        
+        return {"success": True, "job": result}
+        
+    except Exception as e:
+        print(f"[DEBUG] Custom JD parsing error: {e}")
+        return {"success": False, "error": f"Failed to parse JD: {str(e)}"}
 
 
 # Sample job database (can be replaced with API in production)
