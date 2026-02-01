@@ -1,416 +1,720 @@
 """
-HTML Renderer - Convert resume data to HTML
+HTML Renderer - Convert resume data to HTML using fixed template
+Supports contenteditable for inline editing
 """
-
+import os
 import re
 from html import escape
 
 
-def _guess_contact_type(text: str) -> str:
-    t = (text or "").strip().lower()
-    if "@" in t and ("mailto:" in t or re.search(r"\b[\w.+-]+@[\w.-]+\.\w+\b", t)):
-        return "email"
-    if t.startswith("http://") or t.startswith("https://"):
-        return "link"
-    if "linkedin.com" in t:
-        return "linkedin"
-    if "github.com" in t:
-        return "github"
-    if re.search(r"\d{3}.*\d{3}.*\d{4}", t) or re.search(r"\+\d", t):
-        return "phone"
-    return "other"
-
-
-def _wrap_contact_item(raw_item: str) -> str:
-    item = (raw_item or "").strip()
-    if not item:
+def _format_bullet_text(text: str) -> str:
+    """Format bullet text, preserving simple markdown formatting."""
+    if not text:
         return ""
-    # If already looks like HTML (<a ...>), keep it as-is.
-    if "<a " in item or item.startswith("<a"):
-        return item
+    
+    # First escape HTML
+    safe_text = escape(str(text))
+    
+    # Then convert markdown-like patterns to HTML
+    # **bold** or __bold__
+    safe_text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', safe_text)
+    safe_text = re.sub(r'__(.+?)__', r'<strong>\1</strong>', safe_text)
+    
+    # *italic* or _italic_ (but not inside words)
+    safe_text = re.sub(r'(?<!\w)\*(.+?)\*(?!\w)', r'<em>\1</em>', safe_text)
+    safe_text = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<em>\1</em>', safe_text)
+    
+    return safe_text
 
-    email_match = re.search(r"([\w.+-]+@[\w.-]+\.\w+)", item)
+
+# SVG icons for contact items
+ICON_EMAIL = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+</svg>'''
+
+ICON_PHONE = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+</svg>'''
+
+ICON_GITHUB = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+</svg>'''
+
+ICON_PORTFOLIO = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+</svg>'''
+
+ICON_BLOG = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+</svg>'''
+
+ICON_LINKEDIN = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2V9zm2-5a2 2 0 110 4 2 2 0 010-4z"></path>
+</svg>'''
+
+ICON_LINK = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+</svg>'''
+
+
+def _get_contact_icon(text: str) -> str:
+    """Return appropriate icon based on contact type."""
+    t = (text or "").lower()
+    if "@" in t:
+        return ICON_EMAIL
+    if re.search(r"\d{3}.*\d{3}.*\d{4}", t) or "phone" in t:
+        return ICON_PHONE
+    if "github" in t:
+        return ICON_GITHUB
+    if "linkedin" in t:
+        return ICON_LINKEDIN
+    if "portfolio" in t or "vercel" in t or "netlify" in t:
+        return ICON_PORTFOLIO
+    if "blog" in t:
+        return ICON_BLOG
+    return ICON_LINK
+
+
+def _format_contact_text(text: str) -> str:
+    """Format contact text with appropriate links."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    
+    # Already HTML
+    if "<a " in text:
+        return text
+    
+    # Markdown-style link: [text](url)
+    md_match = re.match(r'\[(.+?)\]\((.+?)\)', text)
+    if md_match:
+        display_text = md_match.group(1)
+        url = md_match.group(2)
+        return f'<a href="{escape(url)}" target="_blank">{escape(display_text)}</a>'
+    
+    # Handle "text (url)" or "text (mailto:...)" format
+    paren_match = re.match(r'^(.+?)\s*\(((?:https?://|mailto:)[^)]+)\)$', text)
+    if paren_match:
+        display_text = paren_match.group(1).strip()
+        url = paren_match.group(2).strip()
+        if url.startswith("mailto:"):
+            return f'<a href="{escape(url)}">{escape(display_text)}</a>'
+        return f'<a href="{escape(url)}" target="_blank">{escape(display_text)}</a>'
+    
+    # Email - just show email, not "mailto:..."
+    email_match = re.search(r"([\w.+-]+@[\w.-]+\.\w+)", text)
     if email_match:
         email = email_match.group(1)
         return f'<a href="mailto:{escape(email)}">{escape(email)}</a>'
-
-    if item.startswith("http://") or item.startswith("https://"):
-        safe = escape(item)
-        return f'<a href="{safe}" target="_blank" rel="noopener noreferrer">{safe}</a>'
-
-    return escape(item)
-
-
-def _icon_svg(kind: str) -> str:
-    # Minimal inline SVGs (adapted from the provided template).
-    # Keep them small and monochrome for WeasyPrint compatibility.
-    if kind == "email":
-        return """
-<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-</svg>
-""".strip()
-    if kind == "phone":
-        return """
-<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
-</svg>
-""".strip()
-    if kind in {"link", "linkedin", "github"}:
-        return """
-<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-</svg>
-""".strip()
-    return """
-<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-        d="M12 6v6l4 2"></path>
-</svg>
-""".strip()
+    
+    # Full URL - shorten display
+    if text.startswith("http://") or text.startswith("https://"):
+        display = text.replace("https://", "").replace("http://", "").rstrip("/")
+        return f'<a href="{escape(text)}" target="_blank">{escape(display)}</a>'
+    
+    # Domain-like patterns (github.com/xxx, linkedin.com/in/xxx, etc.)
+    domain_patterns = [
+        (r"github\.com", "https://"),
+        (r"linkedin\.com", "https://"),
+        (r"\.com", "https://"),
+        (r"\.io", "https://"),
+        (r"\.dev", "https://"),
+        (r"\.org", "https://"),
+        (r"\.net", "https://"),
+    ]
+    
+    for pattern, prefix in domain_patterns:
+        if re.search(pattern, text.lower()):
+            url = text if text.startswith("http") else f"{prefix}{text}"
+            display = text.replace("https://", "").replace("http://", "").rstrip("/")
+            return f'<a href="{escape(url)}" target="_blank">{escape(display)}</a>'
+    
+    return escape(text)
 
 
-def _render_bullets_as_paragraphs(bullets, changed: bool) -> str:
-    if not bullets:
+def render_contact_html(contact_items: list, editable: bool = True, diff_indices: list = None) -> str:
+    """Render contact section with optional diff highlighting."""
+    if not contact_items:
         return ""
-    cls = "bullet-point diff-highlight-block" if changed else "bullet-point"
-    parts = []
-    for b in bullets:
-        if not b:
+    
+    diff_indices = diff_indices or []
+    html_parts = []
+    for i, item in enumerate(contact_items):
+        if not item:
             continue
-        parts.append(f'<p class="{cls}">{b}</p>')
-    return "\n".join(parts)
+        icon = _get_contact_icon(str(item))
+        text = _format_contact_text(str(item))
+        edit_attr = f'contenteditable="true" data-field="contact" data-index="{i}"' if editable else ""
+        
+        # Apply diff highlight
+        highlight_class = "diff-highlight" if i in diff_indices else ""
+        
+        html_parts.append(f'''
+            <div class="contact-row {highlight_class}">
+                {icon}
+                <span {edit_attr}>{text}</span>
+            </div>
+        ''')
+    return "\n".join(html_parts)
 
 
-def render_section_html(section_name, section_data, diff, show_diff):
-    """Render a generic section to HTML."""
-    if not section_data:
+def render_skills_html(skills: dict, editable: bool = True, diff_keys: list = None) -> str:
+    """Render skills section with optional diff highlighting."""
+    if not skills:
         return ""
     
-    section_changed = diff.get(section_name, []) if show_diff else []
-    title = section_name.replace("_", " ").title()
-    
-    content = ""
-    for idx, item in enumerate(section_data):
-        is_changed = idx in section_changed if isinstance(section_changed, list) else section_changed
-        block_class = "entry-block diff-highlight-block" if is_changed else "entry-block"
+    diff_keys = diff_keys or []
+    html_parts = []
+    for category, items in skills.items():
+        cat_safe = escape(str(category))
+        # Handle both string and list formats
+        if isinstance(items, list):
+            val = ", ".join([str(x) for x in items])
+        else:
+            val = str(items)
+        val_safe = escape(val)
         
-        if isinstance(item, dict):
-            main_title = item.get("company") or item.get("school") or item.get("name") or item.get("title") or ""
-            subtitle = item.get("role") or item.get("degree") or item.get("organization") or item.get("issuer") or ""
-            date = item.get("date") or item.get("year") or ""
-            tech = item.get("tech") or ""
-            bullets = item.get("bullets") or item.get("details") or []
-            description = item.get("description") or ""
-
-            header_left = escape(main_title) if main_title else ""
-            header_right = escape(date) if date else ""
-            subtitle_line = escape(subtitle) if subtitle else ""
-            tech_line = escape(tech) if tech else ""
-
-            bullets_html = _render_bullets_as_paragraphs(bullets, is_changed)
-            desc_html = f'<p class="desc">{description}</p>' if description else ""
-            meta_html = ""
-            if tech_line:
-                meta_html = f'<p class="meta">{tech_line}</p>'
-
-            content += f"""
-            <div class="{block_class}">
-              <div class="entry-header">
-                <h3 class="entry-title">{header_left}</h3>
-                <div class="entry-date">{header_right}</div>
-              </div>
-              {f'<p class="entry-subtitle">{subtitle_line}</p>' if subtitle_line else ''}
-              {meta_html}
-              {desc_html}
-              <div class="entry-bullets">{bullets_html}</div>
+        cat_edit = f'contenteditable="true" data-field="skill_cat" data-key="{cat_safe}"' if editable else ""
+        val_edit = f'contenteditable="true" data-field="skill_val" data-key="{cat_safe}"' if editable else ""
+        
+        # Apply diff highlight
+        highlight_class = "diff-highlight" if category in diff_keys else ""
+        
+        html_parts.append(f'''
+            <div class="skill-group {highlight_class}">
+                <p class="skill-label" {cat_edit}>{cat_safe}:</p>
+                <p class="skill-text" {val_edit}>{val_safe}</p>
             </div>
-            """
-        elif isinstance(item, str):
-            item_class = "diff-highlight-block" if is_changed else ""
-            content += f'<div class="entry-block {item_class}" style="margin-bottom:10px;">{item}</div>'
+        ''')
+    return "\n".join(html_parts)
+
+
+def render_experience_html(experience: list, editable: bool = True, diff_info: dict = None) -> str:
+    """Render experience section with optional diff highlighting."""
+    if not experience:
+        return ""
     
-    return f'<section class="main-section"><h2>{escape(title)}</h2>{content}</section>'
+    diff_info = diff_info or {}
+    html_parts = []
+    for i, exp in enumerate(experience):
+        if not isinstance(exp, dict):
+            continue
+        
+        company = exp.get("company") or exp.get("name") or ""
+        role = exp.get("role") or exp.get("title") or ""
+        date = exp.get("date") or ""
+        bullets = exp.get("bullets") or []
+        
+        # Get diff info for this experience
+        item_diff = diff_info.get(i, {})
+        is_new = item_diff == "added"
+        
+        edit_attr = lambda field: f'contenteditable="true" data-field="exp_{field}" data-index="{i}"' if editable else ""
+        
+        # Determine highlights
+        company_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("company")) else ""
+        role_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("role")) else ""
+        date_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("date")) else ""
+        bullet_changes = item_diff.get("bullets", []) if isinstance(item_diff, dict) else (list(range(len(bullets))) if is_new else [])
+        
+        bullets_html = ""
+        for j, bullet in enumerate(bullets):
+            b_edit = f'contenteditable="true" data-field="exp_bullet" data-index="{i}" data-bullet="{j}"' if editable else ""
+            formatted_bullet = _format_bullet_text(bullet)
+            bullet_class = "diff-highlight" if j in bullet_changes else ""
+            bullets_html += f'<p class="bullet-point text-gray-700 text-sm {bullet_class}" {b_edit}>{formatted_bullet}</p>\n'
+        
+        entry_class = "diff-entry-new" if is_new else ""
+        
+        html_parts.append(f'''
+            <div class="exp-entry {entry_class}">
+                <div class="exp-header">
+                    <h3 class="exp-title {company_class}" {edit_attr("company")}>{escape(company)}</h3>
+                    <p class="exp-date {date_class}" {edit_attr("date")}>{escape(date)}</p>
+                </div>
+                <p class="exp-subtitle {role_class}" {edit_attr("role")}>{escape(role)}</p>
+                <div class="exp-bullets space-y-2">
+                    {bullets_html}
+                </div>
+            </div>
+        ''')
+    return "\n".join(html_parts)
 
 
-def render_resume_html(data, diff=None, show_diff=False):
-    """Render full resume to HTML with optional diff highlighting."""
+def render_projects_html(projects: list, editable: bool = True, diff_info: dict = None) -> str:
+    """Render projects section with optional diff highlighting."""
+    if not projects:
+        return ""
+    
+    diff_info = diff_info or {}
+    html_parts = []
+    for i, proj in enumerate(projects):
+        if not isinstance(proj, dict):
+            continue
+        
+        name = proj.get("name") or proj.get("title") or ""
+        tech = proj.get("tech") or ""
+        link = proj.get("link") or ""
+        bullets = proj.get("bullets") or []
+        
+        # Get diff info for this project
+        item_diff = diff_info.get(i, {})
+        is_new = item_diff == "added"
+        
+        edit_attr = lambda field: f'contenteditable="true" data-field="proj_{field}" data-index="{i}"' if editable else ""
+        
+        # Determine highlights
+        name_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("name")) else ""
+        tech_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("tech")) else ""
+        bullet_changes = item_diff.get("bullets", []) if isinstance(item_diff, dict) else (list(range(len(bullets))) if is_new else [])
+        
+        # Build title with optional link
+        title_text = escape(name)
+        if link:
+            link_text = "GitHub Repo" if "github" in link.lower() else "Live Demo" if "demo" in link.lower() or "netlify" in link.lower() else link
+            title_text += f' - <a href="{escape(link)}" target="_blank">{escape(link_text)}</a>'
+        
+        # Tech subtitle
+        tech_html = f'<p class="text-gray-500 text-sm {tech_class}">{escape(tech)}</p>' if tech else ""
+        
+        bullets_html = ""
+        for j, bullet in enumerate(bullets):
+            b_edit = f'contenteditable="true" data-field="proj_bullet" data-index="{i}" data-bullet="{j}"' if editable else ""
+            formatted_bullet = _format_bullet_text(bullet)
+            bullet_class = "diff-highlight" if j in bullet_changes else ""
+            bullets_html += f'<p class="bullet-point text-gray-700 text-sm {bullet_class}" {b_edit}>{formatted_bullet}</p>\n'
+        
+        entry_class = "diff-entry-new" if is_new else ""
+        
+        html_parts.append(f'''
+            <div class="project-entry {entry_class}">
+                <h3 class="project-title {name_class}" {edit_attr("name")}>{title_text}</h3>
+                {tech_html}
+                <div class="project-bullets mt-2">
+                    {bullets_html}
+                </div>
+            </div>
+        ''')
+    return "\n".join(html_parts)
+
+
+def render_education_html(education: list, editable: bool = True, diff_info: dict = None) -> str:
+    """Render education section with optional diff highlighting."""
+    if not education:
+        return ""
+    
+    diff_info = diff_info or {}
+    html_parts = []
+    for i, edu in enumerate(education):
+        if not isinstance(edu, dict):
+            continue
+        
+        school = edu.get("school") or edu.get("name") or ""
+        degree = edu.get("degree") or ""
+        date = edu.get("date") or ""
+        gpa = edu.get("gpa") or ""
+        coursework = edu.get("coursework") or edu.get("courses") or []
+        note = edu.get("note") or ""
+        
+        # Get diff info for this education
+        item_diff = diff_info.get(i, {})
+        is_new = item_diff == "added"
+        
+        edit_attr = lambda field: f'contenteditable="true" data-field="edu_{field}" data-index="{i}"' if editable else ""
+        
+        # Determine highlights
+        school_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("school")) else ""
+        degree_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("degree")) else ""
+        date_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("date")) else ""
+        
+        # Degree line with optional GPA
+        degree_text = escape(degree)
+        if gpa:
+            # Remove "GPA:" prefix if already present to avoid duplication
+            gpa_value = str(gpa).strip()
+            if gpa_value.lower().startswith("gpa:"):
+                gpa_value = gpa_value[4:].strip()
+            degree_text += f' | <span class="text-blue-600 font-bold">GPA: {escape(gpa_value)}</span>'
+        
+        # Coursework
+        coursework_html = ""
+        if coursework:
+            if isinstance(coursework, list):
+                items = "".join([f"<li>{escape(c)}</li>" for c in coursework])
+                coursework_html = f'''
+                    <div class="edu-coursework">
+                        <p class="font-semibold">Relevant Coursework:</p>
+                        <ul class="list-disc list-inside ml-2">{items}</ul>
+                    </div>
+                '''
+            else:
+                coursework_html = f'<div class="edu-coursework"><p>{escape(str(coursework))}</p></div>'
+        
+        # Note
+        note_html = f'<p class="edu-note">{escape(note)}</p>' if note else ""
+        
+        entry_class = "diff-entry-new" if is_new else ""
+        
+        html_parts.append(f'''
+            <div class="edu-entry {entry_class}">
+                <p class="edu-school {school_class}" {edit_attr("school")}>{escape(school)}</p>
+                <p class="edu-degree {degree_class}" {edit_attr("degree")}>{degree_text}</p>
+                <p class="edu-date {date_class}" {edit_attr("date")}>{escape(date)}</p>
+                {coursework_html}
+                {note_html}
+            </div>
+        ''')
+    return "\n".join(html_parts)
+
+
+def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable: bool = True) -> str:
+    """
+    Render resume data to HTML using the fixed template.
+    
+    Args:
+        data: Resume data dictionary
+        diff: Diff info for highlighting changes (optional)
+        show_diff: Whether to show diff highlighting
+        editable: Whether to enable contenteditable
+    
+    Returns:
+        Complete HTML string
+    """
     if diff is None:
         diff = {}
     
-    name = data.get("name", "YOUR NAME")
+    # Extract data
+    name = data.get("name", "Your Name")
     role = data.get("role", "Job Title")
+    summary = data.get("summary", "")
+    contact = data.get("contact", [])
+    skills = data.get("skills", {})
+    experience = data.get("experience", [])
+    projects = data.get("projects", [])
+    education = data.get("education", [])
     
-    if show_diff:
-        if diff.get("name"):
-            name = f'<span class="diff-highlight">{name}</span>'
-        if diff.get("role"):
-            role = f'<span class="diff-highlight">{role}</span>'
+    # Extract diff info for each section
+    contact_diff = diff.get("contact", []) if show_diff else []
+    skills_diff = diff.get("skills", []) if show_diff else []
+    experience_diff = diff.get("experience", {}) if show_diff else {}
+    projects_diff = diff.get("projects", {}) if show_diff else {}
+    education_diff = diff.get("education", {}) if show_diff else {}
     
-    # Sidebar: Contact
-    contact_items = data.get("contact", []) or []
-    contact_changed = diff.get("contact", []) if show_diff else []
-    contact_html = ""
-    for i, raw in enumerate(contact_items):
-        if raw is None:
-            continue
-        changed = i in contact_changed
-        kind = _guess_contact_type(str(raw))
-        wrapped = _wrap_contact_item(str(raw))
-        row_cls = "contact-row diff-highlight-block" if changed else "contact-row"
-        contact_html += f"""
-          <div class="{row_cls}">
-            {_icon_svg(kind)}
-            <div class="contact-text">{wrapped}</div>
-          </div>
-        """
+    # Render sections with diff info
+    contact_html = render_contact_html(contact, editable, contact_diff)
+    skills_html = render_skills_html(skills, editable, skills_diff)
+    experience_html = render_experience_html(experience, editable, experience_diff)
+    projects_html = render_projects_html(projects, editable, projects_diff)
+    education_html = render_education_html(education, editable, education_diff)
     
-    # Sidebar: Skills
-    skills_changed = diff.get("skills", []) if show_diff else []
-    skills_html = ""
-    for category, items in data.get("skills", {}).items():
-        cat_safe = escape(str(category))
-        val = items if isinstance(items, str) else ", ".join([str(x) for x in (items or [])])
-        val_safe = escape(val)
-        if category in skills_changed:
-            skills_html += f'<div class="skill-group diff-highlight-block"><div class="skill-label">{cat_safe}</div><div class="skill-text">{val_safe}</div></div>'
-        else:
-            skills_html += f'<div class="skill-group"><div class="skill-label">{cat_safe}</div><div class="skill-text">{val_safe}</div></div>'
+    # Editable attributes for main fields
+    name_edit = 'contenteditable="true" data-field="name"' if editable else ""
+    role_edit = 'contenteditable="true" data-field="role"' if editable else ""
+    summary_edit = 'contenteditable="true" data-field="summary"' if editable else ""
     
-    # Main content sections
-    default_order = ["summary", "experience", "projects", "education"]
-    section_order = data.get("section_order", default_order)
-    
-    sidebar_keys = {"name", "role", "contact", "skills", "section_order"}
-    all_main_keys = [k for k in data.keys() if k not in sidebar_keys]
-    
-    ordered_sections = []
-    for s in section_order:
-        if s in all_main_keys:
-            ordered_sections.append(s)
-    for s in all_main_keys:
-        if s not in ordered_sections:
-            ordered_sections.append(s)
-
-    def _section_title(name_key: str) -> str:
-        mapping = {
-            "summary": "Profile Summary",
-            "experience": "Professional Experience",
-            "projects": "Selected Projects",
-            "education": "Education",
-        }
-        return mapping.get(name_key, name_key.replace("_", " ").title())
-
-    def _render_section(section_name: str) -> str:
-        section_data = data.get(section_name)
-        title = _section_title(section_name)
-        if isinstance(section_data, str) and section_data:
-            section_content = section_data
-            if show_diff and diff.get(section_name):
-                section_content = f'<span class="diff-highlight">{section_content}</span>'
-            return f'<section class="main-section"><h2>{escape(title)}</h2><p class="summary">{section_content}</p></section>'
-        if isinstance(section_data, list) and section_data:
-            # Override the title from render_section_html's generic one
-            section_changed = diff.get(section_name, []) if show_diff else []
-            html = render_section_html(section_name, section_data, diff, show_diff)
-            # render_section_html already wraps with <section><h2>Generic</h2>...</section>
-            # Replace header with mapped title (safe + deterministic).
-            return re.sub(r"<h2>.*?</h2>", f"<h2>{escape(title)}</h2>", html, count=1, flags=re.DOTALL)
-        return ""
-
-    # Page split like the provided template:
-    # Page 1: Summary + Experience (if present)
-    # Page 2: Remaining sections
-    page1_keys = [k for k in ordered_sections if k in {"summary", "experience"}]
-    page2_keys = [k for k in ordered_sections if k not in {"summary", "experience"}]
-
-    main_content_page1 = "".join([_render_section(k) for k in page1_keys])
-    main_content_page2 = "".join([_render_section(k) for k in page2_keys])
-    
-    # Diff highlight styles
+    # Diff highlighting styles
     diff_styles = ""
     if show_diff and diff:
         diff_styles = """
-            .diff-highlight { background: linear-gradient(120deg, #fef08a 0%, #fde047 100%); padding: 2px 4px; border-radius: 3px; animation: pulse-highlight 2s ease-in-out infinite; }
-            .diff-highlight-block { background: linear-gradient(120deg, #fefce8 0%, #fef9c3 100%); border-left: 4px solid #eab308 !important; padding-left: 10px; animation: pulse-highlight 2s ease-in-out infinite; }
-            @keyframes pulse-highlight { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+            .diff-highlight { 
+                background: linear-gradient(120deg, #fef08a 0%, #fde047 100%); 
+                padding: 2px 4px; 
+                border-radius: 3px; 
+            }
         """
     
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            /* Letter-size layout (matches provided template) */
-            @page {{ size: Letter; margin: 0; }}
+    # Apply diff highlighting
+    if show_diff:
+        if diff.get("name"):
+            name = f'<span class="diff-highlight">{escape(name)}</span>'
+        else:
+            name = escape(name)
+        if diff.get("role"):
+            role = f'<span class="diff-highlight">{escape(role)}</span>'
+        else:
+            role = escape(role)
+        if diff.get("summary"):
+            summary = f'<span class="diff-highlight">{summary}</span>'
+    else:
+        name = escape(name)
+        role = escape(role)
+    
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{name} - Resume</title>
+  <style>
+    /* ========== Base Reset & Fonts ========== */
+    @page {{ size: Letter; margin: 0; }}
+    
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    
+    body {{
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f3f4f6;
+      line-height: 1.5;
+      color: #374151;
+      font-size: 14px;
+    }}
 
-            /* Link style (matches provided template) */
-            a {{
-              color: #2563eb;
-              text-decoration: underline;
-              text-decoration-color: rgba(37, 99, 235, 0.4);
-              text-underline-offset: 3px;
-            }}
-            a:hover {{ color: #1d4ed8; text-decoration: underline; }}
+    /* ========== Link Styles ========== */
+    a {{
+      color: #2563eb;
+      text-decoration: underline;
+      text-decoration-color: rgba(37, 99, 235, 0.4);
+      text-underline-offset: 3px;
+    }}
+    a:hover {{ color: #1d4ed8; }}
 
-            body {{
-              font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-              background-color: #ffffff;
-              margin: 0;
-              padding: 0;
-              color: #111827;
-            }}
+    /* ========== Page Container ========== */
+    .page-container {{
+      width: 8.5in;
+      background-color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+    }}
 
-            /* Frame */
-            .page-container {{
-              width: 8.5in;
-              margin: 0;
-              display: flex;
-              flex-direction: column;
-            }}
+    .resume-page {{
+      min-height: 11in;
+      display: flex;
+      width: 100%;
+    }}
 
-            .resume-page {{
-              min-height: 11in;
-              display: flex;
-              width: 100%;
-            }}
+    /* ========== Sidebar ========== */
+    .sidebar {{
+      width: 36%;
+      min-height: 11in;
+      background-color: #f9fafb;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }}
 
-            /* Columns */
-            .sidebar {{
-              width: 36%;
-              background-color: #f9fafb;
-              padding: 2rem;
-              box-sizing: border-box;
-              display: flex;
-              flex-direction: column;
-            }}
-            .main-content {{
-              width: 64%;
-              padding: 2rem;
-              box-sizing: border-box;
-            }}
+    /* ========== Main Content ========== */
+    .main-content {{
+      width: 64%;
+      padding: 2rem;
+    }}
 
-            /* Typography */
-            h1 {{
-              font-size: 28pt;
-              font-weight: 700;
-              color: #1f2937;
-              margin: 0;
-              line-height: 1.15;
-              word-wrap: break-word;
-            }}
+    /* ========== Typography ========== */
+    .text-4xl {{ font-size: 2.25rem; line-height: 2.5rem; }}
+    .text-xl {{ font-size: 1.25rem; line-height: 1.75rem; }}
+    .text-lg {{ font-size: 1.125rem; line-height: 1.75rem; }}
+    .text-sm {{ font-size: 0.875rem; line-height: 1.25rem; }}
+    .text-xs {{ font-size: 0.75rem; line-height: 1rem; }}
 
-            .headline-role {{
-              font-size: 12pt;
-              color: #4b5563;
-              margin-top: 0.25rem;
-            }}
+    .font-bold {{ font-weight: 700; }}
+    .font-semibold {{ font-weight: 600; }}
+    .font-medium {{ font-weight: 500; }}
 
-            h2 {{
-              border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 6px;
-              margin-bottom: 12px;
-              margin-top: 16px;
-              color: #111827;
-              font-weight: 600;
-              font-size: 14pt;
-            }}
-            h3 {{ font-size: 12pt; margin: 0; }}
+    .text-gray-800 {{ color: #1f2937; }}
+    .text-gray-700 {{ color: #374151; }}
+    .text-gray-600 {{ color: #4b5563; }}
+    .text-gray-500 {{ color: #6b7280; }}
+    .text-blue-600 {{ color: #2563eb; }}
 
-            .main-section {{ margin-top: 0.25rem; }}
-            .summary {{ color: #374151; font-size: 10pt; line-height: 1.55; }}
+    .uppercase {{ text-transform: uppercase; }}
+    .italic {{ font-style: italic; }}
+    .leading-relaxed {{ line-height: 1.625; }}
 
-            /* Sidebar blocks */
-            .sidebar-section-title {{
-              font-size: 12pt;
-              font-weight: 600;
-              color: #1f2937;
-              border-bottom: 1px solid #e5e7eb;
-              padding-bottom: 6px;
-              margin: 1.5rem 0 0.75rem 0;
-            }}
+    /* ========== Spacing ========== */
+    .mt-0 {{ margin-top: 0; }}
+    .mt-1 {{ margin-top: 0.25rem; }}
+    .mt-2 {{ margin-top: 0.5rem; }}
+    .mt-4 {{ margin-top: 1rem; }}
+    .mt-6 {{ margin-top: 1.5rem; }}
+    .mt-8 {{ margin-top: 2rem; }}
+    .ml-2 {{ margin-left: 0.5rem; }}
 
-            .contact-row {{
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              color: #374151;
-              font-size: 9.5pt;
-              margin: 0.55rem 0;
-              word-break: break-word;
-            }}
-            .contact-text {{ line-height: 1.35; }}
-            .icon {{
-              width: 14px;
-              height: 14px;
-              color: #6b7280;
-              flex: 0 0 auto;
-            }}
+    .space-y-2 > * + * {{ margin-top: 0.5rem; }}
+    .space-y-4 > * + * {{ margin-top: 1rem; }}
+    .space-y-6 > * + * {{ margin-top: 1.5rem; }}
 
-            .skill-group {{ margin: 0.65rem 0; }}
-            .skill-label {{ font-weight: 600; color: #374151; font-size: 9.5pt; margin-bottom: 2px; }}
-            .skill-text {{ color: #4b5563; font-size: 9.5pt; line-height: 1.35; }}
+    /* ========== Icons ========== */
+    .icon-svg {{
+      width: 1rem;
+      height: 1rem;
+      margin-right: 0.75rem;
+      color: #6b7280;
+      flex-shrink: 0;
+    }}
 
-            /* Entries */
-            .entry-block {{ margin-bottom: 0.9rem; page-break-inside: avoid; }}
-            .entry-header {{ display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }}
-            .entry-title {{ font-size: 11.5pt; font-weight: 600; color: #111827; }}
-            .entry-date {{ font-size: 9.5pt; color: #6b7280; }}
-            .entry-subtitle {{ margin: 0.15rem 0 0.25rem 0; font-size: 10pt; color: #4b5563; font-weight: 500; }}
-            .meta {{ margin: 0.1rem 0 0.25rem 0; font-size: 9.5pt; color: #6b7280; }}
-            .desc {{ margin: 0.25rem 0; font-size: 10pt; color: #374151; }}
+    /* ========== Lists ========== */
+    .list-disc {{ list-style-type: disc; }}
+    .list-inside {{ list-style-position: inside; }}
 
-            /* Bullets */
-            .bullet-point {{
-              position: relative;
-              padding-left: 18px;
-              margin: 0.2rem 0 0.35rem 0;
-              line-height: 1.45;
-              color: #374151;
-              font-size: 10pt;
-            }}
-            .bullet-point::before {{
-              content: "■";
-              position: absolute;
-              left: 0;
-              top: 0px;
-              color: #6b7280;
-              font-size: 8pt;
-            }}
+    /* ========== Section Headers ========== */
+    h2 {{
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+      margin-top: 16px;
+      color: #111827;
+      font-weight: 600;
+      font-size: 1.25rem;
+    }}
+    h2.mt-0 {{ margin-top: 0; }}
 
-            {diff_styles}
-        </style>
-    </head>
-    <body>
-        <div class="page-container">
-          <div class="resume-page">
-            <aside class="sidebar">
-              <section>
-                <h1>{name}</h1>
-                <p class="headline-role">{role}</p>
-                <div class="sidebar-section-title">Contact</div>
-                <div>{contact_html}</div>
-              </section>
-              <section>
-                <div class="sidebar-section-title">Technical Skills</div>
-                <div>{skills_html}</div>
-              </section>
-            </aside>
-            <main class="main-content">
-              {main_content_page1}
-            </main>
+    h3 {{ font-size: 1.1rem; }}
+    .sidebar-title {{
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+    }}
+
+    /* ========== Bullet Points ========== */
+    .bullet-point {{
+      position: relative;
+      padding-left: 18px;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }}
+    .bullet-point::before {{
+      content: "■";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #6b7280;
+      font-size: 0.7rem;
+    }}
+
+    /* ========== Contact Row ========== */
+    .contact-row {{
+      display: flex;
+      align-items: center;
+      color: #374151;
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }}
+
+    /* ========== Skill Group ========== */
+    .skill-group {{ margin-bottom: 1rem; }}
+    .skill-label {{ font-weight: 600; color: #374151; font-size: 0.875rem; }}
+    .skill-text {{ color: #4b5563; font-size: 0.875rem; }}
+
+    /* ========== Experience Entry ========== */
+    .exp-entry {{ margin-bottom: 1.5rem; }}
+    .exp-header {{ display: flex; justify-content: space-between; align-items: baseline; }}
+    .exp-title {{ font-size: 1.125rem; font-weight: 600; color: #1f2937; margin: 0; }}
+    .exp-date {{ font-size: 0.875rem; color: #6b7280; }}
+    .exp-subtitle {{ font-size: 1rem; font-weight: 500; color: #4b5563; margin: 0; }}
+    .exp-bullets {{ margin-top: 0.75rem; }}
+
+    /* ========== Education Entry ========== */
+    .edu-entry {{ margin-bottom: 1.5rem; }}
+    .edu-school {{ font-weight: 700; color: #1f2937; text-transform: uppercase; font-size: 0.875rem; }}
+    .edu-degree {{ color: #374151; font-weight: 500; font-size: 0.875rem; }}
+    .edu-date {{ color: #6b7280; font-style: italic; font-size: 0.875rem; }}
+    .edu-coursework {{ margin-top: 0.5rem; font-size: 0.75rem; color: #4b5563; }}
+    .edu-note {{ color: #6b7280; font-size: 0.75rem; font-style: italic; margin-top: 0.25rem; }}
+
+    /* ========== Project Entry ========== */
+    .project-entry {{ margin-bottom: 1.5rem; }}
+    .project-title {{ font-size: 1.125rem; font-weight: 600; color: #1f2937; margin: 0; }}
+    .project-bullets {{ margin-top: 0.5rem; }}
+
+    /* ========== Editable Highlight ========== */
+    [contenteditable="true"] {{
+      outline: none;
+      transition: background-color 0.2s;
+      cursor: text;
+    }}
+    [contenteditable="true"]:hover {{
+      background-color: rgba(37, 99, 235, 0.05);
+    }}
+    [contenteditable="true"]:focus {{
+      background-color: rgba(37, 99, 235, 0.1);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+      border-radius: 2px;
+    }}
+
+    /* ========== Diff Highlight ========== */
+    {diff_styles}
+    
+    .diff-entry-new {{
+      border-left: 3px solid #22c55e;
+      padding-left: 8px;
+      background: rgba(34, 197, 94, 0.05);
+    }}
+
+    /* ========== Print Styles ========== */
+    @media print {{
+      body {{ background-color: white !important; padding: 0 !important; margin: 0 !important; }}
+      .page-container {{ box-shadow: none !important; margin: 0 !important; }}
+      .sidebar {{ background-color: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+      a {{ color: #2563eb !important; text-decoration: underline !important; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- ========== PAGE 1 ========== -->
+    <div class="resume-page">
+      <aside class="sidebar">
+        <section>
+          <h1 class="text-4xl font-bold text-gray-800" {name_edit}>{name}</h1>
+          <p class="text-lg text-gray-600 mt-1" {role_edit}>{role}</p>
+          
+          <div class="mt-8 space-y-4 text-sm">
+            {contact_html}
           </div>
+        </section>
 
-          <div class="resume-page">
-            <aside class="sidebar"></aside>
-            <main class="main-content">
-              {main_content_page2}
-            </main>
+        <section class="mt-8">
+          <h3 class="sidebar-title">Technical Skills</h3>
+          <div class="mt-4 space-y-4 text-sm">
+            {skills_html}
           </div>
-        </div>
-    </body>
-    </html>
-    """
+        </section>
+      </aside>
+
+      <main class="main-content">
+        <section>
+          <h2 class="text-xl mt-0">Profile Summary</h2>
+          <p class="text-gray-700 leading-relaxed text-sm" {summary_edit}>{summary}</p>
+        </section>
+
+        <section class="mt-6">
+          <h2 class="text-xl">Professional Experience</h2>
+          {experience_html}
+        </section>
+      </main>
+    </div>
+
+    <!-- ========== PAGE 2 ========== -->
+    <div class="resume-page">
+      <aside class="sidebar">
+        <!-- Empty sidebar for visual continuity -->
+        <div style="min-height: 100%;">&nbsp;</div>
+      </aside>
+      <main class="main-content">
+        <section>
+          <h2 class="text-xl mt-0">Selected Projects</h2>
+          <div class="space-y-6">
+            {projects_html}
+          </div>
+        </section>
+
+        <section>
+          <h2 class="text-xl">Education</h2>
+          <div class="mt-4 space-y-6 text-sm">
+            {education_html}
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>'''
+
+
+def render_resume_html_for_pdf(data: dict) -> str:
+    """Render resume HTML without contenteditable (for PDF generation)."""
+    return render_resume_html(data, editable=False)

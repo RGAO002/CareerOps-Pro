@@ -32,3 +32,6 @@ dist/
 build/
 *.egg-info/
 
+# Saved sessions (user data)
+saved_sessions/
+

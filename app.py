@@ -36,9 +36,10 @@ from services.mock_interview import (
     text_to_speech, speech_to_text,
     generate_interview_questions, evaluate_answer, generate_interview_summary
 )
-from utils.html_renderer import render_resume_html
+from utils.html_renderer import render_resume_html, render_resume_html_for_pdf
 from utils.pdf_utils import convert_html_to_pdf
 from utils.diff import compute_diff
+from utils.session_manager import save_session, load_session, delete_session, list_sessions, get_thumbnail_path
 
 # --- Config ---
 load_dotenv()
@@ -265,9 +266,41 @@ if 'show_feedback' not in st.session_state:
     st.session_state.show_feedback = False
 if 'current_evaluation' not in st.session_state:
     st.session_state.current_evaluation = None
+# Session management
+if 'current_session_id' not in st.session_state:
+    st.session_state.current_session_id = None
+if 'pdf_filename' not in st.session_state:
+    st.session_state.pdf_filename = None
+if 'resume_html' not in st.session_state:
+    st.session_state.resume_html = None
 
 
 # --- Helper Functions ---
+def auto_save_session():
+    """Auto-save current session if we have enough data."""
+    if (st.session_state.resume_data and 
+        st.session_state.pdf_bytes and 
+        st.session_state.current_session_id):
+        
+        # Ensure we have the latest HTML
+        if not st.session_state.resume_html:
+            st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+        
+        save_session(
+            pdf_bytes=st.session_state.pdf_bytes,
+            pdf_filename=st.session_state.pdf_filename or "resume.pdf",
+            resume_data=st.session_state.resume_data,
+            resume_html=st.session_state.resume_html,
+            analysis_result=st.session_state.analysis_result,
+            job_matches=st.session_state.job_matches,
+            timeline=st.session_state.timeline,
+            selected_job=st.session_state.selected_job,
+            current_diff=st.session_state.current_diff,
+            page=st.session_state.page,
+            session_id=st.session_state.current_session_id
+        )
+
+
 def execute_edit(new_data, message_text):
     """Execute edit operation and update state."""
     import uuid
@@ -280,8 +313,13 @@ def execute_edit(new_data, message_text):
     
     st.session_state.resume_data = new_data
     
-    html = render_resume_html(new_data, diff=diff, show_diff=st.session_state.show_diff)
-    st.session_state.pdf_bytes = convert_html_to_pdf(html)
+    # Update HTML (source of truth) and PDF
+    st.session_state.resume_html = render_resume_html_for_pdf(new_data)
+    html_with_diff = render_resume_html(new_data, diff=diff, show_diff=st.session_state.show_diff)
+    st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+    
+    # Auto-save session if we have one
+    auto_save_session()
     
     entry = {
         "id": str(uuid.uuid4()),
@@ -315,22 +353,17 @@ with st.sidebar:
     
     if uploaded_file and api_key:
         if st.button("🔍 Analyze Resume", type="primary", use_container_width=True):
-            with st.spinner("Processing your resume..."):
-                reader = PdfReader(uploaded_file)
-                text = "".join([page.extract_text() or "" for page in reader.pages])
-                
+            with st.spinner("Processing your resume with Vision AI..."):
                 uploaded_file.seek(0)
                 pdf_bytes = uploaded_file.read()
                 st.session_state.pdf_bytes = pdf_bytes
+                st.session_state.pdf_filename = uploaded_file.name
                 
-                if is_scanned_pdf(text):
-                    st.info("📷 Detected scanned PDF, using Vision OCR...")
-                    parse_result = parse_resume_from_image(pdf_bytes, api_key)
-                    if parse_result.get("success"):
-                        st.session_state.raw_text = parse_result.get("raw_text", "")
-                else:
-                    st.session_state.raw_text = text
-                    parse_result = parse_resume(text, model, api_key)
+                # Always use Vision mode for better accuracy
+                st.info("🔍 Using Vision AI for accurate parsing...")
+                parse_result = parse_resume_from_image(pdf_bytes, api_key)
+                if parse_result.get("success"):
+                    st.session_state.raw_text = parse_result.get("raw_text", "")
                 
                 if parse_result.get("success"):
                     st.session_state.resume_data = parse_result["data"]
@@ -346,10 +379,39 @@ with st.sidebar:
                     st.session_state.page = "analysis"
                     st.session_state.timeline = []
                     st.session_state.selected_job = None
+                    st.session_state.current_session_id = None  # New session, not saved yet
                 else:
                     st.error(f"❌ Failed to parse resume: {parse_result.get('error', 'Unknown error')}")
                     
                 st.rerun()
+    
+    # ========== SAVE SESSION BUTTON ==========
+    if st.session_state.resume_data and st.session_state.pdf_bytes:
+        st.divider()
+        if st.button("💾 Save Session", use_container_width=True):
+            # Ensure we have the latest HTML
+            if not st.session_state.resume_html:
+                st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+            
+            session_id = save_session(
+                pdf_bytes=st.session_state.pdf_bytes,
+                pdf_filename=st.session_state.pdf_filename or "resume.pdf",
+                resume_data=st.session_state.resume_data,
+                resume_html=st.session_state.resume_html,
+                analysis_result=st.session_state.analysis_result,
+                job_matches=st.session_state.job_matches,
+                timeline=st.session_state.timeline,
+                selected_job=st.session_state.selected_job,
+                current_diff=st.session_state.current_diff,
+                page=st.session_state.page,
+                session_id=st.session_state.current_session_id
+            )
+            st.session_state.current_session_id = session_id
+            st.success(f"✅ Session saved!")
+            st.rerun()
+        
+        if st.session_state.current_session_id:
+            st.caption(f"📍 Session: {st.session_state.current_session_id}")
     
     # Navigation
     if st.session_state.resume_data:
@@ -374,7 +436,92 @@ with st.sidebar:
 
 
 # --- Main Content ---
-if st.session_state.page == "analysis" and st.session_state.resume_data:
+
+# ========== WELCOME / SAVED SESSIONS PAGE ==========
+if not st.session_state.resume_data:
+    st.markdown("""
+        <div style="text-align: center; padding: 40px 0;">
+            <h1>🚀 Welcome to CareerOps Pro</h1>
+            <p style="font-size: 1.2rem; color: #64748b;">AI-Powered Resume Analysis & Optimization Platform</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Show saved sessions
+    saved_sessions = list_sessions()
+    
+    if saved_sessions:
+        st.markdown("## 📂 Your Saved Sessions")
+        st.markdown("Click on a session to restore your previous work.")
+        st.markdown("---")
+        
+        # Display sessions in a grid (3 columns)
+        cols = st.columns(3)
+        
+        for idx, session in enumerate(saved_sessions):
+            session_id = session["id"]
+            col = cols[idx % 3]
+            
+            with col:
+                # Thumbnail (larger)
+                thumb_path = get_thumbnail_path(session_id)
+                if thumb_path.exists():
+                    st.image(str(thumb_path), use_container_width=True)
+                else:
+                    st.info("📄 No preview")
+                
+                # Session info
+                display_name = session.get("name", "Unknown")
+                pdf_filename = session.get("pdf_filename", "resume.pdf")
+                updated_at = session.get("updated_at", "")
+                
+                st.markdown(f"**{display_name}**")
+                st.caption(f"📄 {pdf_filename}")
+                st.caption(f"🕒 {updated_at}")
+                
+                # Action buttons
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    if st.button("📥 Restore", key=f"main_restore_{session_id}", use_container_width=True):
+                        loaded = load_session(session_id)
+                        if loaded:
+                            st.session_state.pdf_bytes = loaded.get("pdf_bytes")
+                            st.session_state.pdf_filename = loaded.get("pdf_filename")
+                            st.session_state.resume_data = loaded.get("resume_data")
+                            st.session_state.resume_html = loaded.get("resume_html")
+                            st.session_state.analysis_result = loaded.get("analysis_result")
+                            st.session_state.job_matches = loaded.get("job_matches")
+                            st.session_state.timeline = loaded.get("timeline", [])
+                            st.session_state.selected_job = loaded.get("selected_job")
+                            st.session_state.current_diff = loaded.get("current_diff", {})
+                            st.session_state.page = loaded.get("page", "analysis")
+                            st.session_state.current_session_id = session_id
+                            st.rerun()
+                
+                with btn_col2:
+                    if st.button("🗑️ Delete", key=f"main_delete_{session_id}", use_container_width=True):
+                        delete_session(session_id)
+                        st.rerun()
+                
+                st.markdown("---")
+    else:
+        # No saved sessions - show instructions
+        st.markdown("""
+            <div style="
+                text-align: center; 
+                padding: 60px 40px;
+                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                border-radius: 16px;
+                margin: 40px 0;
+            ">
+                <div style="font-size: 4rem; margin-bottom: 20px;">📄</div>
+                <h3>Get Started</h3>
+                <p style="color: #64748b; max-width: 400px; margin: 0 auto;">
+                    Upload your resume PDF in the sidebar to begin analyzing and optimizing your resume with AI.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+elif st.session_state.page == "analysis" and st.session_state.resume_data:
     # ============== Analysis Page ==============
     st.markdown("## 📊 Resume Analysis Dashboard")
     
@@ -601,44 +748,286 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
+    # Initialize edit mode
+    if 'edit_mode' not in st.session_state:
+        st.session_state.edit_mode = False
+    
+    # ========== Maintain HTML as source of truth ==========
+    # Generate/update HTML whenever resume_data changes
+    import hashlib
+    data_hash = hashlib.md5(str(st.session_state.resume_data).encode()).hexdigest()[:8]
+    
+    if 'resume_html_hash' not in st.session_state or st.session_state.resume_html_hash != data_hash:
+        # Generate fresh HTML from current data
+        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+        st.session_state.resume_html_hash = data_hash
+        # Generate PDF from HTML
+        st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
+    
     col_preview, col_chat = st.columns([1.3, 1])
     
-    # PDF Preview
     with col_preview:
-        st.markdown("### 📄 Live Resume Preview")
+        st.markdown("### 📄 Resume Preview")
         
-        if st.session_state.pdf_bytes:
-            tool_col1, tool_col2, tool_col3 = st.columns([1, 1, 2])
-            with tool_col1:
-                clean_html = render_resume_html(st.session_state.resume_data)
-                clean_pdf = convert_html_to_pdf(clean_html)
-                if clean_pdf:
-                    st.download_button("⬇️ Download", clean_pdf, file_name="resume.pdf")
-            with tool_col2:
-                new_show_diff = st.toggle("Diff", value=st.session_state.show_diff)
-                if new_show_diff != st.session_state.show_diff:
-                    st.session_state.show_diff = new_show_diff
-                    html = render_resume_html(
-                        st.session_state.resume_data, 
-                        diff=st.session_state.current_diff, 
-                        show_diff=new_show_diff
-                    )
-                    st.session_state.pdf_bytes = convert_html_to_pdf(html)
-                    st.rerun()
-            with tool_col3:
-                if st.session_state.current_diff and st.session_state.show_diff:
-                    changed = list(st.session_state.current_diff.keys())
-                    if changed:
-                        st.caption(f"📝 Modified: {', '.join(changed)}")
+        # Toolbar
+        tool_col1, tool_col2, tool_col3 = st.columns([1, 1, 2])
+        with tool_col1:
+            if st.session_state.pdf_bytes:
+                st.download_button(
+                    "⬇️ Download PDF", 
+                    st.session_state.pdf_bytes, 
+                    file_name="resume.pdf", 
+                    mime="application/pdf",
+                    key=f"download_pdf_{data_hash}"
+                )
+        with tool_col2:
+            if st.button("✏️ Edit Mode" if not st.session_state.edit_mode else "👁️ Preview Mode"):
+                st.session_state.edit_mode = not st.session_state.edit_mode
+                st.rerun()
+        with tool_col3:
+            new_show_diff = st.toggle("Diff", value=st.session_state.show_diff)
+            if new_show_diff != st.session_state.show_diff:
+                st.session_state.show_diff = new_show_diff
+                st.rerun()
+        
+        if st.session_state.edit_mode:
+            # ========== EDIT MODE: Streamlit Forms ==========
+            st.markdown("---")
+            st.caption("📝 Edit fields below. Click ➕ to add, 🗑️ to delete.")
             
-            b64 = base64.b64encode(st.session_state.pdf_bytes).decode('utf-8')
-            st.markdown(
-                f'<iframe src="data:application/pdf;base64,{b64}#toolbar=1&navpanes=0&view=FitH" '
-                f'width="100%" height="850"></iframe>',
-                unsafe_allow_html=True
-            )
+            data = st.session_state.resume_data
+            changed = False
+            
+            # Basic Info (Name, Role, Contact)
+            with st.expander("👤 Basic Info", expanded=True):
+                new_name = st.text_input("Name", value=data.get("name", ""), key="edit_name")
+                new_role = st.text_input("Role/Title", value=data.get("role", ""), key="edit_role")
+                if new_name != data.get("name"):
+                    data["name"] = new_name
+                    changed = True
+                if new_role != data.get("role"):
+                    data["role"] = new_role
+                    changed = True
+                
+                # Contact items
+                st.markdown("**Contact Info**")
+                contacts = data.get("contact", [])
+                contacts_to_delete = []
+                for i, contact in enumerate(contacts):
+                    col_input, col_del = st.columns([5, 1])
+                    with col_input:
+                        new_contact = st.text_input(f"Item {i+1}", value=contact, key=f"edit_contact_{i}", label_visibility="collapsed")
+                        if new_contact != contact:
+                            data["contact"][i] = new_contact
+                            changed = True
+                    with col_del:
+                        if st.button("🗑️", key=f"del_contact_{i}", help="Delete this contact"):
+                            contacts_to_delete.append(i)
+                
+                # Delete contacts (reverse order to preserve indices)
+                for i in reversed(contacts_to_delete):
+                    data["contact"].pop(i)
+                    changed = True
+                
+                # Add new contact
+                if st.button("➕ Add Contact", key="add_contact"):
+                    if "contact" not in data:
+                        data["contact"] = []
+                    data["contact"].append("")
+                    changed = True
+            
+            # Summary
+            with st.expander("📝 Summary", expanded=True):
+                new_summary = st.text_area("Profile Summary", value=data.get("summary", ""), height=150, key="edit_summary")
+                if new_summary != data.get("summary"):
+                    data["summary"] = new_summary
+                    changed = True
+            
+            # Skills (with editable category names)
+            with st.expander("🛠️ Skills", expanded=False):
+                skills = data.get("skills", {})
+                new_skills = {}
+                cats_to_delete = []
+                
+                for idx, (cat, items) in enumerate(skills.items()):
+                    col_cat, col_del = st.columns([5, 1])
+                    with col_cat:
+                        new_cat = st.text_input("Category", value=cat, key=f"edit_skill_cat_{idx}")
+                    with col_del:
+                        if st.button("🗑️", key=f"del_skill_cat_{idx}", help="Delete this category"):
+                            cats_to_delete.append(cat)
+                            continue
+                    
+                    if cat not in cats_to_delete:
+                        new_items = st.text_input("Skills (comma-separated)", value=items, key=f"edit_skill_items_{idx}", label_visibility="collapsed")
+                        # Use new category name
+                        final_cat = new_cat if new_cat else cat
+                        new_skills[final_cat] = new_items
+                
+                # Check if skills changed
+                if new_skills != skills or cats_to_delete:
+                    data["skills"] = new_skills
+                    changed = True
+                
+                # Add new skill category
+                if st.button("➕ Add Skill Category", key="add_skill_cat"):
+                    new_cat_name = f"New Category {len(data.get('skills', {})) + 1}"
+                    if "skills" not in data:
+                        data["skills"] = {}
+                    data["skills"][new_cat_name] = ""
+                    changed = True
+            
+            # Experience
+            with st.expander("💼 Experience", expanded=False):
+                for i, exp in enumerate(data.get("experience", [])):
+                    st.markdown(f"**{exp.get('company', 'Company')}**")
+                    new_company = st.text_input("Company", value=exp.get("company", ""), key=f"edit_exp_company_{i}")
+                    new_exp_role = st.text_input("Role", value=exp.get("role", ""), key=f"edit_exp_role_{i}")
+                    new_date = st.text_input("Date", value=exp.get("date", ""), key=f"edit_exp_date_{i}")
+                    
+                    if new_company != exp.get("company"):
+                        data["experience"][i]["company"] = new_company
+                        changed = True
+                    if new_exp_role != exp.get("role"):
+                        data["experience"][i]["role"] = new_exp_role
+                        changed = True
+                    if new_date != exp.get("date"):
+                        data["experience"][i]["date"] = new_date
+                        changed = True
+                    
+                    # Bullets with add/delete
+                    st.markdown("*Bullet Points:*")
+                    bullets = exp.get("bullets", [])
+                    bullets_to_delete = []
+                    for j, bullet in enumerate(bullets):
+                        col_bullet, col_del = st.columns([5, 1])
+                        with col_bullet:
+                            new_bullet = st.text_area(f"Bullet {j+1}", value=bullet, height=80, key=f"edit_exp_bullet_{i}_{j}", label_visibility="collapsed")
+                            if new_bullet != bullet:
+                                data["experience"][i]["bullets"][j] = new_bullet
+                                changed = True
+                        with col_del:
+                            if st.button("🗑️", key=f"del_exp_bullet_{i}_{j}"):
+                                bullets_to_delete.append(j)
+                    
+                    # Delete bullets
+                    for j in reversed(bullets_to_delete):
+                        data["experience"][i]["bullets"].pop(j)
+                        changed = True
+                    
+                    # Add bullet
+                    if st.button("➕ Add Bullet", key=f"add_exp_bullet_{i}"):
+                        if "bullets" not in data["experience"][i]:
+                            data["experience"][i]["bullets"] = []
+                        data["experience"][i]["bullets"].append("")
+                        changed = True
+                    
+                    st.markdown("---")
+            
+            # Projects
+            with st.expander("🚀 Projects", expanded=False):
+                for i, proj in enumerate(data.get("projects", [])):
+                    st.markdown(f"**{proj.get('name', 'Project')}**")
+                    new_proj_name = st.text_input("Project Name", value=proj.get("name", ""), key=f"edit_proj_name_{i}")
+                    new_tech = st.text_input("Tech Stack", value=proj.get("tech", ""), key=f"edit_proj_tech_{i}")
+                    
+                    if new_proj_name != proj.get("name"):
+                        data["projects"][i]["name"] = new_proj_name
+                        changed = True
+                    if new_tech != proj.get("tech"):
+                        data["projects"][i]["tech"] = new_tech
+                        changed = True
+                    
+                    # Bullets with add/delete
+                    st.markdown("*Bullet Points:*")
+                    bullets = proj.get("bullets", [])
+                    bullets_to_delete = []
+                    for j, bullet in enumerate(bullets):
+                        col_bullet, col_del = st.columns([5, 1])
+                        with col_bullet:
+                            new_bullet = st.text_area(f"Bullet {j+1}", value=bullet, height=80, key=f"edit_proj_bullet_{i}_{j}", label_visibility="collapsed")
+                            if new_bullet != bullet:
+                                data["projects"][i]["bullets"][j] = new_bullet
+                                changed = True
+                        with col_del:
+                            if st.button("🗑️", key=f"del_proj_bullet_{i}_{j}"):
+                                bullets_to_delete.append(j)
+                    
+                    # Delete bullets
+                    for j in reversed(bullets_to_delete):
+                        data["projects"][i]["bullets"].pop(j)
+                        changed = True
+                    
+                    # Add bullet
+                    if st.button("➕ Add Bullet", key=f"add_proj_bullet_{i}"):
+                        if "bullets" not in data["projects"][i]:
+                            data["projects"][i]["bullets"] = []
+                        data["projects"][i]["bullets"].append("")
+                        changed = True
+                    
+                    st.markdown("---")
+            
+            # Education
+            with st.expander("🎓 Education", expanded=False):
+                for i, edu in enumerate(data.get("education", [])):
+                    st.markdown(f"**{edu.get('school', 'School')}**")
+                    new_school = st.text_input("School", value=edu.get("school", ""), key=f"edit_edu_school_{i}")
+                    new_degree = st.text_input("Degree", value=edu.get("degree", ""), key=f"edit_edu_degree_{i}")
+                    new_edu_date = st.text_input("Date", value=edu.get("date", ""), key=f"edit_edu_date_{i}")
+                    new_gpa = st.text_input("GPA", value=edu.get("gpa", ""), key=f"edit_edu_gpa_{i}")
+                    
+                    if new_school != edu.get("school"):
+                        data["education"][i]["school"] = new_school
+                        changed = True
+                    if new_degree != edu.get("degree"):
+                        data["education"][i]["degree"] = new_degree
+                        changed = True
+                    if new_edu_date != edu.get("date"):
+                        data["education"][i]["date"] = new_edu_date
+                        changed = True
+                    if new_gpa != edu.get("gpa", ""):
+                        data["education"][i]["gpa"] = new_gpa
+                        changed = True
+                    st.markdown("---")
+            
+            if changed:
+                st.session_state.resume_data = data
+                # Update HTML and auto-save
+                st.session_state.resume_html = render_resume_html_for_pdf(data)
+                st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
+                auto_save_session()
+                st.rerun()
+        
         else:
-            st.info("Generating preview...")
+            # ========== PREVIEW MODE: PDF Display ==========
+            # Generate preview PDF (with diff highlighting if enabled)
+            if st.session_state.show_diff and st.session_state.current_diff:
+                # Generate HTML with diff highlighting for preview
+                preview_html = render_resume_html(
+                    st.session_state.resume_data,
+                    diff=st.session_state.current_diff,
+                    show_diff=True,
+                    editable=False
+                )
+                preview_pdf = convert_html_to_pdf(preview_html)
+            else:
+                # Use the clean PDF (no diff)
+                preview_pdf = st.session_state.pdf_bytes
+            
+            if preview_pdf:
+                import base64
+                pdf_base64 = base64.b64encode(preview_pdf).decode('utf-8')
+                pdf_display = f'''
+                <iframe 
+                    src="data:application/pdf;base64,{pdf_base64}" 
+                    width="100%" 
+                    height="800px" 
+                    style="border: 1px solid #e5e7eb; border-radius: 8px;"
+                ></iframe>
+                '''
+                st.markdown(pdf_display, unsafe_allow_html=True)
+            else:
+                st.warning("PDF preview unavailable. Try refreshing the page.")
     
     # Chat Co-Pilot
     with col_chat:

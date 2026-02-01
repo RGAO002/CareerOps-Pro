@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{name}} - Resume</title>
+  <style>
+    /* ========== Base Reset & Fonts ========== */
+    @page { size: Letter; margin: 0; }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f3f4f6;
+      line-height: 1.5;
+      color: #374151;
+      font-size: 14px;
+    }
+
+    /* ========== Link Styles ========== */
+    a {
+      color: #2563eb;
+      text-decoration: underline;
+      text-decoration-color: rgba(37, 99, 235, 0.4);
+      text-underline-offset: 3px;
+    }
+    a:hover { color: #1d4ed8; }
+
+    /* ========== Page Container ========== */
+    .page-container {
+      width: 8.5in;
+      background-color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .resume-page {
+      min-height: 11in;
+      display: flex;
+      width: 100%;
+    }
+
+    /* ========== Sidebar ========== */
+    .sidebar {
+      width: 36%;
+      background-color: #f9fafb;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ========== Main Content ========== */
+    .main-content {
+      width: 64%;
+      padding: 2rem;
+    }
+
+    /* ========== Typography - Tailwind Equivalents ========== */
+    .text-4xl { font-size: 2.25rem; line-height: 2.5rem; }
+    .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+    .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+    .text-md { font-size: 1rem; line-height: 1.5rem; }
+    .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+    .text-xs { font-size: 0.75rem; line-height: 1rem; }
+
+    .font-bold { font-weight: 700; }
+    .font-semibold { font-weight: 600; }
+    .font-medium { font-weight: 500; }
+
+    .text-gray-800 { color: #1f2937; }
+    .text-gray-700 { color: #374151; }
+    .text-gray-600 { color: #4b5563; }
+    .text-gray-500 { color: #6b7280; }
+    .text-blue-600 { color: #2563eb; }
+
+    .uppercase { text-transform: uppercase; }
+    .italic { font-style: italic; }
+    .leading-relaxed { line-height: 1.625; }
+
+    /* ========== Spacing - Tailwind Equivalents ========== */
+    .mt-0 { margin-top: 0; }
+    .mt-1 { margin-top: 0.25rem; }
+    .mt-2 { margin-top: 0.5rem; }
+    .mt-3 { margin-top: 0.75rem; }
+    .mt-4 { margin-top: 1rem; }
+    .mt-6 { margin-top: 1.5rem; }
+    .mt-8 { margin-top: 2rem; }
+    .mb-6 { margin-bottom: 1.5rem; }
+    .ml-2 { margin-left: 0.5rem; }
+    .mr-3 { margin-right: 0.75rem; }
+    .pb-2 { padding-bottom: 0.5rem; }
+    .p-4 { padding: 1rem; }
+
+    .space-y-2 > * + * { margin-top: 0.5rem; }
+    .space-y-4 > * + * { margin-top: 1rem; }
+    .space-y-6 > * + * { margin-top: 1.5rem; }
+
+    /* ========== Flexbox - Tailwind Equivalents ========== */
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .items-baseline { align-items: baseline; }
+    .justify-between { justify-content: space-between; }
+    .shrink-0 { flex-shrink: 0; }
+
+    /* ========== Icons ========== */
+    .w-4 { width: 1rem; }
+    .h-4 { height: 1rem; }
+    .icon-svg {
+      width: 1rem;
+      height: 1rem;
+      margin-right: 0.75rem;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+
+    /* ========== Lists ========== */
+    .list-disc { list-style-type: disc; }
+    .list-inside { list-style-position: inside; }
+
+    /* ========== Section Headers ========== */
+    h2 {
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+      margin-top: 16px;
+      color: #111827;
+      font-weight: 600;
+      font-size: 1.25rem;
+    }
+    h2.mt-0 { margin-top: 0; }
+
+    h3 { font-size: 1.1rem; }
+    h3.sidebar-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1f2937;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+    }
+
+    /* ========== Bullet Points ========== */
+    .bullet-point {
+      position: relative;
+      padding-left: 18px;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .bullet-point::before {
+      content: "■";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #6b7280;
+      font-size: 0.7rem;
+    }
+
+    /* ========== Contact Row ========== */
+    .contact-row {
+      display: flex;
+      align-items: center;
+      color: #374151;
+      font-size: 0.875rem;
+    }
+
+    /* ========== Skill Group ========== */
+    .skill-group { margin-bottom: 1rem; }
+    .skill-label { font-weight: 600; color: #374151; font-size: 0.875rem; }
+    .skill-text { color: #4b5563; font-size: 0.875rem; }
+
+    /* ========== Experience Entry ========== */
+    .exp-entry { margin-bottom: 1.5rem; }
+    .exp-header { display: flex; justify-content: space-between; align-items: baseline; }
+    .exp-title { font-size: 1.125rem; font-weight: 600; color: #1f2937; }
+    .exp-date { font-size: 0.875rem; color: #6b7280; }
+    .exp-subtitle { font-size: 1rem; font-weight: 500; color: #4b5563; }
+    .exp-bullets { margin-top: 0.75rem; }
+
+    /* ========== Education Entry ========== */
+    .edu-entry { margin-bottom: 1.5rem; }
+    .edu-school { font-weight: 700; color: #1f2937; text-transform: uppercase; font-size: 0.875rem; }
+    .edu-degree { color: #374151; font-weight: 500; font-size: 0.875rem; }
+    .edu-date { color: #6b7280; font-style: italic; font-size: 0.875rem; }
+    .edu-coursework { margin-top: 0.5rem; font-size: 0.75rem; color: #4b5563; }
+    .edu-note { color: #6b7280; font-size: 0.75rem; font-style: italic; margin-top: 0.25rem; }
+
+    /* ========== Project Entry ========== */
+    .project-entry { margin-bottom: 1.5rem; }
+    .project-title { font-size: 1.125rem; font-weight: 600; color: #1f2937; }
+    .project-bullets { margin-top: 0.5rem; }
+
+    /* ========== Editable Highlight ========== */
+    [contenteditable="true"] {
+      outline: none;
+      transition: background-color 0.2s;
+    }
+    [contenteditable="true"]:hover {
+      background-color: rgba(37, 99, 235, 0.05);
+    }
+    [contenteditable="true"]:focus {
+      background-color: rgba(37, 99, 235, 0.1);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+      border-radius: 2px;
+    }
+
+    /* ========== Print Styles ========== */
+    @media print {
+      body { background-color: white !important; padding: 0 !important; margin: 0 !important; }
+      .page-container { box-shadow: none !important; margin: 0 !important; }
+      .sidebar { background-color: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      a { color: #2563eb !important; text-decoration: underline !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <!-- ========== PAGE 1 ========== -->
+    <div class="resume-page">
+      <aside class="sidebar">
+        <section>
+          <h1 class="text-4xl font-bold text-gray-800" contenteditable="true" data-field="name">{{name}}</h1>
+          <p class="text-lg text-gray-600 mt-1" contenteditable="true" data-field="role">{{role}}</p>
+          
+          <div class="mt-8 space-y-4 text-sm">
+            {{contact_html}}
+          </div>
+        </section>
+
+        <section class="mt-8">
+          <h3 class="sidebar-title">Technical Skills</h3>
+          <div class="mt-4 space-y-4 text-sm">
+            {{skills_html}}
+          </div>
+        </section>
+      </aside>
+
+      <main class="main-content">
+        <section>
+          <h2 class="text-xl mt-0">Profile Summary</h2>
+          <p class="text-gray-700 leading-relaxed text-sm" contenteditable="true" data-field="summary">{{summary}}</p>
+        </section>
+
+        <section class="mt-6">
+          <h2 class="text-xl">Professional Experience</h2>
+          {{experience_html}}
+        </section>
+      </main>
+    </div>
+
+    <!-- ========== PAGE 2 ========== -->
+    <div class="resume-page">
+      <aside class="sidebar"></aside>
+      <main class="main-content">
+        <section>
+          <h2 class="text-xl mt-0">Selected Projects</h2>
+          <div class="space-y-6">
+            {{projects_html}}
+          </div>
+        </section>
+
+        <section>
+          <h2 class="text-xl">Education</h2>
+          <div class="mt-4 space-y-6 text-sm">
+            {{education_html}}
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
