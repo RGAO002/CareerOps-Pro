@@ -453,7 +453,7 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
     
     body {{
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: #f3f4f6;
+      background-color: white;
       line-height: 1.5;
       color: #374151;
       font-size: 14px;
@@ -468,37 +468,51 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
     }}
     a:hover {{ color: #1d4ed8; }}
 
-    /* ========== Page Container ========== */
+    /* ========== Page Container - flowing layout ========== */
     .page-container {{
       width: 8.5in;
+      margin: 0 auto;
       background-color: white;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
+      position: relative;
     }}
 
-    .resume-page {{
-      min-height: 11in;
-      display: flex;
-      width: 100%;
-    }}
-
-    /* ========== Sidebar ========== */
-    .sidebar {{
-      width: 36%;
-      min-height: 11in;
+    /* ========== Sidebar background (repeats on each page) ========== */
+    .sidebar-bg {{
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 3.06in; /* 36% of 8.5in */
+      height: 100%;
       background-color: #f9fafb;
-      padding: 2rem;
-      display: flex;
-      flex-direction: column;
-      box-sizing: border-box;
+      z-index: -1;
     }}
 
-    /* ========== Main Content ========== */
-    .main-content {{
-      width: 64%;
+    /* ========== Sidebar content (first page only) ========== */
+    .sidebar {{
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 3.06in;
       padding: 2rem;
+    }}
+
+    /* ========== Main Content (flowing) ========== */
+    .main-content {{
+      margin-left: 3.06in;
+      padding: 2rem;
+      background-color: white;
+    }}
+    
+    /* ========== Section spacing ========== */
+    .main-content section {{
+      margin-bottom: 1.5rem;
+    }}
+    
+    /* ========== Avoid breaking inside entries ========== */
+    .exp-entry, .project-entry, .edu-entry {{
+      break-inside: avoid;
+      page-break-inside: avoid;
     }}
 
     /* ========== Typography ========== */
@@ -654,62 +668,53 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
   </style>
 </head>
 <body>
+  <div class="sidebar-bg"></div>
   <div class="page-container">
-    <!-- ========== PAGE 1 ========== -->
-    <div class="resume-page">
-      <aside class="sidebar">
-        <section>
-          <h1 class="text-4xl font-bold text-gray-800" {name_edit}>{name}</h1>
-          <p class="text-lg text-gray-600 mt-1" {role_edit}>{role}</p>
-          
-          <div class="mt-8 space-y-4 text-sm">
-            {contact_html}
-          </div>
-        </section>
+    <!-- Sidebar content (first page only) -->
+    <aside class="sidebar">
+      <section>
+        <h1 class="text-4xl font-bold text-gray-800" {name_edit}>{name}</h1>
+        <p class="text-lg text-gray-600 mt-1" {role_edit}>{role}</p>
+        
+        <div class="mt-8 space-y-4 text-sm">
+          {contact_html}
+        </div>
+      </section>
 
-        <section class="mt-8">
-          <h3 class="sidebar-title">Technical Skills</h3>
-          <div class="mt-4 space-y-4 text-sm">
-            {skills_html}
-          </div>
-        </section>
-      </aside>
+      <section class="mt-8">
+        <h3 class="sidebar-title">Technical Skills</h3>
+        <div class="mt-4 space-y-4 text-sm">
+          {skills_html}
+        </div>
+      </section>
+    </aside>
 
-      <main class="main-content">
-        <section>
-          <h2 class="text-xl mt-0">Profile Summary</h2>
-          <p class="text-gray-700 leading-relaxed text-sm" {summary_edit}>{summary}</p>
-        </section>
+    <!-- Main Content - flows naturally across pages -->
+    <main class="main-content">
+      <section>
+        <h2 class="text-xl mt-0">Profile Summary</h2>
+        <p class="text-gray-700 leading-relaxed text-sm" {summary_edit}>{summary}</p>
+      </section>
 
-        <section class="mt-6">
-          <h2 class="text-xl">Professional Experience</h2>
-          {experience_html}
-        </section>
-      </main>
-    </div>
+      <section>
+        <h2 class="text-xl">Professional Experience</h2>
+        {experience_html}
+      </section>
 
-    <!-- ========== PAGE 2 ========== -->
-    <div class="resume-page">
-      <aside class="sidebar">
-        <!-- Empty sidebar for visual continuity -->
-        <div style="min-height: 100%;">&nbsp;</div>
-      </aside>
-      <main class="main-content">
-        <section>
-          <h2 class="text-xl mt-0">Selected Projects</h2>
-          <div class="space-y-6">
-            {projects_html}
-          </div>
-        </section>
+      <section>
+        <h2 class="text-xl">Selected Projects</h2>
+        <div class="space-y-6">
+          {projects_html}
+        </div>
+      </section>
 
-        <section>
-          <h2 class="text-xl">Education</h2>
-          <div class="mt-4 space-y-6 text-sm">
-            {education_html}
-          </div>
-        </section>
-      </main>
-    </div>
+      <section>
+        <h2 class="text-xl">Education</h2>
+        <div class="mt-4 space-y-6 text-sm">
+          {education_html}
+        </div>
+      </section>
+    </main>
   </div>
 </body>
 </html>'''

@@ -748,6 +748,35 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
+    # One-click optimize
+    opt_col1, opt_col2 = st.columns([1, 5])
+    with opt_col1:
+        if st.button("⚡ One-click Optimize", type="primary"):
+            if not st.session_state.selected_job:
+                st.warning("Please select a job before optimizing.")
+            else:
+                prompt = (
+                    "Optimize the entire resume for the selected job. "
+                    "Improve summary, experience bullets, projects, and skills. "
+                    "Preserve factual accuracy; only rephrase or reorder content, "
+                    "do not invent new experiences or metrics. "
+                    "Return an updated resume data structure."
+                )
+                st.session_state.timeline.append({
+                    "id": str(uuid.uuid4()), "role": "user", "type": "chat", "content": "One-click optimize", "meta": {}
+                })
+                with st.spinner("Optimizing resume..."):
+                    result = edit_resume(
+                        prompt,
+                        st.session_state.resume_data,
+                        st.session_state.timeline[:-1],
+                        model, api_key,
+                        st.session_state.selected_job
+                    )
+                    if result.get("type") == "edit":
+                        execute_edit(result["data"], result.get("message", "Optimized."))
+                st.rerun()
+    
     # Initialize edit mode
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
