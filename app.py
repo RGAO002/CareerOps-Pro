@@ -740,18 +740,28 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
     
     if st.session_state.selected_job:
         job = st.session_state.selected_job
+        score = job.get("match_score")
+        score_class = "" if (score is None or score >= 80) else "medium" if score >= 60 else "low"
+        score_html = ""
+        if score is not None:
+            score_html = f'<div class="match-score {score_class}">{score}% Match</div>'
         st.markdown(f"""
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         padding: 15px 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
-                <div style="font-size: 0.85rem; opacity: 0.9;">Tailoring Resume For:</div>
-                <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title')} @ {job.get('company')}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 0.85rem; opacity: 0.9;">Tailoring Resume For:</div>
+                        <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title')} @ {job.get('company')}</div>
+                    </div>
+                    {score_html}
+                </div>
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click optimize
+    # One-click tailor
     opt_col1, opt_col2 = st.columns([1, 5])
     with opt_col1:
-        if st.button("⚡ One-click Optimize", type="primary"):
+        if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
                 st.warning("Please select a job before optimizing.")
             else:
