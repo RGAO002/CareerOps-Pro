@@ -31,7 +31,7 @@ from streamlit_js_eval import streamlit_js_eval
 from services.resume_parser import parse_resume, parse_resume_from_image, is_scanned_pdf
 from services.resume_analyzer import analyze_resume
 from services.job_matcher import match_jobs, parse_custom_jd, SAMPLE_JOBS
-from services.resume_editor import edit_resume
+from services.resume_editor import edit_resume, tailor_section
 from services.mock_interview import (
     text_to_speech, speech_to_text,
     generate_interview_questions, evaluate_answer, generate_interview_summary
@@ -249,6 +249,9 @@ if 'current_diff' not in st.session_state:
     st.session_state.current_diff = {}
 if 'previous_data' not in st.session_state:
     st.session_state.previous_data = None
+# Tailor state
+if 'tailor_results' not in st.session_state:
+    st.session_state.tailor_results = None
 # Interview state
 if 'interview_questions' not in st.session_state:
     st.session_state.interview_questions = None
@@ -758,34 +761,26 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor
+    # One-click tailor with optional custom instructions
     opt_col1, opt_col2 = st.columns([1, 5])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
-                st.warning("Please select a job before optimizing.")
+                st.warning("Please select a job first.")
             else:
-                prompt = (
-                    "Optimize the entire resume for the selected job. "
-                    "Improve summary, experience bullets, projects, and skills. "
-                    "Preserve factual accuracy; only rephrase or reorder content, "
-                    "do not invent new experiences or metrics. "
-                    "Return an updated resume data structure."
-                )
-                st.session_state.timeline.append({
-                    "id": str(uuid.uuid4()), "role": "user", "type": "chat", "content": "One-click optimize", "meta": {}
-                })
-                with st.spinner("Optimizing resume..."):
-                    result = edit_resume(
-                        prompt,
-                        st.session_state.resume_data,
-                        st.session_state.timeline[:-1],
-                        model, api_key,
-                        st.session_state.selected_job
-                    )
-                    if result.get("type") == "edit":
-                        execute_edit(result["data"], result.get("message", "Optimized."))
+                st.session_state.trigger_action = {
+                    "type": "start_tailor",
+                    "payload": st.session_state.get("tailor_custom_instructions", "")
+                }
                 st.rerun()
+    with opt_col2:
+        with st.expander("✏️ Add custom instructions"):
+            st.text_area(
+                "Tell AI how to tailor",
+                placeholder="e.g., Emphasize leadership experience, highlight cloud skills, make tone more aggressive...",
+                height=80,
+                key="tailor_custom_instructions"
+            )
     
     # Initialize edit mode
     if 'edit_mode' not in st.session_state:
@@ -1118,7 +1113,157 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
                         break
                 st.rerun()
-        
+
+            elif action['type'] == "start_tailor":
+                user_instructions = action['payload']
+                job = st.session_state.selected_job
+
+                snapshot_before = copy.deepcopy(st.session_state.resume_data)
+
+                sections_to_tailor = ["summary", "skills", "experience", "projects"]
+                section_labels = {
+                    "summary": "📝 Profile Summary",
+                    "skills": "🛠️ Technical Skills",
+                    "experience": "💼 Work Experience",
+                    "projects": "🚀 Projects"
+                }
+
+                tailor_entry = {
+                    "id": str(uuid.uuid4()),
+                    "role": "assistant",
+                    "type": "tailor",
+                    "content": f"One-click tailor for {job.get('title')} @ {job.get('company')}",
+                    "meta": {
+                        "snapshot_before": snapshot_before,
+                        "sections": {}
+                    },
+                    "is_reverted": False
+                }
+
+                # Add user message to timeline
+                st.session_state.timeline.append({
+                    "id": str(uuid.uuid4()),
+                    "role": "user",
+                    "type": "chat",
+                    "content": "One-click tailor" + (f": {user_instructions}" if user_instructions and user_instructions.strip() else ""),
+                    "meta": {}
+                })
+
+                with st.status(
+                    f"🔄 Tailoring resume for {job.get('title')} @ {job.get('company')}...",
+                    expanded=True
+                ) as status:
+                    for section in sections_to_tailor:
+                        label = section_labels[section]
+                        st.write(f"{label} — Tailoring...")
+
+                        section_before = copy.deepcopy(st.session_state.resume_data.get(section))
+
+                        result = tailor_section(
+                            section_name=section,
+                            current_data=st.session_state.resume_data,
+                            target_job=job,
+                            user_instructions=user_instructions,
+                            model_choice=model,
+                            api_key=api_key
+                        )
+
+                        if "error" in result:
+                            st.write(f"   ⚠️ {result['error']}")
+                            tailor_entry["meta"]["sections"][section] = {
+                                "before": section_before,
+                                "after": section_before,
+                                "message": f"Error: {result['error']}",
+                                "reverted": False,
+                                "error": True
+                            }
+                        else:
+                            st.session_state.resume_data[section] = result["section_data"]
+                            message = result.get("message", "Updated")
+                            st.write(f"   ✅ {message}")
+                            tailor_entry["meta"]["sections"][section] = {
+                                "before": section_before,
+                                "after": copy.deepcopy(result["section_data"]),
+                                "message": message,
+                                "reverted": False,
+                                "error": False
+                            }
+
+                    status.update(label="✅ Tailoring complete!", state="complete", expanded=False)
+
+                # Compute diff and update HTML/PDF
+                diff = compute_diff(snapshot_before, st.session_state.resume_data)
+                st.session_state.current_diff = diff
+                st.session_state.previous_data = snapshot_before
+
+                st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+                html_with_diff = render_resume_html(
+                    st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
+                )
+                st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+
+                st.session_state.timeline.append(tailor_entry)
+                st.session_state.tailor_results = tailor_entry["id"]
+
+                auto_save_session()
+                st.rerun()
+
+            elif action['type'] == "revert_section":
+                tailor_id = action['payload']['tailor_id']
+                section_name = action['payload']['section']
+                for item in st.session_state.timeline:
+                    if item['id'] == tailor_id and item.get('type') == 'tailor':
+                        section_info = item['meta']['sections'].get(section_name)
+                        if section_info and not section_info.get('reverted'):
+                            st.session_state.resume_data[section_name] = copy.deepcopy(section_info['before'])
+                            section_info['reverted'] = True
+                            diff = compute_diff(item['meta']['snapshot_before'], st.session_state.resume_data)
+                            st.session_state.current_diff = diff
+                            st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+                            html_with_diff = render_resume_html(
+                                st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
+                            )
+                            st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+                            auto_save_session()
+                        break
+                st.rerun()
+
+            elif action['type'] == "redo_section":
+                tailor_id = action['payload']['tailor_id']
+                section_name = action['payload']['section']
+                for item in st.session_state.timeline:
+                    if item['id'] == tailor_id and item.get('type') == 'tailor':
+                        section_info = item['meta']['sections'].get(section_name)
+                        if section_info and section_info.get('reverted'):
+                            st.session_state.resume_data[section_name] = copy.deepcopy(section_info['after'])
+                            section_info['reverted'] = False
+                            diff = compute_diff(item['meta']['snapshot_before'], st.session_state.resume_data)
+                            st.session_state.current_diff = diff
+                            st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+                            html_with_diff = render_resume_html(
+                                st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
+                            )
+                            st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+                            auto_save_session()
+                        break
+                st.rerun()
+
+            elif action['type'] == "revert_all_sections":
+                tailor_id = action['payload']
+                for item in st.session_state.timeline:
+                    if item['id'] == tailor_id and item.get('type') == 'tailor':
+                        st.session_state.resume_data = copy.deepcopy(item['meta']['snapshot_before'])
+                        for sec_info in item['meta']['sections'].values():
+                            if not sec_info.get('error'):
+                                sec_info['reverted'] = True
+                        st.session_state.current_diff = {}
+                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+                        html = render_resume_html(st.session_state.resume_data)
+                        st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        auto_save_session()
+                        break
+                st.rerun()
+
         chat_container = st.container(height=500)
         with chat_container:
             for item in st.session_state.timeline:
@@ -1149,7 +1294,56 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                                 if st.button("Revert", key=f"u_{item['id']}"):
                                     st.session_state.trigger_action = {"type": "revert", "payload": item['id']}
                                     st.rerun()
-        
+
+                        elif item['type'] == 'tailor':
+                            sections = item['meta'].get('sections', {})
+                            for sec_name in ["summary", "skills", "experience", "projects"]:
+                                if sec_name not in sections:
+                                    continue
+                                sec = sections[sec_name]
+                                sec_labels = {
+                                    "summary": "📝 Profile Summary",
+                                    "skills": "🛠️ Technical Skills",
+                                    "experience": "💼 Work Experience",
+                                    "projects": "🚀 Projects"
+                                }
+                                label = sec_labels.get(sec_name, sec_name.title())
+
+                                if sec.get('error'):
+                                    st.markdown(f"<div class='edit-log' style='border-left-color: #ef4444;'>{label}: ⚠️ {sec['message']}</div>", unsafe_allow_html=True)
+                                    continue
+
+                                c1, c2 = st.columns([4, 1])
+                                if sec.get('reverted', False):
+                                    c1.markdown(f"<div class='edit-log reverted-log'>{label}: ↩️ Reverted</div>", unsafe_allow_html=True)
+                                    if c2.button("Redo", key=f"redo_sec_{item['id']}_{sec_name}"):
+                                        st.session_state.trigger_action = {
+                                            "type": "redo_section",
+                                            "payload": {"tailor_id": item['id'], "section": sec_name}
+                                        }
+                                        st.rerun()
+                                else:
+                                    c1.markdown(f"<div class='edit-log'>{label}: ✅ {sec['message']}</div>", unsafe_allow_html=True)
+                                    if c2.button("Revert", key=f"rev_sec_{item['id']}_{sec_name}"):
+                                        st.session_state.trigger_action = {
+                                            "type": "revert_section",
+                                            "payload": {"tailor_id": item['id'], "section": sec_name}
+                                        }
+                                        st.rerun()
+
+                            # Revert All button — show only if at least one section is not reverted
+                            has_active = any(
+                                not s.get('reverted') and not s.get('error')
+                                for s in sections.values()
+                            )
+                            if has_active:
+                                if st.button("↩️ Revert All", key=f"revert_all_{item['id']}"):
+                                    st.session_state.trigger_action = {
+                                        "type": "revert_all_sections",
+                                        "payload": item['id']
+                                    }
+                                    st.rerun()
+
         if prompt := st.chat_input("Ask me to modify your resume..."):
             st.session_state.timeline.append({
                 "id": str(uuid.uuid4()), "role": "user", "type": "chat", "content": prompt, "meta": {}
