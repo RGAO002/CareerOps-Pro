@@ -6,7 +6,7 @@ CareerOps Pro is an intelligent resume assistant that analyzes your resume, scor
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-green.svg)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--5.2-green.svg)
 
 ---
 
