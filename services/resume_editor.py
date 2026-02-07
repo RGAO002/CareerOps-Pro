@@ -133,8 +133,9 @@ def _get_section_specific_instructions(section_name):
             "For the SKILLS section:\n"
             "- Reorder skill categories to put the most relevant ones first\n"
             "- Within each category, put the most relevant skills first\n"
-            "- Add relevant skills the candidate likely has based on their experience\n"
-            "- Remove or deprioritize skills not relevant to this role\n"
+            "- You MAY add a few skills that are explicitly required by this job AND the candidate plausibly has based on their experience — but keep additions minimal\n"
+            "- Do NOT add generic or unrelated skills\n"
+            "- Do NOT significantly expand the length of any category\n"
             "- The section_data should be a dict of category: comma-separated-skills-string"
         ),
         "experience": (
@@ -157,6 +158,79 @@ def _get_section_specific_instructions(section_name):
         )
     }
     return instructions.get(section_name, "")
+
+
+def _constrain_section_length(section_name, original, tailored, max_growth=1.2):
+    """
+    Prevent AI from inflating section content beyond original length.
+    max_growth: e.g. 1.2 means allow at most 20% longer than original.
+    """
+    if original is None or tailored is None:
+        return tailored
+
+    # --- summary (string) ---
+    if section_name == "summary" and isinstance(original, str) and isinstance(tailored, str):
+        max_len = int(len(original) * max_growth)
+        if len(tailored) > max_len:
+            # Truncate to last complete sentence within limit
+            truncated = tailored[:max_len]
+            last_period = truncated.rfind('.')
+            if last_period > len(original) * 0.5:
+                tailored = truncated[:last_period + 1]
+            else:
+                tailored = truncated.rstrip()
+            print(f"[DEBUG] Constrained summary: {len(original)} → {len(tailored)} chars (max {max_len})")
+        return tailored
+
+    # --- skills (dict of category: comma-separated string) ---
+    if section_name == "skills" and isinstance(original, dict) and isinstance(tailored, dict):
+        constrained = {}
+        for cat, skills_str in tailored.items():
+            if cat in original:
+                orig_count = len([s.strip() for s in original[cat].split(',') if s.strip()])
+                new_skills = [s.strip() for s in skills_str.split(',') if s.strip()]
+                max_count = orig_count + 2  # allow at most 2 new skills per category
+                if len(new_skills) > max_count:
+                    new_skills = new_skills[:max_count]
+                    print(f"[DEBUG] Constrained skills[{cat}]: {len(new_skills)+len(new_skills)-max_count} → {max_count}")
+                constrained[cat] = ', '.join(new_skills)
+            else:
+                # New category added by AI — only keep if original has few categories
+                if len(tailored) <= len(original) + 1:
+                    constrained[cat] = skills_str
+                else:
+                    print(f"[DEBUG] Dropped new skills category: {cat}")
+        return constrained
+
+    # --- experience / projects (list of dicts with bullets) ---
+    if section_name in ("experience", "projects") and isinstance(original, list) and isinstance(tailored, list):
+        for i, new_item in enumerate(tailored):
+            if i >= len(original) or not isinstance(new_item, dict) or not isinstance(original[i], dict):
+                continue
+            orig_bullets = original[i].get("bullets", [])
+            new_bullets = new_item.get("bullets", [])
+            # Constrain each bullet's length
+            constrained_bullets = []
+            for j, bullet in enumerate(new_bullets):
+                if j < len(orig_bullets):
+                    orig_len = len(orig_bullets[j])
+                    max_bullet_len = int(orig_len * max_growth)
+                    if len(bullet) > max_bullet_len and orig_len > 20:
+                        bullet = bullet[:max_bullet_len].rstrip()
+                        # Try to end at a word boundary
+                        last_space = bullet.rfind(' ')
+                        if last_space > max_bullet_len * 0.7:
+                            bullet = bullet[:last_space]
+                        print(f"[DEBUG] Constrained {section_name}[{i}].bullet[{j}]: {len(new_bullets[j])} → {len(bullet)} chars")
+                constrained_bullets.append(bullet)
+            new_item["bullets"] = constrained_bullets
+        # Don't allow adding new entries
+        if len(tailored) > len(original):
+            tailored = tailored[:len(original)]
+            print(f"[DEBUG] Constrained {section_name} entries: trimmed to {len(original)}")
+        return tailored
+
+    return tailored
 
 
 def tailor_section(section_name, current_data, target_job, user_instructions, model_choice, api_key):
@@ -216,7 +290,7 @@ GUIDELINES:
 - Address the identified gaps where possible through strategic rephrasing
 - Follow the tailoring tips provided above
 - You MAY add quantifiable metrics, impact numbers, and achievements to make bullets more compelling (be realistic but impactful)
-- You MAY add relevant skills that the candidate could plausibly have based on their experience
+- For skills: you MAY add a few skills explicitly required by this job that the candidate plausibly has, but keep additions minimal and job-relevant only
 - DO NOT fabricate entire new job experiences or projects
 - Maintain the same JSON structure/schema as the original section
 
@@ -239,7 +313,7 @@ Return ONLY valid JSON with exactly two keys:
         if "section_data" not in result:
             return {"error": f"AI response missing section_data for {section_name}"}
 
-        # Protect bullet counts for experience/projects
+        # Protect bullet counts for experience/projects (prevent deletion)
         if section_name in ("experience", "projects"):
             original_section = current_data.get(section_name, [])
             new_section = result["section_data"]
@@ -251,6 +325,12 @@ Return ONLY valid JSON with exactly two keys:
                         if len(new_bullets) < len(orig_bullets):
                             print(f"[DEBUG] Tailor protected {section_name}[{i}] bullets: {len(new_bullets)} → {len(orig_bullets)}")
                             new_item["bullets"] = orig_bullets
+
+        # Constrain length to prevent inflation
+        original_section = current_data.get(section_name)
+        result["section_data"] = _constrain_section_length(
+            section_name, original_section, result["section_data"]
+        )
 
         return result
 
