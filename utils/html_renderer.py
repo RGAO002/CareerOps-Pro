@@ -488,11 +488,9 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
       z-index: -1;
     }}
 
-    /* ========== Sidebar content (first page only) ========== */
+    /* ========== Sidebar content (flows with document) ========== */
     .sidebar {{
-      position: absolute;
-      left: 0;
-      top: 0;
+      float: left;
       width: 3.06in;
       padding: 2rem;
     }}
@@ -510,9 +508,14 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
     }}
     
     /* ========== Avoid breaking inside entries ========== */
-    .exp-entry, .project-entry, .edu-entry {{
+    .project-entry, .edu-entry {{
       break-inside: avoid;
       page-break-inside: avoid;
+    }}
+    /* Experience entries: keep header+subtitle together, but allow bullets to break across pages */
+    .exp-header, .exp-subtitle {{
+      break-after: avoid;
+      page-break-after: avoid;
     }}
 
     /* ========== Typography ========== */
@@ -615,9 +618,9 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
 
     /* ========== Experience Entry ========== */
     .exp-entry {{ margin-bottom: 1.5rem; }}
-    .exp-header {{ display: flex; justify-content: space-between; align-items: baseline; }}
-    .exp-title {{ font-size: 1.125rem; font-weight: 600; color: #1f2937; margin: 0; }}
-    .exp-date {{ font-size: 0.875rem; color: #6b7280; }}
+    .exp-header {{ display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; }}
+    .exp-title {{ font-size: 1.125rem; font-weight: 600; color: #1f2937; margin: 0; flex: 1; min-width: 0; }}
+    .exp-date {{ font-size: 0.875rem; color: #6b7280; white-space: nowrap; flex-shrink: 0; text-align: right; }}
     .exp-subtitle {{ font-size: 1rem; font-weight: 500; color: #4b5563; margin: 0; }}
     .exp-bullets {{ margin-top: 0.75rem; }}
 
