@@ -117,8 +117,8 @@ Return a JSON object with the following structure:
 }}
 
 EXTRACTION GUIDELINES:
-- Extract the job title exactly as stated
-- Identify company name from the JD
+- Extract the job title WITHOUT the company name (e.g., "Software Engineer", not "Software Engineer @ Suno")
+- Identify company name separately from the JD
 - List 5-8 key requirements/qualifications
 - Be specific in match_reasons (reference actual skills/experience from resume)
 - Be specific in gaps (what's required but missing from resume)

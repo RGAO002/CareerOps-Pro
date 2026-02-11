@@ -71,7 +71,10 @@ def save_session(
     selected_job: dict = None,
     current_diff: dict = None,
     page: str = "analysis",
-    session_id: str = None
+    session_id: str = None,
+    cover_letter_text: str = "",
+    cover_letter_question: str = "",
+    cl_timeline: list = None
 ) -> str:
     """
     Save a session. If session_id is provided, update existing session.
@@ -114,7 +117,10 @@ def save_session(
         "timeline": timeline or [],
         "selected_job": selected_job,
         "current_diff": current_diff or {},
-        "page": page
+        "page": page,
+        "cover_letter_text": cover_letter_text,
+        "cover_letter_question": cover_letter_question,
+        "cl_timeline": cl_timeline or []
     }
     state_path = session_dir / "state.json"
     with open(state_path, "w") as f:

@@ -32,6 +32,8 @@ from services.resume_parser import parse_resume, parse_resume_from_image, is_sca
 from services.resume_analyzer import analyze_resume
 from services.job_matcher import match_jobs, parse_custom_jd, SAMPLE_JOBS
 from services.resume_editor import edit_resume, tailor_section
+from services.humanizer import humanize_resume, humanize_text, check_credits
+from services.cover_letter import generate_cover_letter, edit_cover_letter
 from services.mock_interview import (
     text_to_speech, speech_to_text,
     generate_interview_questions, evaluate_answer, generate_interview_summary
@@ -276,6 +278,15 @@ if 'pdf_filename' not in st.session_state:
     st.session_state.pdf_filename = None
 if 'resume_html' not in st.session_state:
     st.session_state.resume_html = None
+# Cover letter state
+if 'cover_letter_text' not in st.session_state:
+    st.session_state.cover_letter_text = ""
+if 'cover_letter_question' not in st.session_state:
+    st.session_state.cover_letter_question = ""
+if 'cl_timeline' not in st.session_state:
+    st.session_state.cl_timeline = []
+if 'cl_trigger_action' not in st.session_state:
+    st.session_state.cl_trigger_action = None
 
 
 # --- Helper Functions ---
@@ -300,7 +311,10 @@ def auto_save_session():
             selected_job=st.session_state.selected_job,
             current_diff=st.session_state.current_diff,
             page=st.session_state.page,
-            session_id=st.session_state.current_session_id
+            session_id=st.session_state.current_session_id,
+            cover_letter_text=st.session_state.cover_letter_text,
+            cover_letter_question=st.session_state.cover_letter_question,
+            cl_timeline=st.session_state.cl_timeline
         )
 
 
@@ -329,9 +343,9 @@ def execute_edit(new_data, message_text):
         "role": "assistant",
         "type": "edit",
         "content": message_text,
-        "meta": { 
-            "snapshot_before": snapshot_before, 
-            "data_applied": new_data,
+        "meta": {
+            "snapshot_before": snapshot_before,
+            "data_applied": copy.deepcopy(new_data),
             "diff": diff
         },
         "is_reverted": False
@@ -432,6 +446,11 @@ with st.sidebar:
                 st.session_state.page = "editor"
                 st.rerun()
             
+            if st.button("📝 Cover Letter", use_container_width=True,
+                         type="primary" if st.session_state.page == "cover_letter" else "secondary"):
+                st.session_state.page = "cover_letter"
+                st.rerun()
+
             if st.button("🎙️ Mock Interview", use_container_width=True,
                          type="primary" if st.session_state.page == "interview" else "secondary"):
                 st.session_state.page = "interview"
@@ -498,6 +517,9 @@ if not st.session_state.resume_data:
                             st.session_state.current_diff = loaded.get("current_diff", {})
                             st.session_state.page = loaded.get("page", "analysis")
                             st.session_state.current_session_id = session_id
+                            st.session_state.cover_letter_text = loaded.get("cover_letter_text", "")
+                            st.session_state.cover_letter_question = loaded.get("cover_letter_question", "")
+                            st.session_state.cl_timeline = loaded.get("cl_timeline", [])
                             st.rerun()
                 
                 with btn_col2:
@@ -674,11 +696,14 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                 st.session_state.selected_job = job
                 st.session_state.page = "editor"
                 st.session_state.timeline = []
-                
+                st.session_state.cover_letter_text = ""
+                st.session_state.cover_letter_question = ""
+                st.session_state.cl_timeline = []
+
                 html = render_resume_html(st.session_state.resume_data)
                 st.session_state.pdf_bytes = convert_html_to_pdf(html)
                 st.session_state.current_diff = {}
-                
+
                 st.rerun()
     
     # Job Matching
@@ -730,11 +755,14 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                         st.session_state.selected_job = job
                         st.session_state.page = "editor"
                         st.session_state.timeline = []
-                        
+                        st.session_state.cover_letter_text = ""
+                        st.session_state.cover_letter_question = ""
+                        st.session_state.cl_timeline = []
+
                         html = render_resume_html(st.session_state.resume_data)
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
                         st.session_state.current_diff = {}
-                        
+
                         st.rerun()
 
 elif st.session_state.page == "editor" and st.session_state.resume_data:
@@ -754,15 +782,15 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-size: 0.85rem; opacity: 0.9;">Tailoring Resume For:</div>
-                        <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title')} @ {job.get('company')}</div>
+                        <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title') if job.get('company', '').lower() in job.get('title', '').lower() else job.get('title') + ' @ ' + job.get('company', '')}</div>
                     </div>
                     {score_html}
                 </div>
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor with optional custom instructions
-    opt_col1, opt_col2 = st.columns([1, 5])
+    # One-click tailor + Humanize buttons with optional settings
+    opt_col1, opt_col2, opt_col3 = st.columns([1, 1, 4])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
@@ -774,13 +802,50 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 }
                 st.rerun()
     with opt_col2:
-        with st.expander("✏️ Add custom instructions"):
+        if st.button("🔒 Humanize Text"):
+            if not os.getenv("UNDETECTABLE_API_KEY"):
+                st.warning("UNDETECTABLE_API_KEY not found in .env")
+            elif not st.session_state.resume_data:
+                st.warning("No resume loaded.")
+            else:
+                st.session_state.trigger_action = {
+                    "type": "start_humanize",
+                    "payload": {
+                        "strength": st.session_state.get("humanize_strength", "More Human"),
+                        "model": st.session_state.get("humanize_model", "v11"),
+                        "readability": st.session_state.get("humanize_readability", "Journalist"),
+                        "purpose": "General Writing",
+                        "sections": st.session_state.get("humanize_sections", ["summary", "experience", "projects"]),
+                    }
+                }
+                st.rerun()
+    with opt_col3:
+        with st.expander("⚙️ Tailor & Text Humanize Settings"):
             st.text_area(
-                "Tell AI how to tailor",
-                placeholder="e.g., Emphasize leadership experience, highlight cloud skills, make tone more aggressive...",
-                height=80,
+                "Custom tailor instructions (optional)",
+                placeholder="e.g., Emphasize leadership experience, highlight cloud skills...",
+                height=160,
                 key="tailor_custom_instructions"
             )
+            st.checkbox("Auto-humanize after tailor", key="auto_humanize", value=False)
+            st.divider()
+            st.caption("🔒 Humanize Settings")
+            h_s_col1, h_s_col2 = st.columns(2)
+            with h_s_col1:
+                st.selectbox("Strength", ["Quality", "Balanced", "More Human"], index=2, key="humanize_strength")
+                st.selectbox("Model", ["v11", "v11sr", "v2"], index=0, key="humanize_model",
+                             help="v11: English-optimized | v11sr: Best English, slower | v2: Multilingual")
+            with h_s_col2:
+                st.selectbox("Readability", ["High School", "University", "Doctorate", "Journalist", "Marketing"], index=3, key="humanize_readability")
+            st.multiselect("Sections to humanize", ["summary", "experience", "projects"], default=["summary", "experience", "projects"], key="humanize_sections")
+            # Show credits
+            _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+            if _ukey:
+                try:
+                    _credits = check_credits(_ukey)
+                    st.caption(f"💰 Credits: {_credits.get('credits', 'N/A')}")
+                except Exception:
+                    st.caption("💰 Credits: unable to check")
     
     # Initialize edit mode
     if 'edit_mode' not in st.session_state:
@@ -1095,22 +1160,26 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             elif action['type'] == "revert":
                 for item in st.session_state.timeline:
                     if item['id'] == action['payload']:
-                        st.session_state.resume_data = item['meta']['snapshot_before']
+                        st.session_state.resume_data = copy.deepcopy(item['meta']['snapshot_before'])
                         item['is_reverted'] = True
                         st.session_state.current_diff = {}
+                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
                         html = render_resume_html(st.session_state.resume_data)
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        auto_save_session()
                         break
                 st.rerun()
             elif action['type'] == "redo":
                 for item in st.session_state.timeline:
                     if item['id'] == action['payload']:
-                        st.session_state.resume_data = item['meta']['data_applied']
+                        st.session_state.resume_data = copy.deepcopy(item['meta']['data_applied'])
                         item['is_reverted'] = False
                         diff = item['meta'].get('diff', {})
                         st.session_state.current_diff = diff
+                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
                         html = render_resume_html(st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff)
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        auto_save_session()
                         break
                 st.rerun()
 
@@ -1206,6 +1275,45 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 st.session_state.tailor_results = tailor_entry["id"]
 
                 auto_save_session()
+
+                # Auto-humanize if enabled
+                if st.session_state.get("auto_humanize"):
+                    undetectable_key = os.getenv("UNDETECTABLE_API_KEY", "")
+                    if undetectable_key:
+                        with st.status("🔒 Auto-humanizing AI text...", expanded=True) as h_status:
+                            try:
+                                h_sections = st.session_state.get("humanize_sections", ["summary", "experience", "projects"])
+                                h_settings = {
+                                    "strength": st.session_state.get("humanize_strength", "More Human"),
+                                    "model": st.session_state.get("humanize_model", "v11"),
+                                    "readability": st.session_state.get("humanize_readability", "Journalist"),
+                                    "purpose": "General Writing",
+                                }
+
+                                def _auto_humanize_progress(stage, detail):
+                                    st.write(f"  {detail}")
+
+                                updated_data, warnings = humanize_resume(
+                                    api_key=undetectable_key,
+                                    resume_data=st.session_state.resume_data,
+                                    sections=h_sections,
+                                    settings=h_settings,
+                                    progress_callback=_auto_humanize_progress
+                                )
+
+                                if warnings:
+                                    for w in warnings:
+                                        st.write(f"  ⚠️ {w}")
+
+                                h_status.update(label="✅ Auto-humanization complete!", state="complete", expanded=False)
+                                execute_edit(updated_data, "🔒 Auto-humanized AI text via Undetectable.ai")
+
+                            except Exception as e:
+                                h_status.update(label="⚠️ Auto-humanization failed", state="error", expanded=True)
+                                st.warning(f"Auto-humanization failed: {str(e)}")
+                    else:
+                        st.warning("Auto-humanize enabled but UNDETECTABLE_API_KEY not found in .env")
+
                 st.rerun()
 
             elif action['type'] == "revert_section":
@@ -1262,6 +1370,42 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
                         auto_save_session()
                         break
+                st.rerun()
+
+            elif action['type'] == "start_humanize":
+                settings = action['payload']
+                sections = settings.pop("sections", ["summary", "experience", "projects"])
+                undetectable_key = os.getenv("UNDETECTABLE_API_KEY", "")
+
+                if not undetectable_key:
+                    st.error("UNDETECTABLE_API_KEY not found in .env")
+                else:
+                    with st.status("🔒 Humanizing AI text...", expanded=True) as status:
+                        try:
+                            def _humanize_progress(stage, detail):
+                                st.write(f"  {detail}")
+
+                            updated_data, warnings = humanize_resume(
+                                api_key=undetectable_key,
+                                resume_data=st.session_state.resume_data,
+                                sections=sections,
+                                settings=settings,
+                                progress_callback=_humanize_progress
+                            )
+
+                            if warnings:
+                                for w in warnings:
+                                    st.write(f"  ⚠️ {w}")
+
+                            status.update(label="✅ Humanization complete!", state="complete", expanded=False)
+
+                            # Use execute_edit for automatic diff, timeline, PDF update, and revert support
+                            execute_edit(updated_data, "🔒 Humanized AI text via Undetectable.ai")
+
+                        except Exception as e:
+                            status.update(label="❌ Humanization failed", state="error", expanded=True)
+                            st.error(f"Humanization error: {str(e)}")
+
                 st.rerun()
 
         chat_container = st.container(height=500)
@@ -1393,7 +1537,7 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                     display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div style="font-size: 0.85rem; opacity: 0.8;">🎙️ CareerOps Pro Mock Interview</div>
-                <div style="font-size: 1.2rem; font-weight: 700;">{job.get('title')} @ {job.get('company')}</div>
+                <div style="font-size: 1.2rem; font-weight: 700;">{job.get('title') if job.get('company', '').lower() in job.get('title', '').lower() else job.get('title') + ' @ ' + job.get('company', '')}</div>
             </div>
             <div style="font-size: 2.5rem;">👔</div>
         </div>
@@ -2312,6 +2456,297 @@ Return ONLY valid JSON.`
             st.session_state.show_feedback = False
             st.session_state.current_evaluation = None
             st.rerun()
+
+elif st.session_state.page == "cover_letter" and st.session_state.resume_data and st.session_state.selected_job:
+    # ============== Cover Letter Page ==============
+    import uuid as cl_uuid
+    job = st.session_state.selected_job
+
+    # Header bar
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%);
+                    padding: 15px 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 0.85rem; opacity: 0.9;">📝 Cover Letter for:</div>
+                    <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title') if job.get('company', '').lower() in job.get('title', '').lower() else job.get('title') + ' @ ' + job.get('company', '')}</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col_edit, col_chat = st.columns([1.3, 1])
+
+    with col_edit:
+        # Application question input
+        cl_question = st.text_area(
+            "Application Question (optional)",
+            value=st.session_state.cover_letter_question,
+            placeholder="e.g., Why do you want to work at this company? (Leave empty for a general cover letter)",
+            height=80,
+            key="cl_question_input"
+        )
+        if cl_question != st.session_state.cover_letter_question:
+            st.session_state.cover_letter_question = cl_question
+
+        # Custom instructions
+        st.text_area(
+            "Custom instructions (optional)",
+            placeholder="e.g., Emphasize my leadership experience, keep the tone casual, focus on cloud architecture skills...",
+            height=80,
+            key="cl_custom_instructions"
+        )
+
+        # Buttons row
+        btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
+        with btn_col1:
+            has_letter = bool(st.session_state.cover_letter_text.strip())
+            gen_label = "🔄 Regenerate" if has_letter else "✨ Generate"
+            if st.button(gen_label, type="primary"):
+                with st.spinner("Generating cover letter..."):
+                    result = generate_cover_letter(
+                        resume_data=st.session_state.resume_data,
+                        target_job=job,
+                        question=st.session_state.cover_letter_question,
+                        model_choice=model,
+                        api_key=api_key,
+                        previous_letter=st.session_state.cover_letter_text if has_letter else None,
+                        custom_instructions=st.session_state.get("cl_custom_instructions", "")
+                    )
+                    if result.get("success"):
+                        st.session_state.cover_letter_text = result["cover_letter"]
+                        st.session_state.cl_text_editor = result["cover_letter"]
+                        auto_save_session()
+                        st.rerun()
+                    else:
+                        st.error(f"Generation failed: {result.get('error', 'Unknown error')}")
+
+        with btn_col2:
+            if st.button("🔒 Humanize"):
+                _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+                if not _ukey:
+                    st.warning("UNDETECTABLE_API_KEY not found in .env")
+                elif not st.session_state.cover_letter_text.strip():
+                    st.warning("Generate a cover letter first.")
+                else:
+                    with st.status("🔒 Humanizing cover letter...", expanded=True) as status:
+                        try:
+                            settings = {
+                                "strength": st.session_state.get("cl_humanize_strength", "More Human"),
+                                "readability": st.session_state.get("cl_humanize_readability", "Journalist"),
+                                "purpose": "Cover Letter",
+                                "model": st.session_state.get("cl_humanize_model", "v11"),
+                            }
+                            humanized = humanize_text(
+                                api_key=_ukey,
+                                text=st.session_state.cover_letter_text,
+                                settings=settings,
+                                progress_callback=lambda stage, detail: status.update(label=f"🔒 {detail}")
+                            )
+                            st.session_state.cover_letter_text = humanized
+                            st.session_state.cl_text_editor = humanized
+                            status.update(label="🔒 Humanization complete!", state="complete")
+                            auto_save_session()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Humanization error: {str(e)}")
+
+        with btn_col3:
+            with st.expander("⚙️ Humanize Settings"):
+                _hc1, _hc2 = st.columns(2)
+                with _hc1:
+                    st.selectbox("Strength", ["Quality", "Balanced", "More Human"], index=2, key="cl_humanize_strength")
+                with _hc2:
+                    st.selectbox("Readability", ["High School", "University", "Doctorate", "Journalist", "Marketing"], index=3, key="cl_humanize_readability")
+                st.selectbox("Model", ["v11", "v11sr", "v2"], index=0, key="cl_humanize_model",
+                             help="v11: English-optimized | v11sr: Best English, slower | v2: Multilingual")
+                _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+                if _ukey:
+                    try:
+                        _credits = check_credits(_ukey)
+                        st.caption(f"💰 Credits: {_credits.get('credits', 'N/A')}")
+                    except Exception:
+                        st.caption("💰 Credits: unable to check")
+
+        # Editable cover letter text area
+        st.markdown("### Your Cover Letter")
+        cl_text = st.text_area(
+            "Cover letter content",
+            value=st.session_state.cover_letter_text,
+            height=400,
+            key="cl_text_editor",
+            label_visibility="collapsed",
+            placeholder="Click 'Generate' to create a cover letter, or paste your own text here."
+        )
+        if cl_text != st.session_state.cover_letter_text:
+            st.session_state.cover_letter_text = cl_text
+            auto_save_session()
+
+        # Bottom toolbar
+        if st.session_state.cover_letter_text.strip():
+            btm_col1, btm_col2, btm_col3 = st.columns([1, 1, 2])
+            with btm_col1:
+                st.download_button(
+                    "⬇️ Download .txt",
+                    st.session_state.cover_letter_text,
+                    file_name="cover_letter.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            with btm_col2:
+                if st.button("📋 Copy", use_container_width=True):
+                    st.toast("Use Ctrl+A then Ctrl+C in the text area above to copy.")
+            with btm_col3:
+                word_count = len(st.session_state.cover_letter_text.split())
+                st.caption(f"📊 {word_count} words | {len(st.session_state.cover_letter_text)} characters")
+
+    # Right column: AI Co-Pilot
+    with col_chat:
+        st.markdown("### 🤖 AI Co-Pilot")
+
+        # Handle trigger actions
+        if st.session_state.cl_trigger_action:
+            action = st.session_state.cl_trigger_action
+            st.session_state.cl_trigger_action = None
+
+            if action['type'] == "apply_suggestion":
+                prompt = f"Apply suggestion: {action['payload']}"
+                st.session_state.cl_timeline.append({
+                    "id": str(cl_uuid.uuid4()), "role": "user", "type": "chat", "content": prompt, "meta": {}
+                })
+                with st.spinner("Applying..."):
+                    result = edit_cover_letter(
+                        prompt,
+                        st.session_state.cover_letter_text,
+                        st.session_state.resume_data,
+                        job,
+                        st.session_state.cl_timeline[:-1],
+                        model, api_key
+                    )
+                    if result.get("type") == "edit" and result.get("cover_letter"):
+                        snapshot = st.session_state.cover_letter_text
+                        st.session_state.cover_letter_text = result["cover_letter"]
+                        st.session_state.cl_text_editor = result["cover_letter"]
+                        st.session_state.cl_timeline.append({
+                            "id": str(cl_uuid.uuid4()),
+                            "role": "assistant",
+                            "type": "edit",
+                            "content": result.get("message", "Applied."),
+                            "meta": {"snapshot_before": snapshot, "data_applied": result["cover_letter"]},
+                            "is_reverted": False
+                        })
+                        auto_save_session()
+                st.rerun()
+
+            elif action['type'] == "revert":
+                for item in st.session_state.cl_timeline:
+                    if item['id'] == action['payload']:
+                        st.session_state.cover_letter_text = item['meta']['snapshot_before']
+                        st.session_state.cl_text_editor = item['meta']['snapshot_before']
+                        item['is_reverted'] = True
+                        auto_save_session()
+                        break
+                st.rerun()
+
+            elif action['type'] == "redo":
+                for item in st.session_state.cl_timeline:
+                    if item['id'] == action['payload']:
+                        st.session_state.cover_letter_text = item['meta']['data_applied']
+                        st.session_state.cl_text_editor = item['meta']['data_applied']
+                        item['is_reverted'] = False
+                        auto_save_session()
+                        break
+                st.rerun()
+
+        # Chat history display
+        chat_container = st.container(height=500)
+        with chat_container:
+            if not st.session_state.cl_timeline:
+                st.caption("Ask the AI to refine your cover letter. Try: 'Make the tone more confident' or 'Add more about my leadership experience'.")
+
+            for item in st.session_state.cl_timeline:
+                if item['role'] == 'user':
+                    with st.chat_message("user"):
+                        st.write(item['content'])
+                else:
+                    with st.chat_message("assistant"):
+                        st.write(item['content'])
+
+                        if item['type'] == 'suggestion':
+                            for idx, sugg in enumerate(item['meta'].get('list', [])):
+                                c1, c2 = st.columns([4, 1])
+                                c1.markdown(f"<div style='background: #f0fdf4; padding: 8px 12px; border-radius: 6px; border-left: 3px solid #22c55e; margin: 4px 0; font-size: 0.9rem;'>{sugg}</div>", unsafe_allow_html=True)
+                                if c2.button("Apply", key=f"cls_{item['id']}_{idx}"):
+                                    st.session_state.cl_trigger_action = {"type": "apply_suggestion", "payload": sugg}
+                                    st.rerun()
+
+                        elif item['type'] == 'edit':
+                            is_rev = item.get('is_reverted', False)
+                            if is_rev:
+                                st.markdown("<div style='background: #fef3c7; padding: 6px 10px; border-radius: 4px; font-size: 0.85rem;'>↩️ Reverted</div>", unsafe_allow_html=True)
+                                if st.button("Redo", key=f"clr_{item['id']}"):
+                                    st.session_state.cl_trigger_action = {"type": "redo", "payload": item['id']}
+                                    st.rerun()
+                            else:
+                                st.markdown("<div style='background: #dcfce7; padding: 6px 10px; border-radius: 4px; font-size: 0.85rem;'>✅ Applied</div>", unsafe_allow_html=True)
+                                if st.button("Revert", key=f"clu_{item['id']}"):
+                                    st.session_state.cl_trigger_action = {"type": "revert", "payload": item['id']}
+                                    st.rerun()
+
+        # Chat input
+        if prompt := st.chat_input("Ask me to modify your cover letter..."):
+            if not st.session_state.cover_letter_text.strip():
+                st.warning("Generate a cover letter first before using the co-pilot.")
+            else:
+                st.session_state.cl_timeline.append({
+                    "id": str(cl_uuid.uuid4()), "role": "user", "type": "chat", "content": prompt, "meta": {}
+                })
+
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.write(prompt)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Thinking..."):
+                            result = edit_cover_letter(
+                                prompt,
+                                st.session_state.cover_letter_text,
+                                st.session_state.resume_data,
+                                job,
+                                st.session_state.cl_timeline[:-1],
+                                model, api_key
+                            )
+
+                            if result.get("type") == "edit" and result.get("cover_letter"):
+                                snapshot = st.session_state.cover_letter_text
+                                st.session_state.cover_letter_text = result["cover_letter"]
+                                st.session_state.cl_text_editor = result["cover_letter"]
+                                st.session_state.cl_timeline.append({
+                                    "id": str(cl_uuid.uuid4()),
+                                    "role": "assistant",
+                                    "type": "edit",
+                                    "content": result.get("message", "Changes applied."),
+                                    "meta": {"snapshot_before": snapshot, "data_applied": result["cover_letter"]},
+                                    "is_reverted": False
+                                })
+                                auto_save_session()
+                            elif result.get("type") == "suggestion":
+                                st.session_state.cl_timeline.append({
+                                    "id": str(cl_uuid.uuid4()),
+                                    "role": "assistant",
+                                    "type": "suggestion",
+                                    "content": result.get("message", "Suggestions:"),
+                                    "meta": {"list": result.get("suggestion_list", [])}
+                                })
+                            else:
+                                st.session_state.cl_timeline.append({
+                                    "id": str(cl_uuid.uuid4()),
+                                    "role": "assistant",
+                                    "type": "chat",
+                                    "content": result.get("message", "How can I help?"),
+                                    "meta": {}
+                                })
+
+                st.rerun()
 
 else:
     # ============== Welcome Page ==============

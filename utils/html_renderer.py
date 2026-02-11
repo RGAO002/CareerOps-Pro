@@ -434,10 +434,13 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
         else:
             role = escape(role)
         if diff.get("summary"):
-            summary = f'<span class="diff-highlight">{summary}</span>'
+            summary = f'<span class="diff-highlight">{_format_bullet_text(summary)}</span>'
+        else:
+            summary = _format_bullet_text(summary)
     else:
         name = escape(name)
         role = escape(role)
+        summary = _format_bullet_text(summary)
     
     return f'''<!DOCTYPE html>
 <html lang="en">
