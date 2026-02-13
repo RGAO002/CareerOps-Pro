@@ -2728,7 +2728,6 @@ elif st.session_state.page == "cover_letter" and st.session_state.resume_data an
                                     "meta": {"snapshot_before": snapshot, "data_applied": result["cover_letter"]},
                                     "is_reverted": False
                                 })
-                                auto_save_session()
                             elif result.get("type") == "suggestion":
                                 st.session_state.cl_timeline.append({
                                     "id": str(cl_uuid.uuid4()),
@@ -2745,6 +2744,7 @@ elif st.session_state.page == "cover_letter" and st.session_state.resume_data an
                                     "content": result.get("message", "How can I help?"),
                                     "meta": {}
                                 })
+                            auto_save_session()
 
                 st.rerun()
 
