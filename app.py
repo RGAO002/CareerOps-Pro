@@ -321,13 +321,14 @@ def auto_save_session():
 def execute_edit(new_data, message_text):
     """Execute edit operation and update state."""
     import uuid
-    
+
     snapshot_before = copy.deepcopy(st.session_state.resume_data)
-    
+    new_data = copy.deepcopy(new_data)
+
     diff = compute_diff(snapshot_before, new_data)
     st.session_state.current_diff = diff
     st.session_state.previous_data = snapshot_before
-    
+
     st.session_state.resume_data = new_data
     
     # Update HTML (source of truth) and PDF
@@ -789,8 +790,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor + Humanize buttons with optional settings
-    opt_col1, opt_col2, opt_col3 = st.columns([1, 1, 4])
+    # One-click tailor + settings
+    opt_col1, opt_col2 = st.columns([1, 5])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
@@ -802,25 +803,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 }
                 st.rerun()
     with opt_col2:
-        if st.button("🔒 Humanize Text"):
-            if not os.getenv("UNDETECTABLE_API_KEY"):
-                st.warning("UNDETECTABLE_API_KEY not found in .env")
-            elif not st.session_state.resume_data:
-                st.warning("No resume loaded.")
-            else:
-                st.session_state.trigger_action = {
-                    "type": "start_humanize",
-                    "payload": {
-                        "strength": st.session_state.get("humanize_strength", "More Human"),
-                        "model": st.session_state.get("humanize_model", "v11"),
-                        "readability": st.session_state.get("humanize_readability", "Journalist"),
-                        "purpose": "General Writing",
-                        "sections": st.session_state.get("humanize_sections", ["summary", "experience", "projects"]),
-                    }
-                }
-                st.rerun()
-    with opt_col3:
-        with st.expander("⚙️ Tailor & Text Humanize Settings"):
+        with st.expander("⚙️ Tailor & Humanize Settings"):
             st.text_area(
                 "Custom tailor instructions (optional)",
                 placeholder="e.g., Emphasize leadership experience, highlight cloud skills...",
@@ -846,22 +829,45 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                     st.caption(f"💰 Credits: {_credits.get('credits', 'N/A')}")
                 except Exception:
                     st.caption("💰 Credits: unable to check")
+            st.divider()
+            if st.button("🔒 Humanize Resume Text", type="secondary", use_container_width=True):
+                if not os.getenv("UNDETECTABLE_API_KEY"):
+                    st.warning("UNDETECTABLE_API_KEY not found in .env")
+                elif not st.session_state.resume_data:
+                    st.warning("No resume loaded.")
+                else:
+                    st.session_state.trigger_action = {
+                        "type": "start_humanize",
+                        "payload": {
+                            "strength": st.session_state.get("humanize_strength", "More Human"),
+                            "model": st.session_state.get("humanize_model", "v11"),
+                            "readability": st.session_state.get("humanize_readability", "Journalist"),
+                            "purpose": "General Writing",
+                            "sections": st.session_state.get("humanize_sections", ["summary", "experience", "projects"]),
+                        }
+                    }
+                    st.rerun()
     
     # Initialize edit mode
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
     
     # ========== Maintain HTML as source of truth ==========
-    # Generate/update HTML whenever resume_data changes
+    # Generate/update HTML and PDF whenever resume_data changes
     import hashlib
-    data_hash = hashlib.md5(str(st.session_state.resume_data).encode()).hexdigest()[:8]
-    
+    _diff = st.session_state.current_diff or {}
+    _diff_str = str(_diff) if _diff else ""
+    data_hash = hashlib.md5((str(st.session_state.resume_data) + _diff_str).encode()).hexdigest()[:8]
+
     if 'resume_html_hash' not in st.session_state or st.session_state.resume_html_hash != data_hash:
         # Generate fresh HTML from current data
         st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
         st.session_state.resume_html_hash = data_hash
-        # Generate PDF from HTML
-        st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
+        # Generate PDF with diff highlighting if present
+        html_for_pdf = render_resume_html(
+            st.session_state.resume_data, diff=_diff, show_diff=st.session_state.show_diff
+        )
+        st.session_state.pdf_bytes = convert_html_to_pdf(html_for_pdf)
     
     col_preview, col_chat = st.columns([1.3, 1])
     
@@ -1163,9 +1169,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         st.session_state.resume_data = copy.deepcopy(item['meta']['snapshot_before'])
                         item['is_reverted'] = True
                         st.session_state.current_diff = {}
-                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                        html = render_resume_html(st.session_state.resume_data)
-                        st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        st.session_state.resume_html_hash = None
                         auto_save_session()
                         break
                 st.rerun()
@@ -1176,9 +1180,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         item['is_reverted'] = False
                         diff = item['meta'].get('diff', {})
                         st.session_state.current_diff = diff
-                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                        html = render_resume_html(st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff)
-                        st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        st.session_state.resume_html_hash = None
                         auto_save_session()
                         break
                 st.rerun()
@@ -1327,11 +1329,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                             section_info['reverted'] = True
                             diff = compute_diff(item['meta']['snapshot_before'], st.session_state.resume_data)
                             st.session_state.current_diff = diff
-                            st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                            html_with_diff = render_resume_html(
-                                st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
-                            )
-                            st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+                            st.session_state.resume_html_hash = None
                             auto_save_session()
                         break
                 st.rerun()
@@ -1347,11 +1345,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                             section_info['reverted'] = False
                             diff = compute_diff(item['meta']['snapshot_before'], st.session_state.resume_data)
                             st.session_state.current_diff = diff
-                            st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                            html_with_diff = render_resume_html(
-                                st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
-                            )
-                            st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+                            st.session_state.resume_html_hash = None
                             auto_save_session()
                         break
                 st.rerun()
@@ -1365,9 +1359,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                             if not sec_info.get('error'):
                                 sec_info['reverted'] = True
                         st.session_state.current_diff = {}
-                        st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                        html = render_resume_html(st.session_state.resume_data)
-                        st.session_state.pdf_bytes = convert_html_to_pdf(html)
+                        st.session_state.resume_html_hash = None
                         auto_save_session()
                         break
                 st.rerun()

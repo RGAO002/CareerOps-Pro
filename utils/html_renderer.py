@@ -510,13 +510,15 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
       margin-bottom: 1.5rem;
     }}
     
-    /* ========== Avoid breaking inside entries ========== */
-    .project-entry, .edu-entry {{
+    /* ========== Page break rules ========== */
+    /* Education entries are short — keep them whole */
+    .edu-entry {{
       break-inside: avoid;
       page-break-inside: avoid;
     }}
-    /* Experience entries: keep header+subtitle together, but allow bullets to break across pages */
-    .exp-header, .exp-subtitle {{
+    /* Experience & Project entries: keep header together with first content,
+       but allow bullets to flow across pages to prevent large blank gaps */
+    .exp-header, .exp-subtitle, .project-title {{
       break-after: avoid;
       page-break-after: avoid;
     }}
@@ -577,6 +579,8 @@ def render_resume_html(data: dict, diff=None, show_diff: bool = False, editable:
       color: #111827;
       font-weight: 600;
       font-size: 1.25rem;
+      break-after: avoid;
+      page-break-after: avoid;
     }}
     h2.mt-0 {{ margin-top: 0; }}
 
