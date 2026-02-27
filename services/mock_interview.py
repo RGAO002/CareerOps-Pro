@@ -238,7 +238,7 @@ Return ONLY valid JSON."""
 def render_recording_component(question_audio_b64: str, countdown_seconds: int = 30) -> str:
     """Generate the HTML/JavaScript component for voice recording interface.
     
-    This encapsulates all the UI logic, JavaScript, and styling for the interview
+    This encapsulates all the UI logics, JavaScript, and styling for the interview
     recording interface, keeping it separate from the main app.py file.
     
     NOTE: The full implementation with all JavaScript logic should be moved here
