@@ -41,7 +41,7 @@ from services.mock_interview import (
 from utils.html_renderer import render_resume_html, render_resume_html_for_pdf
 from utils.pdf_utils import convert_html_to_pdf
 from utils.diff import compute_diff
-from utils.session_manager import save_session, load_session, delete_session, list_sessions, get_thumbnail_path
+from utils.session_manager import save_session, load_session, delete_session, rename_session, list_sessions, get_thumbnail_path
 
 # --- Config ---
 load_dotenv()
@@ -215,12 +215,37 @@ st.markdown("""
     }
     
     /* PDF iframe */
-    iframe { 
-        width: 100%; 
-        min-height: 850px; 
-        border: 1px solid #ddd; 
-        border-radius: 8px; 
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+    iframe {
+        width: 100%;
+        min-height: 850px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    /* Sidebar home title — looks like st.title but clickable */
+    .st-key-sidebar_home_title button {
+        background: none !important;
+        border: none !important;
+        padding: 0 !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        color: inherit !important;
+        box-shadow: none !important;
+    }
+    .st-key-sidebar_home_title button p {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        line-height: 1.2 !important;
+    }
+    .st-key-sidebar_home_title button:hover {
+        opacity: 0.7 !important;
+    }
+    .st-key-sidebar_home_title button:active,
+    .st-key-sidebar_home_title button:focus {
+        background: none !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -356,7 +381,9 @@ def execute_edit(new_data, message_text):
 
 # --- Sidebar ---
 with st.sidebar:
-    st.title("🚀 CareerOps Pro")
+    if st.button("🚀 CareerOps Pro", key="sidebar_home_title", use_container_width=True):
+        st.session_state.page = "home"
+        st.rerun()
     st.caption("AI-Powered Resume Platform")
     
     st.divider()
@@ -435,8 +462,13 @@ with st.sidebar:
     if st.session_state.resume_data:
         st.divider()
         st.subheader("📍 Navigation")
-        
-        if st.button("📊 Resume Analysis", use_container_width=True, 
+
+        if st.button("🏠 Home", use_container_width=True,
+                     type="primary" if st.session_state.page == "home" else "secondary"):
+            st.session_state.page = "home"
+            st.rerun()
+
+        if st.button("📊 Resume Analysis", use_container_width=True,
                      type="primary" if st.session_state.page == "analysis" else "secondary"):
             st.session_state.page = "analysis"
             st.rerun()
@@ -461,7 +493,7 @@ with st.sidebar:
 # --- Main Content ---
 
 # ========== WELCOME / SAVED SESSIONS PAGE ==========
-if not st.session_state.resume_data:
+if not st.session_state.resume_data or st.session_state.page == "home":
     st.markdown("""
         <div style="text-align: center; padding: 40px 0;">
             <h1>🚀 Welcome to CareerOps Pro</h1>
@@ -497,10 +529,30 @@ if not st.session_state.resume_data:
                 pdf_filename = session.get("pdf_filename", "resume.pdf")
                 updated_at = session.get("updated_at", "")
                 
-                st.markdown(f"**{display_name}**")
+                # Session name — inline rename
+                is_renaming = st.session_state.get("renaming_session") == session_id
+                if is_renaming:
+                    rc1, rc2 = st.columns([5, 1])
+                    with rc1:
+                        new_name = st.text_input("Rename", value=display_name, key=f"rename_input_{session_id}", label_visibility="collapsed")
+                    with rc2:
+                        if st.button("✓", key=f"rename_save_{session_id}", use_container_width=True):
+                            if new_name.strip():
+                                rename_session(session_id, new_name.strip())
+                            st.session_state.renaming_session = None
+                            st.rerun()
+                else:
+                    nc1, nc2 = st.columns([5, 1])
+                    with nc1:
+                        st.markdown(f"**{display_name}**")
+                    with nc2:
+                        if st.button("✏️", key=f"rename_btn_{session_id}", use_container_width=True):
+                            st.session_state.renaming_session = session_id
+                            st.rerun()
+
                 st.caption(f"📄 {pdf_filename}")
                 st.caption(f"🕒 {updated_at}")
-                
+
                 # Action buttons
                 btn_col1, btn_col2 = st.columns(2)
                 with btn_col1:
@@ -522,7 +574,7 @@ if not st.session_state.resume_data:
                             st.session_state.cover_letter_question = loaded.get("cover_letter_question", "")
                             st.session_state.cl_timeline = loaded.get("cl_timeline", [])
                             st.rerun()
-                
+
                 with btn_col2:
                     if st.button("🗑️ Delete", key=f"main_delete_{session_id}", use_container_width=True):
                         delete_session(session_id)

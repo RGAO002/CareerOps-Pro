@@ -133,24 +133,35 @@ def save_session(
     existing = next((s for s in index if s["id"] == session_id), None)
     
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Build auto display name: "Name - Role @ Company"
     name = resume_data.get("name", "Unknown")
     role = resume_data.get("role", "")
+    company = ""
+    if selected_job and selected_job.get("company"):
+        company = selected_job["company"]
     display_name = f"{name} - {role}" if role else name
-    
+    if company:
+        display_name += f" @ {company}"
+
     entry = {
         "id": session_id,
         "pdf_md5": pdf_md5,
         "pdf_filename": pdf_filename,
-        "name": display_name,
         "updated_at": now
     }
-    
+
     if existing:
-        # Update existing entry
         idx = index.index(existing)
+        # Keep user's custom name if they renamed it manually
+        if existing.get("custom_name"):
+            entry["name"] = existing["name"]
+            entry["custom_name"] = True
+        else:
+            entry["name"] = display_name
         index[idx] = entry
     else:
-        # Add new entry at the beginning
+        entry["name"] = display_name
         index.insert(0, entry)
     
     save_index(index)
@@ -203,6 +214,18 @@ def load_session(session_id: str) -> dict:
         result["display_name"] = entry.get("name", "Unknown")
     
     return result
+
+
+def rename_session(session_id: str, new_name: str) -> bool:
+    """Rename a session's display name (marks as custom so auto-save won't overwrite)."""
+    index = load_index()
+    for entry in index:
+        if entry["id"] == session_id:
+            entry["name"] = new_name.strip()
+            entry["custom_name"] = True
+            save_index(index)
+            return True
+    return False
 
 
 def delete_session(session_id: str) -> bool:
