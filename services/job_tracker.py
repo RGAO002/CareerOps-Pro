@@ -63,6 +63,17 @@ def load_tracker() -> dict:
             # Ensure custom_columns key exists (migration)
             if "custom_columns" not in data:
                 data["custom_columns"] = []
+            # Clean any legacy markdown-formatted URLs
+            dirty = False
+            for job in data.get("jobs", []):
+                raw = job.get("url", "")
+                cleaned = _clean_url(raw)
+                if cleaned != raw:
+                    job["url"] = cleaned
+                    dirty = True
+            if dirty:
+                with open(TRACKER_FILE, "w") as fw:
+                    json.dump(data, fw, indent=2)
             return data
         except (json.JSONDecodeError, IOError):
             return {"version": 1, "jobs": [], "custom_columns": []}

@@ -2540,32 +2540,17 @@ Return ONLY valid JSON.`
 
 elif st.session_state.page == "job_tracker":
     # ============== Job Tracker Page ==============
-    st.markdown("## 📋 Job Application Tracker")
-
-    # --- Top toolbar ---
-    tb1, tb2, tb3, tb4, tb5 = st.columns([1, 1.2, 1, 1, 3])
-    with tb1:
-        if st.button("➕ Add Job", type="primary", use_container_width=True):
-            st.session_state.tracker_show_add_form = not st.session_state.tracker_show_add_form
-            st.rerun()
-    with tb2:
-        if st.button("📥 Import Sessions", use_container_width=True):
-            sessions = list_sessions()
-            before_count = len(get_jobs_by_status("all"))
-            for sess in sessions:
-                loaded = load_session(sess["id"])
-                if loaded and loaded.get("selected_job"):
-                    tracker_import(session_id=sess["id"], selected_job=loaded["selected_job"], status="applied")
-            added = len(get_jobs_by_status("all")) - before_count
-            st.toast(f"✅ Imported {added} job(s)!" if added else "ℹ️ All already tracked.")
-            st.rerun()
-    with tb3:
-        view_label = "📊 Table" if st.session_state.tracker_view == "cards" else "🃏 Cards"
-        if st.button(view_label, use_container_width=True):
+    # Header row: title on left, small controls on right
+    _hdr_l, _hdr_r1, _hdr_r2, _hdr_r3 = st.columns([6, 1, 1, 1])
+    with _hdr_l:
+        st.markdown("## 📋 Job Application Tracker")
+    with _hdr_r1:
+        view_icon = "📊" if st.session_state.tracker_view == "cards" else "🃏"
+        if st.button(view_icon, key="toggle_view", help="Switch view", use_container_width=True):
             st.session_state.tracker_view = "cards" if st.session_state.tracker_view == "table" else "table"
             st.rerun()
-    with tb4:
-        with st.popover("➕ Column", use_container_width=True):
+    with _hdr_r2:
+        with st.popover("＋", help="Add custom column"):
             st.markdown("**Add Custom Column**")
             cc_name = st.text_input("Column Name", key="new_col_name")
             cc_type = st.selectbox("Data Type", [t[0] for t in COLUMN_TYPES],
@@ -2578,6 +2563,10 @@ elif st.session_state.page == "job_tracker":
                     opts = [o.strip() for o in cc_options.split(",") if o.strip()] if cc_options else []
                     add_custom_column(cc_name.strip(), cc_type, opts)
                     st.rerun()
+    with _hdr_r3:
+        if st.button("➕", key="add_job_toggle", help="Add new job", type="primary", use_container_width=True):
+            st.session_state.tracker_show_add_form = not st.session_state.tracker_show_add_form
+            st.rerun()
 
     # --- Status filter tabs ---
     all_jobs = get_jobs_by_status("all")
@@ -2597,6 +2586,20 @@ elif st.session_state.page == "job_tracker":
             ):
                 st.session_state.tracker_filter = key
                 st.rerun()
+
+    # Import sessions (small, right-aligned)
+    _imp_l, _imp_r = st.columns([5, 1])
+    with _imp_r:
+        if st.button("📥 Import Sessions", key="import_sessions_btn", use_container_width=True):
+            sessions = list_sessions()
+            before_count = len(get_jobs_by_status("all"))
+            for sess in sessions:
+                loaded = load_session(sess["id"])
+                if loaded and loaded.get("selected_job"):
+                    tracker_import(session_id=sess["id"], selected_job=loaded["selected_job"], status="applied")
+            added = len(get_jobs_by_status("all")) - before_count
+            st.toast(f"✅ Imported {added} job(s)!" if added else "ℹ️ All already tracked.")
+            st.rerun()
 
     st.divider()
 
@@ -2815,6 +2818,11 @@ elif st.session_state.page == "job_tracker":
             if custom_parts:
                 custom_html = f"<div style='color: #8b5cf6; font-size: 0.82rem; margin-top: 4px;'>{'  •  '.join(custom_parts)}</div>"
 
+            notes_html = ""
+            if job.get("notes"):
+                truncated = job["notes"][:120] + ("..." if len(job["notes"]) > 120 else "")
+                notes_html = f"<div style='color: #64748b; font-size: 0.85rem; margin-top: 6px; font-style: italic;'>📝 {truncated}</div>"
+
             st.markdown(f"""
                 <div style="background: white; border-left: 4px solid {color}; border-radius: 0 10px 10px 0;
                             padding: 15px 20px; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
@@ -2831,7 +2839,7 @@ elif st.session_state.page == "job_tracker":
                         {meta_html}{url_html}
                     </div>
                     {custom_html}
-                    {"<div style='color: #64748b; font-size: 0.85rem; margin-top: 6px; font-style: italic;'>📝 " + job['notes'][:120] + ('...' if len(job.get('notes','')) > 120 else '') + "</div>" if job.get('notes') else ""}
+                    {notes_html}
                 </div>
             """, unsafe_allow_html=True)
 
