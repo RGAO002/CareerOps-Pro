@@ -42,6 +42,11 @@ from utils.html_renderer import render_resume_html, render_resume_html_for_pdf
 from utils.pdf_utils import convert_html_to_pdf
 from utils.diff import compute_diff
 from utils.session_manager import save_session, load_session, delete_session, rename_session, list_sessions, get_thumbnail_path
+from services.job_tracker import (
+    load_tracker, add_job, update_job, delete_job,
+    import_from_session as tracker_import,
+    get_jobs_by_status, STATUSES, STATUS_LABELS, STATUS_COLORS
+)
 
 # --- Config ---
 load_dotenv()
@@ -312,6 +317,13 @@ if 'cl_timeline' not in st.session_state:
     st.session_state.cl_timeline = []
 if 'cl_trigger_action' not in st.session_state:
     st.session_state.cl_trigger_action = None
+# Job Tracker UI state
+if 'tracker_filter' not in st.session_state:
+    st.session_state.tracker_filter = "all"
+if 'tracker_editing_id' not in st.session_state:
+    st.session_state.tracker_editing_id = None
+if 'tracker_show_add_form' not in st.session_state:
+    st.session_state.tracker_show_add_form = False
 
 
 # --- Helper Functions ---
@@ -489,11 +501,18 @@ with st.sidebar:
                 st.session_state.page = "interview"
                 st.rerun()
 
+    # Job Tracker — always accessible (not gated on resume_data)
+    st.divider()
+    if st.button("📋 Job Tracker", use_container_width=True,
+                 type="primary" if st.session_state.page == "job_tracker" else "secondary"):
+        st.session_state.page = "job_tracker"
+        st.rerun()
+
 
 # --- Main Content ---
 
 # ========== WELCOME / SAVED SESSIONS PAGE ==========
-if not st.session_state.resume_data or st.session_state.page == "home":
+if (not st.session_state.resume_data and st.session_state.page != "job_tracker") or st.session_state.page == "home":
     st.markdown("""
         <div style="text-align: center; padding: 40px 0;">
             <h1>🚀 Welcome to CareerOps Pro</h1>
@@ -758,7 +777,14 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                 st.session_state.current_diff = {}
 
                 st.rerun()
-    
+            if st.button("📋 Track", key="track_custom"):
+                tracker_import(
+                    session_id=st.session_state.current_session_id or "unsaved",
+                    selected_job=job,
+                    status="applied"
+                )
+                st.toast("✅ Added to Job Tracker!")
+
     # Job Matching
     if matches:
         st.divider()
@@ -817,6 +843,13 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                         st.session_state.current_diff = {}
 
                         st.rerun()
+                    if st.button("📋 Track", key=f"track_{job.get('id')}"):
+                        tracker_import(
+                            session_id=st.session_state.current_session_id or "unsaved",
+                            selected_job=job,
+                            status="applied"
+                        )
+                        st.toast("✅ Added to Job Tracker!")
 
 elif st.session_state.page == "editor" and st.session_state.resume_data:
     # ============== Editor Page ==============
@@ -2500,6 +2533,241 @@ Return ONLY valid JSON.`
             st.session_state.show_feedback = False
             st.session_state.current_evaluation = None
             st.rerun()
+
+elif st.session_state.page == "job_tracker":
+    # ============== Job Tracker Page ==============
+    st.markdown("## 📋 Job Application Tracker")
+    st.caption("Track your job applications across all companies")
+
+    # --- Status filter tabs ---
+    all_jobs = get_jobs_by_status("all")
+    tab_keys = ["all"] + [s[0] for s in STATUSES]
+    tab_labels = ["All"] + [s[1] for s in STATUSES]
+
+    filter_cols = st.columns(len(tab_labels))
+    for i, (label, key) in enumerate(zip(tab_labels, tab_keys)):
+        with filter_cols[i]:
+            count = len([j for j in all_jobs if j["status"] == key]) if key != "all" else len(all_jobs)
+            is_active = st.session_state.tracker_filter == key
+            if st.button(
+                f"{label} ({count})" if key == "all" else f"{label.split(' ', 1)[-1]} ({count})",
+                key=f"filter_{key}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True
+            ):
+                st.session_state.tracker_filter = key
+                st.rerun()
+
+    st.divider()
+
+    # --- Add Job + Import buttons ---
+    add_col, import_col, _ = st.columns([1, 1, 3])
+    with add_col:
+        if st.button("➕ Add Job", type="primary", use_container_width=True):
+            st.session_state.tracker_show_add_form = not st.session_state.tracker_show_add_form
+            st.rerun()
+    with import_col:
+        if st.button("📥 Import from Sessions", use_container_width=True):
+            sessions = list_sessions()
+            before_count = len(get_jobs_by_status("all"))
+            for sess in sessions:
+                loaded = load_session(sess["id"])
+                if loaded and loaded.get("selected_job"):
+                    tracker_import(
+                        session_id=sess["id"],
+                        selected_job=loaded["selected_job"],
+                        status="applied"
+                    )
+            after_count = len(get_jobs_by_status("all"))
+            added = after_count - before_count
+            if added > 0:
+                st.toast(f"✅ Imported {added} job(s) from sessions!")
+            else:
+                st.toast("ℹ️ All session jobs already tracked.")
+            st.rerun()
+
+    # --- Add Job Form ---
+    if st.session_state.tracker_show_add_form:
+        with st.form("add_job_form"):
+            st.markdown("### Add New Job")
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                new_company = st.text_input("Company *")
+                new_title = st.text_input("Job Title *")
+                new_status = st.selectbox(
+                    "Status",
+                    [s[0] for s in STATUSES],
+                    format_func=lambda x: STATUS_LABELS[x]
+                )
+                new_url = st.text_input("Job URL")
+            with fc2:
+                new_salary_min = st.text_input("Salary Min (e.g. $150,000)")
+                new_salary_max = st.text_input("Salary Max (e.g. $200,000)")
+                new_follow_up = st.text_input("Follow-up Date (YYYY-MM-DD)")
+                new_contact_name = st.text_input("Contact Name")
+            new_notes = st.text_area("Notes", height=80)
+
+            if st.form_submit_button("💾 Save Job", type="primary", use_container_width=True):
+                if new_company and new_title:
+                    contacts = []
+                    if new_contact_name:
+                        contacts.append({"name": new_contact_name, "role": "", "email": ""})
+                    add_job(
+                        company=new_company,
+                        title=new_title,
+                        status=new_status,
+                        url=new_url,
+                        salary_min=new_salary_min,
+                        salary_max=new_salary_max,
+                        notes=new_notes,
+                        contacts=contacts,
+                        follow_up_date=new_follow_up,
+                    )
+                    st.session_state.tracker_show_add_form = False
+                    st.rerun()
+                else:
+                    st.error("Company and Job Title are required.")
+
+    # --- Job List ---
+    jobs = get_jobs_by_status(st.session_state.tracker_filter)
+
+    if not jobs:
+        st.markdown("""
+            <div style="text-align: center; padding: 60px 20px; color: #94a3b8;">
+                <div style="font-size: 3rem; margin-bottom: 10px;">📋</div>
+                <p>No jobs found. Click <b>➕ Add Job</b> to get started, or <b>📥 Import from Sessions</b>.</p>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        for job in jobs:
+            jid = job["id"]
+            color = STATUS_COLORS.get(job["status"], "#94a3b8")
+            label = STATUS_LABELS.get(job["status"], job["status"])
+            is_editing = st.session_state.tracker_editing_id == jid
+
+            salary_text = ""
+            if job.get("salary_min") and job.get("salary_max"):
+                salary_text = f"💰 {job['salary_min']} – {job['salary_max']}"
+            elif job.get("salary_min"):
+                salary_text = f"💰 {job['salary_min']}"
+
+            meta_parts = []
+            if salary_text:
+                meta_parts.append(salary_text)
+            if job.get("date_applied"):
+                meta_parts.append(f"📅 {job['date_applied']}")
+            if job.get("follow_up_date"):
+                meta_parts.append(f"⏰ Follow up: {job['follow_up_date']}")
+            meta_html = " &nbsp;•&nbsp; ".join(meta_parts)
+
+            url_html = ""
+            if job.get("url"):
+                url_html = f" &nbsp;•&nbsp; <a href='{job['url']}' target='_blank'>🔗 Job Link</a>"
+
+            st.markdown(f"""
+                <div style="background: white; border-left: 4px solid {color}; border-radius: 0 10px 10px 0;
+                            padding: 15px 20px; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 1.1rem; font-weight: 700; color: #1e293b;">{job["title"]}</span>
+                            <span style="color: #94a3b8; margin: 0 6px;">@</span>
+                            <span style="color: #64748b; font-size: 0.95rem;">{job["company"]}</span>
+                        </div>
+                        <span style="background: {color}; color: white; padding: 3px 10px;
+                                     border-radius: 12px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;">{label}</span>
+                    </div>
+                    <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 6px;">
+                        {meta_html}{url_html}
+                    </div>
+                    {"<div style='color: #64748b; font-size: 0.85rem; margin-top: 6px; font-style: italic;'>📝 " + job['notes'][:120] + ('...' if len(job.get('notes','')) > 120 else '') + "</div>" if job.get('notes') else ""}
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Action buttons
+            ac1, ac2, ac3, ac4, ac5 = st.columns([1, 1, 1, 2, 3])
+            with ac1:
+                if st.button("✏️", key=f"edit_{jid}", help="Edit", use_container_width=True):
+                    st.session_state.tracker_editing_id = jid if not is_editing else None
+                    st.rerun()
+            with ac2:
+                if st.button("🗑️", key=f"del_{jid}", help="Delete", use_container_width=True):
+                    delete_job(jid)
+                    st.rerun()
+            with ac3:
+                if job.get("linked_session_id") and job["linked_session_id"] != "unsaved":
+                    if st.button("📄", key=f"open_{jid}", help="Open linked session", use_container_width=True):
+                        loaded = load_session(job["linked_session_id"])
+                        if loaded:
+                            st.session_state.pdf_bytes = loaded.get("pdf_bytes")
+                            st.session_state.pdf_filename = loaded.get("pdf_filename")
+                            st.session_state.resume_data = loaded.get("resume_data")
+                            st.session_state.resume_html = loaded.get("resume_html")
+                            st.session_state.analysis_result = loaded.get("analysis_result")
+                            st.session_state.job_matches = loaded.get("job_matches")
+                            st.session_state.timeline = loaded.get("timeline", [])
+                            st.session_state.selected_job = loaded.get("selected_job")
+                            st.session_state.current_diff = loaded.get("current_diff", {})
+                            st.session_state.page = loaded.get("page", "analysis")
+                            st.session_state.current_session_id = job["linked_session_id"]
+                            st.session_state.cover_letter_text = loaded.get("cover_letter_text", "")
+                            st.session_state.cover_letter_question = loaded.get("cover_letter_question", "")
+                            st.session_state.cl_timeline = loaded.get("cl_timeline", [])
+                            st.rerun()
+                        else:
+                            st.toast("⚠️ Session not found.")
+            with ac4:
+                new_status = st.selectbox(
+                    "Status",
+                    [s[0] for s in STATUSES],
+                    index=[s[0] for s in STATUSES].index(job["status"]),
+                    format_func=lambda x: STATUS_LABELS[x],
+                    key=f"status_{jid}",
+                    label_visibility="collapsed"
+                )
+                if new_status != job["status"]:
+                    update_job(jid, {"status": new_status})
+                    st.rerun()
+
+            # Inline edit form
+            if is_editing:
+                with st.form(f"edit_form_{jid}"):
+                    st.markdown(f"#### Editing: {job['title']} @ {job['company']}")
+                    ec1, ec2 = st.columns(2)
+                    with ec1:
+                        e_company = st.text_input("Company", value=job["company"], key=f"e_co_{jid}")
+                        e_title = st.text_input("Title", value=job["title"], key=f"e_ti_{jid}")
+                        e_url = st.text_input("URL", value=job.get("url", ""), key=f"e_url_{jid}")
+                        e_salary_min = st.text_input("Salary Min", value=job.get("salary_min", ""), key=f"e_smin_{jid}")
+                    with ec2:
+                        e_salary_max = st.text_input("Salary Max", value=job.get("salary_max", ""), key=f"e_smax_{jid}")
+                        e_follow_up = st.text_input("Follow-up Date", value=job.get("follow_up_date", ""), key=f"e_fu_{jid}")
+                        e_date = st.text_input("Date Applied", value=job.get("date_applied", ""), key=f"e_da_{jid}")
+                        e_contact = st.text_input(
+                            "Contact",
+                            value=job["contacts"][0]["name"] if job.get("contacts") else "",
+                            key=f"e_ct_{jid}"
+                        )
+                    e_notes = st.text_area("Notes", value=job.get("notes", ""), key=f"e_nt_{jid}", height=80)
+
+                    if st.form_submit_button("💾 Save Changes", use_container_width=True):
+                        contacts = []
+                        if e_contact:
+                            contacts.append({"name": e_contact, "role": "", "email": ""})
+                        update_job(jid, {
+                            "company": e_company,
+                            "title": e_title,
+                            "url": e_url,
+                            "salary_min": e_salary_min,
+                            "salary_max": e_salary_max,
+                            "follow_up_date": e_follow_up,
+                            "date_applied": e_date,
+                            "notes": e_notes,
+                            "contacts": contacts,
+                        })
+                        st.session_state.tracker_editing_id = None
+                        st.rerun()
+
+            st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
 
 elif st.session_state.page == "cover_letter" and st.session_state.resume_data and st.session_state.selected_job:
     # ============== Cover Letter Page ==============
