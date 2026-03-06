@@ -10,6 +10,19 @@ from pathlib import Path
 TRACKER_DIR = Path(__file__).parent.parent / "saved_sessions"
 TRACKER_FILE = TRACKER_DIR / "job_tracker.json"
 
+
+def _clean_url(url: str) -> str:
+    """Strip markdown link syntax [text](url) → url, and ensure no wrapping."""
+    import re
+    if not url:
+        return ""
+    url = url.strip()
+    # Match markdown link: [text](url)
+    m = re.match(r'\[.*?\]\((.*?)\)', url)
+    if m:
+        url = m.group(1)
+    return url.strip()
+
 # --- Status definitions ---
 STATUSES = [
     ("wishlist", "📌 Wishlist", "#94a3b8"),
@@ -29,16 +42,31 @@ def _ensure_dir():
     TRACKER_DIR.mkdir(exist_ok=True)
 
 
+COLUMN_TYPES = [
+    ("text", "Text"),
+    ("yes_no", "Yes / No"),
+    ("number", "Number"),
+    ("date", "Date"),
+    ("select", "Single Select"),
+]
+
+COLUMN_TYPE_LABELS = {t[0]: t[1] for t in COLUMN_TYPES}
+
+
 def load_tracker() -> dict:
-    """Load the tracker data. Returns {"version": 1, "jobs": [...]}."""
+    """Load the tracker data. Returns {"version": 1, "jobs": [...], "custom_columns": [...]}."""
     _ensure_dir()
     if TRACKER_FILE.exists():
         try:
             with open(TRACKER_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+            # Ensure custom_columns key exists (migration)
+            if "custom_columns" not in data:
+                data["custom_columns"] = []
+            return data
         except (json.JSONDecodeError, IOError):
-            return {"version": 1, "jobs": []}
-    return {"version": 1, "jobs": []}
+            return {"version": 1, "jobs": [], "custom_columns": []}
+    return {"version": 1, "jobs": [], "custom_columns": []}
 
 
 def save_tracker(data: dict):
@@ -71,7 +99,7 @@ def add_job(
         "title": title,
         "status": status,
         "date_applied": date_applied or now.split(" ")[0],
-        "url": url,
+        "url": _clean_url(url),
         "salary_min": salary_min,
         "salary_max": salary_max,
         "notes": notes,
@@ -94,6 +122,8 @@ def update_job(job_id: str, updates: dict) -> bool:
         if job["id"] == job_id:
             for k, v in updates.items():
                 if k != "id":  # never overwrite id
+                    if k == "url":
+                        v = _clean_url(v)
                     job[k] = v
             job["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             save_tracker(data)
@@ -155,3 +185,53 @@ def get_jobs_by_status(status: str = None) -> list:
     if status is None or status == "all":
         return data["jobs"]
     return [j for j in data["jobs"] if j["status"] == status]
+
+
+def get_custom_columns() -> list:
+    """Get the list of custom columns.
+    Each column: {"id": "col_xxx", "name": "Industry", "type": "text", "options": [...]}
+    """
+    data = load_tracker()
+    return data.get("custom_columns", [])
+
+
+def add_custom_column(name: str, col_type: str = "text", options: list = None) -> dict:
+    """Add a user-defined column. Returns the new column definition."""
+    data = load_tracker()
+    col = {
+        "id": f"col_{uuid.uuid4().hex[:6]}",
+        "name": name.strip(),
+        "type": col_type,
+        "options": options or [],
+    }
+    data["custom_columns"].append(col)
+    save_tracker(data)
+    return col
+
+
+def delete_custom_column(col_id: str) -> bool:
+    """Delete a custom column and remove its data from all jobs."""
+    data = load_tracker()
+    before = len(data.get("custom_columns", []))
+    data["custom_columns"] = [c for c in data.get("custom_columns", []) if c["id"] != col_id]
+    if len(data["custom_columns"]) < before:
+        # Remove field from all jobs
+        for job in data["jobs"]:
+            cf = job.get("custom_fields", {})
+            cf.pop(col_id, None)
+        save_tracker(data)
+        return True
+    return False
+
+
+def update_custom_field(job_id: str, col_id: str, value) -> bool:
+    """Update a custom field value for a job."""
+    data = load_tracker()
+    for job in data["jobs"]:
+        if job["id"] == job_id:
+            if "custom_fields" not in job:
+                job["custom_fields"] = {}
+            job["custom_fields"][col_id] = value
+            save_tracker(data)
+            return True
+    return False

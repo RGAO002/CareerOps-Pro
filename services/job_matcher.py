@@ -159,7 +159,11 @@ Return ONLY valid JSON.
         for field, default in required_fields.items():
             if field not in result:
                 result[field] = default
-        
+
+        # Preserve the original URL if input was a URL
+        if is_url:
+            result["url"] = jd_input.strip()
+
         return {"success": True, "job": result}
         
     except Exception as e:

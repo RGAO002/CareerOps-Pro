@@ -45,7 +45,9 @@ from utils.session_manager import save_session, load_session, delete_session, re
 from services.job_tracker import (
     load_tracker, add_job, update_job, delete_job,
     import_from_session as tracker_import,
-    get_jobs_by_status, STATUSES, STATUS_LABELS, STATUS_COLORS
+    get_jobs_by_status, get_custom_columns, add_custom_column,
+    delete_custom_column, update_custom_field,
+    STATUSES, STATUS_LABELS, STATUS_COLORS, COLUMN_TYPES, COLUMN_TYPE_LABELS
 )
 
 # --- Config ---
@@ -324,6 +326,8 @@ if 'tracker_editing_id' not in st.session_state:
     st.session_state.tracker_editing_id = None
 if 'tracker_show_add_form' not in st.session_state:
     st.session_state.tracker_show_add_form = False
+if 'tracker_view' not in st.session_state:
+    st.session_state.tracker_view = "table"  # "cards" or "table"
 
 
 # --- Helper Functions ---
@@ -2537,7 +2541,43 @@ Return ONLY valid JSON.`
 elif st.session_state.page == "job_tracker":
     # ============== Job Tracker Page ==============
     st.markdown("## 📋 Job Application Tracker")
-    st.caption("Track your job applications across all companies")
+
+    # --- Top toolbar ---
+    tb1, tb2, tb3, tb4, tb5 = st.columns([1, 1.2, 1, 1, 3])
+    with tb1:
+        if st.button("➕ Add Job", type="primary", use_container_width=True):
+            st.session_state.tracker_show_add_form = not st.session_state.tracker_show_add_form
+            st.rerun()
+    with tb2:
+        if st.button("📥 Import Sessions", use_container_width=True):
+            sessions = list_sessions()
+            before_count = len(get_jobs_by_status("all"))
+            for sess in sessions:
+                loaded = load_session(sess["id"])
+                if loaded and loaded.get("selected_job"):
+                    tracker_import(session_id=sess["id"], selected_job=loaded["selected_job"], status="applied")
+            added = len(get_jobs_by_status("all")) - before_count
+            st.toast(f"✅ Imported {added} job(s)!" if added else "ℹ️ All already tracked.")
+            st.rerun()
+    with tb3:
+        view_label = "📊 Table" if st.session_state.tracker_view == "cards" else "🃏 Cards"
+        if st.button(view_label, use_container_width=True):
+            st.session_state.tracker_view = "cards" if st.session_state.tracker_view == "table" else "table"
+            st.rerun()
+    with tb4:
+        with st.popover("➕ Column", use_container_width=True):
+            st.markdown("**Add Custom Column**")
+            cc_name = st.text_input("Column Name", key="new_col_name")
+            cc_type = st.selectbox("Data Type", [t[0] for t in COLUMN_TYPES],
+                                   format_func=lambda x: COLUMN_TYPE_LABELS[x], key="new_col_type")
+            cc_options = ""
+            if cc_type == "select":
+                cc_options = st.text_input("Options (comma-separated)", key="new_col_opts")
+            if st.button("Add Column", key="add_col_btn", use_container_width=True):
+                if cc_name.strip():
+                    opts = [o.strip() for o in cc_options.split(",") if o.strip()] if cc_options else []
+                    add_custom_column(cc_name.strip(), cc_type, opts)
+                    st.rerun()
 
     # --- Status filter tabs ---
     all_jobs = get_jobs_by_status("all")
@@ -2560,32 +2600,6 @@ elif st.session_state.page == "job_tracker":
 
     st.divider()
 
-    # --- Add Job + Import buttons ---
-    add_col, import_col, _ = st.columns([1, 1, 3])
-    with add_col:
-        if st.button("➕ Add Job", type="primary", use_container_width=True):
-            st.session_state.tracker_show_add_form = not st.session_state.tracker_show_add_form
-            st.rerun()
-    with import_col:
-        if st.button("📥 Import from Sessions", use_container_width=True):
-            sessions = list_sessions()
-            before_count = len(get_jobs_by_status("all"))
-            for sess in sessions:
-                loaded = load_session(sess["id"])
-                if loaded and loaded.get("selected_job"):
-                    tracker_import(
-                        session_id=sess["id"],
-                        selected_job=loaded["selected_job"],
-                        status="applied"
-                    )
-            after_count = len(get_jobs_by_status("all"))
-            added = after_count - before_count
-            if added > 0:
-                st.toast(f"✅ Imported {added} job(s) from sessions!")
-            else:
-                st.toast("ℹ️ All session jobs already tracked.")
-            st.rerun()
-
     # --- Add Job Form ---
     if st.session_state.tracker_show_add_form:
         with st.form("add_job_form"):
@@ -2594,50 +2608,175 @@ elif st.session_state.page == "job_tracker":
             with fc1:
                 new_company = st.text_input("Company *")
                 new_title = st.text_input("Job Title *")
-                new_status = st.selectbox(
-                    "Status",
-                    [s[0] for s in STATUSES],
-                    format_func=lambda x: STATUS_LABELS[x]
-                )
+                new_status = st.selectbox("Status", [s[0] for s in STATUSES],
+                                          format_func=lambda x: STATUS_LABELS[x])
                 new_url = st.text_input("Job URL")
             with fc2:
-                new_salary_min = st.text_input("Salary Min (e.g. $150,000)")
-                new_salary_max = st.text_input("Salary Max (e.g. $200,000)")
+                new_salary_min = st.text_input("Salary Min")
+                new_salary_max = st.text_input("Salary Max")
                 new_follow_up = st.text_input("Follow-up Date (YYYY-MM-DD)")
                 new_contact_name = st.text_input("Contact Name")
             new_notes = st.text_area("Notes", height=80)
-
             if st.form_submit_button("💾 Save Job", type="primary", use_container_width=True):
                 if new_company and new_title:
-                    contacts = []
-                    if new_contact_name:
-                        contacts.append({"name": new_contact_name, "role": "", "email": ""})
-                    add_job(
-                        company=new_company,
-                        title=new_title,
-                        status=new_status,
-                        url=new_url,
-                        salary_min=new_salary_min,
-                        salary_max=new_salary_max,
-                        notes=new_notes,
-                        contacts=contacts,
-                        follow_up_date=new_follow_up,
-                    )
+                    contacts = [{"name": new_contact_name, "role": "", "email": ""}] if new_contact_name else []
+                    add_job(company=new_company, title=new_title, status=new_status, url=new_url,
+                            salary_min=new_salary_min, salary_max=new_salary_max,
+                            notes=new_notes, contacts=contacts, follow_up_date=new_follow_up)
                     st.session_state.tracker_show_add_form = False
                     st.rerun()
                 else:
                     st.error("Company and Job Title are required.")
 
-    # --- Job List ---
+    # --- Get data ---
     jobs = get_jobs_by_status(st.session_state.tracker_filter)
+    custom_cols = get_custom_columns()
 
     if not jobs:
         st.markdown("""
             <div style="text-align: center; padding: 60px 20px; color: #94a3b8;">
                 <div style="font-size: 3rem; margin-bottom: 10px;">📋</div>
-                <p>No jobs found. Click <b>➕ Add Job</b> to get started, or <b>📥 Import from Sessions</b>.</p>
+                <p>No jobs found. Click <b>➕ Add Job</b> to get started.</p>
             </div>
         """, unsafe_allow_html=True)
+
+    # ========== TABLE VIEW ==========
+    elif st.session_state.tracker_view == "table":
+        import pandas as pd
+
+        # Build dataframe
+        rows = []
+        for job in jobs:
+            row = {
+                "ID": job["id"],
+                "Company": job["company"],
+                "Title": job["title"],
+                "Status": STATUS_LABELS.get(job["status"], job["status"]),
+                "Date Applied": job.get("date_applied", ""),
+                "Salary": (f"{job.get('salary_min', '')} – {job.get('salary_max', '')}"
+                           if job.get("salary_min") and job.get("salary_max")
+                           else job.get("salary_min", "")),
+                "Follow-up": job.get("follow_up_date", ""),
+                "URL": job.get("url", ""),
+                "Notes": job.get("notes", ""),
+            }
+            # Custom columns
+            cf = job.get("custom_fields", {})
+            for cc in custom_cols:
+                val = cf.get(cc["id"], "")
+                if cc["type"] == "yes_no" and isinstance(val, bool):
+                    val = "✅" if val else "❌"
+                row[cc["name"]] = val if val != "" else ""
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+
+        # Column config for st.data_editor
+        col_config = {
+            "ID": None,  # hide
+            "Status": st.column_config.SelectboxColumn(
+                "Status", options=[s[1] for s in STATUSES], width="medium"
+            ),
+            "URL": st.column_config.LinkColumn("URL", width="small"),
+            "Notes": st.column_config.TextColumn("Notes", width="large"),
+        }
+        # Custom column configs
+        for cc in custom_cols:
+            if cc["type"] == "yes_no":
+                col_config[cc["name"]] = st.column_config.CheckboxColumn(cc["name"])
+            elif cc["type"] == "number":
+                col_config[cc["name"]] = st.column_config.NumberColumn(cc["name"])
+            elif cc["type"] == "date":
+                col_config[cc["name"]] = st.column_config.TextColumn(cc["name"])
+            elif cc["type"] == "select" and cc.get("options"):
+                col_config[cc["name"]] = st.column_config.SelectboxColumn(cc["name"], options=cc["options"])
+            else:
+                col_config[cc["name"]] = st.column_config.TextColumn(cc["name"])
+
+        edited_df = st.data_editor(
+            df,
+            column_config=col_config,
+            use_container_width=True,
+            num_rows="fixed",
+            hide_index=True,
+            key="tracker_table"
+        )
+
+        # Detect edits and save
+        if edited_df is not None and not edited_df.equals(df):
+            status_reverse = {v: k for k, v in STATUS_LABELS.items()}
+            for idx in range(len(edited_df)):
+                orig = df.iloc[idx]
+                edited = edited_df.iloc[idx]
+                jid = orig["ID"]
+                changes = {}
+
+                if edited["Company"] != orig["Company"]:
+                    changes["company"] = edited["Company"]
+                if edited["Title"] != orig["Title"]:
+                    changes["title"] = edited["Title"]
+                if edited["Status"] != orig["Status"]:
+                    new_status_key = status_reverse.get(edited["Status"])
+                    if new_status_key:
+                        changes["status"] = new_status_key
+                if edited["Date Applied"] != orig["Date Applied"]:
+                    changes["date_applied"] = edited["Date Applied"]
+                if edited["Salary"] != orig["Salary"]:
+                    sal = str(edited["Salary"])
+                    if "–" in sal:
+                        parts = sal.split("–")
+                        changes["salary_min"] = parts[0].strip()
+                        changes["salary_max"] = parts[1].strip()
+                    else:
+                        changes["salary_min"] = sal
+                if edited["Follow-up"] != orig["Follow-up"]:
+                    changes["follow_up_date"] = edited["Follow-up"]
+                if edited["URL"] != orig["URL"]:
+                    changes["url"] = edited["URL"]
+                if edited["Notes"] != orig["Notes"]:
+                    changes["notes"] = edited["Notes"]
+
+                # Custom column changes
+                for cc in custom_cols:
+                    col_name = cc["name"]
+                    if col_name in edited.index and col_name in orig.index:
+                        new_val = edited[col_name]
+                        old_val = orig[col_name]
+                        if cc["type"] == "yes_no":
+                            new_val = new_val == "✅" if isinstance(new_val, str) else bool(new_val)
+                            old_val = old_val == "✅" if isinstance(old_val, str) else bool(old_val)
+                        if str(new_val) != str(old_val):
+                            update_custom_field(jid, cc["id"], new_val)
+
+                if changes:
+                    update_job(jid, changes)
+
+        # Delete & Session buttons below table
+        st.markdown("---")
+        del_cols = st.columns([1, 1, 4])
+        with del_cols[0]:
+            del_id = st.selectbox("Select job to delete", [""] + [f"{j['company']} – {j['title']}" for j in jobs],
+                                  key="table_del_select", label_visibility="collapsed")
+        with del_cols[1]:
+            if st.button("🗑️ Delete Selected", key="table_del_btn"):
+                if del_id:
+                    idx = [f"{j['company']} – {j['title']}" for j in jobs].index(del_id)
+                    delete_job(jobs[idx]["id"])
+                    st.rerun()
+
+        # Manage custom columns
+        if custom_cols:
+            with st.expander("⚙️ Manage Custom Columns"):
+                for cc in custom_cols:
+                    mc1, mc2 = st.columns([4, 1])
+                    with mc1:
+                        st.caption(f"**{cc['name']}** ({COLUMN_TYPE_LABELS.get(cc['type'], cc['type'])})")
+                    with mc2:
+                        if st.button("🗑️", key=f"del_col_{cc['id']}", help=f"Delete {cc['name']}"):
+                            delete_custom_column(cc["id"])
+                            st.rerun()
+
+    # ========== CARDS VIEW ==========
     else:
         for job in jobs:
             jid = job["id"]
@@ -2662,7 +2801,19 @@ elif st.session_state.page == "job_tracker":
 
             url_html = ""
             if job.get("url"):
-                url_html = f" &nbsp;•&nbsp; <a href='{job['url']}' target='_blank'>🔗 Job Link</a>"
+                url_html = f" &nbsp;•&nbsp; <a href='{job['url']}' target='_blank'>🔗 Link</a>"
+
+            # Custom fields display
+            cf = job.get("custom_fields", {})
+            custom_parts = []
+            for cc in custom_cols:
+                val = cf.get(cc["id"], "")
+                if val != "" and val is not None:
+                    display_val = "✅" if (cc["type"] == "yes_no" and val) else "❌" if (cc["type"] == "yes_no" and not val) else str(val)
+                    custom_parts.append(f"{cc['name']}: {display_val}")
+            custom_html = ""
+            if custom_parts:
+                custom_html = f"<div style='color: #8b5cf6; font-size: 0.82rem; margin-top: 4px;'>{'  •  '.join(custom_parts)}</div>"
 
             st.markdown(f"""
                 <div style="background: white; border-left: 4px solid {color}; border-radius: 0 10px 10px 0;
@@ -2679,6 +2830,7 @@ elif st.session_state.page == "job_tracker":
                     <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 6px;">
                         {meta_html}{url_html}
                     </div>
+                    {custom_html}
                     {"<div style='color: #64748b; font-size: 0.85rem; margin-top: 6px; font-style: italic;'>📝 " + job['notes'][:120] + ('...' if len(job.get('notes','')) > 120 else '') + "</div>" if job.get('notes') else ""}
                 </div>
             """, unsafe_allow_html=True)
@@ -2717,12 +2869,10 @@ elif st.session_state.page == "job_tracker":
                             st.toast("⚠️ Session not found.")
             with ac4:
                 new_status = st.selectbox(
-                    "Status",
-                    [s[0] for s in STATUSES],
+                    "Status", [s[0] for s in STATUSES],
                     index=[s[0] for s in STATUSES].index(job["status"]),
                     format_func=lambda x: STATUS_LABELS[x],
-                    key=f"status_{jid}",
-                    label_visibility="collapsed"
+                    key=f"status_{jid}", label_visibility="collapsed"
                 )
                 if new_status != job["status"]:
                     update_job(jid, {"status": new_status})
@@ -2742,32 +2892,61 @@ elif st.session_state.page == "job_tracker":
                         e_salary_max = st.text_input("Salary Max", value=job.get("salary_max", ""), key=f"e_smax_{jid}")
                         e_follow_up = st.text_input("Follow-up Date", value=job.get("follow_up_date", ""), key=f"e_fu_{jid}")
                         e_date = st.text_input("Date Applied", value=job.get("date_applied", ""), key=f"e_da_{jid}")
-                        e_contact = st.text_input(
-                            "Contact",
-                            value=job["contacts"][0]["name"] if job.get("contacts") else "",
-                            key=f"e_ct_{jid}"
-                        )
+                        e_contact = st.text_input("Contact",
+                                                  value=job["contacts"][0]["name"] if job.get("contacts") else "",
+                                                  key=f"e_ct_{jid}")
+
+                    # Custom fields in edit form
+                    if custom_cols:
+                        st.markdown("**Custom Fields**")
+                        cec1, cec2 = st.columns(2)
+                        cf = job.get("custom_fields", {})
+                        for ci, cc in enumerate(custom_cols):
+                            with cec1 if ci % 2 == 0 else cec2:
+                                val = cf.get(cc["id"], "")
+                                if cc["type"] == "yes_no":
+                                    val = st.checkbox(cc["name"], value=bool(val), key=f"cf_{jid}_{cc['id']}")
+                                elif cc["type"] == "number":
+                                    val = st.number_input(cc["name"], value=int(val) if val else 0, key=f"cf_{jid}_{cc['id']}")
+                                elif cc["type"] == "select" and cc.get("options"):
+                                    options = [""] + cc["options"]
+                                    idx = options.index(val) if val in options else 0
+                                    val = st.selectbox(cc["name"], options, index=idx, key=f"cf_{jid}_{cc['id']}")
+                                else:
+                                    val = st.text_input(cc["name"], value=str(val) if val else "", key=f"cf_{jid}_{cc['id']}")
+
                     e_notes = st.text_area("Notes", value=job.get("notes", ""), key=f"e_nt_{jid}", height=80)
 
                     if st.form_submit_button("💾 Save Changes", use_container_width=True):
-                        contacts = []
-                        if e_contact:
-                            contacts.append({"name": e_contact, "role": "", "email": ""})
+                        contacts = [{"name": e_contact, "role": "", "email": ""}] if e_contact else []
                         update_job(jid, {
-                            "company": e_company,
-                            "title": e_title,
-                            "url": e_url,
-                            "salary_min": e_salary_min,
-                            "salary_max": e_salary_max,
-                            "follow_up_date": e_follow_up,
-                            "date_applied": e_date,
-                            "notes": e_notes,
-                            "contacts": contacts,
+                            "company": e_company, "title": e_title, "url": e_url,
+                            "salary_min": e_salary_min, "salary_max": e_salary_max,
+                            "follow_up_date": e_follow_up, "date_applied": e_date,
+                            "notes": e_notes, "contacts": contacts,
                         })
+                        # Save custom fields
+                        cf = job.get("custom_fields", {})
+                        for cc in custom_cols:
+                            new_val = st.session_state.get(f"cf_{jid}_{cc['id']}")
+                            if new_val is not None:
+                                update_custom_field(jid, cc["id"], new_val)
                         st.session_state.tracker_editing_id = None
                         st.rerun()
 
             st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+
+        # Manage custom columns
+        if custom_cols:
+            with st.expander("⚙️ Manage Custom Columns"):
+                for cc in custom_cols:
+                    mc1, mc2 = st.columns([4, 1])
+                    with mc1:
+                        st.caption(f"**{cc['name']}** ({COLUMN_TYPE_LABELS.get(cc['type'], cc['type'])})")
+                    with mc2:
+                        if st.button("🗑️", key=f"del_col_{cc['id']}", help=f"Delete {cc['name']}"):
+                            delete_custom_column(cc["id"])
+                            st.rerun()
 
 elif st.session_state.page == "cover_letter" and st.session_state.resume_data and st.session_state.selected_job:
     # ============== Cover Letter Page ==============
