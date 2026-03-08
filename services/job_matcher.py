@@ -9,65 +9,121 @@ from langchain_core.messages import SystemMessage
 from services.llm import get_llm, clean_json
 
 
+def _extract_text_from_html(html: str) -> str:
+    """Extract meaningful text from raw HTML, trying common job-site selectors."""
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # Remove noise elements
+    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript']):
+        element.decompose()
+
+    # Try to find main content area (common job site patterns)
+    selectors = [
+        'article',
+        '[class*="job-description"]',
+        '[class*="jobDescription"]',
+        '[class*="job_description"]',
+        '[class*="description"]',
+        '[id*="job-description"]',
+        '[id*="jobDescription"]',
+        'main',
+        '.content',
+        '#content',
+    ]
+
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if node and len(node.get_text(strip=True)) > 200:
+            text = node.get_text(separator='\n', strip=True)
+            break
+    else:
+        text = soup.get_text(separator='\n', strip=True)
+
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' {2,}', ' ', text)
+    if len(text) > 8000:
+        text = text[:8000] + "..."
+    return text
+
+
+# Minimum character threshold to consider a fetch "useful".
+# Many JS-rendered pages return 300-2000 chars of boilerplate (nav, footer, cookie banners).
+_MIN_CONTENT_LEN = 1500
+
+
 def fetch_jd_from_url(url):
-    """Fetch job description content from a URL."""
+    """Fetch job description content from a URL.
+
+    1. Try a plain requests GET (fast, zero-dependency).
+    2. If the extracted text is too short (JS-rendered page),
+       try Jina Reader API as a free headless fallback.
+    3. If still too short, return a partial result so the caller
+       can warn the user to paste manually.
+    """
+    # ── Step 1: Plain requests ──
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/120.0.0.0 Safari/537.36'
         }
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Remove script and style elements
-        for element in soup(['script', 'style', 'nav', 'footer', 'header']):
-            element.decompose()
-        
-        # Try to find main content area (common job site patterns)
-        main_content = None
-        
-        # Common job posting containers
-        selectors = [
-            'article', 
-            '[class*="job-description"]',
-            '[class*="jobDescription"]',
-            '[class*="job_description"]',
-            '[class*="description"]',
-            '[id*="job-description"]',
-            '[id*="jobDescription"]',
-            'main',
-            '.content',
-            '#content'
-        ]
-        
-        for selector in selectors:
-            main_content = soup.select_one(selector)
-            if main_content and len(main_content.get_text(strip=True)) > 200:
-                break
-        
-        if main_content:
-            text = main_content.get_text(separator='\n', strip=True)
-        else:
-            # Fallback: get body text
-            text = soup.get_text(separator='\n', strip=True)
-        
-        # Clean up excessive whitespace
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        text = re.sub(r' {2,}', ' ', text)
-        
-        # Limit text length to avoid token limits
-        if len(text) > 8000:
-            text = text[:8000] + "..."
-        
-        return {"success": True, "content": text}
-        
+        text = _extract_text_from_html(response.text)
     except requests.exceptions.Timeout:
         return {"success": False, "error": "Request timed out. Please try pasting the JD text directly."}
     except requests.exceptions.RequestException as e:
         return {"success": False, "error": f"Failed to fetch URL: {str(e)}"}
     except Exception as e:
         return {"success": False, "error": f"Error processing URL: {str(e)}"}
+
+    # ── Step 2: If content is too thin, try Jina Reader (renders JS) ──
+    jina_failed = False
+    if len(text.strip()) < _MIN_CONTENT_LEN:
+        try:
+            jina_url = f"https://r.jina.ai/{url}"
+            jina_resp = requests.get(
+                jina_url,
+                headers={"Accept": "text/plain"},
+                timeout=30,
+            )
+            if jina_resp.ok:
+                jina_text = jina_resp.text.strip()
+                jina_lower = jina_text.lower()
+                if ("not yet fully loaded" in jina_lower
+                        or "requiring captcha" in jina_lower
+                        or "job not found" in jina_lower
+                        or "page not found" in jina_lower):
+                    jina_failed = True
+                elif len(jina_text) > _MIN_CONTENT_LEN:
+                    text = jina_text
+                    if len(text) > 8000:
+                        text = text[:8000] + "..."
+        except Exception:
+            pass  # Fall through to partial-content handling below
+
+    # ── Step 3: Return result (possibly with a warning) ──
+    js_warning = (
+        "⚠️ This page requires JavaScript to load and couldn't be fully read. "
+        "If results look incomplete, please copy-paste the job description text directly."
+    )
+    clean_text = text.strip()
+    text_lower = clean_text.lower()
+    has_jd_signals = any(kw in text_lower for kw in [
+        "responsibilities", "requirements", "qualifications", "experience",
+        "about the role", "what you'll do", "what we're looking for",
+        "about the team", "job description", "we are looking for",
+        "you will", "you'll", "must have", "nice to have",
+    ])
+    
+    if len(clean_text) < _MIN_CONTENT_LEN or jina_failed or not has_jd_signals:
+        return {
+            "success": False,
+            "error": "Could not extract enough job description content from this URL. "
+                     "Please copy the full job description text from the page and paste it directly.",
+        }
+
+    return {"success": True, "content": text}
 
 
 def parse_custom_jd(jd_input, resume_data, model_choice, api_key):
@@ -81,11 +137,13 @@ def parse_custom_jd(jd_input, resume_data, model_choice, api_key):
     jd_text = jd_input.strip()
     is_url = jd_text.startswith('http://') or jd_text.startswith('https://')
     
+    fetch_warning = None
     if is_url:
         fetch_result = fetch_jd_from_url(jd_text)
         if not fetch_result["success"]:
             return {"success": False, "error": fetch_result["error"]}
         jd_text = fetch_result["content"]
+        fetch_warning = fetch_result.get("warning")
     
     resume_json = json.dumps(resume_data, ensure_ascii=False, indent=2)
     
@@ -123,6 +181,8 @@ EXTRACTION GUIDELINES:
 - Be specific in match_reasons (reference actual skills/experience from resume)
 - Be specific in gaps (what's required but missing from resume)
 - Provide actionable tailoring_tips (how to modify resume for this specific job)
+- ONLY use information explicitly stated in the JD text. If a field (location, salary, type) is NOT mentioned, use "Not specified" — do NOT guess or infer.
+- If the JD text appears incomplete, truncated, or mostly navigation/boilerplate, set match_score to 0 and note "Insufficient JD content" in the description.
 
 MATCHING CRITERIA:
 - Skills match: Technical and soft skills alignment
@@ -164,7 +224,10 @@ Return ONLY valid JSON.
         if is_url:
             result["url"] = jd_input.strip()
 
-        return {"success": True, "job": result}
+        resp = {"success": True, "job": result}
+        if fetch_warning:
+            resp["warning"] = fetch_warning
+        return resp
         
     except Exception as e:
         print(f"[DEBUG] Custom JD parsing error: {e}")

@@ -11,3 +11,4 @@ audio-recorder-streamlit
 streamlit-js-eval
 requests
 beautifulsoup4
+plotly

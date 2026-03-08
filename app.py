@@ -19,6 +19,7 @@ if sys.platform == "darwin":
     new_path = ":".join(extra_paths) + ":" + current_path
     os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = new_path
 
+import re
 import streamlit as st
 import streamlit.components.v1 as components
 import base64
@@ -49,6 +50,14 @@ from services.job_tracker import (
     delete_custom_column, update_custom_field,
     STATUSES, STATUS_LABELS, STATUS_COLORS, COLUMN_TYPES, COLUMN_TYPE_LABELS
 )
+from services.keyword_profile import (
+    extract_and_cache_all, aggregate_keywords,
+    compute_resume_gaps, load_keyword_cache,
+    add_keyword_to_job, remove_keyword_from_job,
+    update_job_keywords, SKILL_CATEGORIES,
+)
+import plotly.express as px
+import plotly.graph_objects as go
 
 # --- Config ---
 load_dotenv()
@@ -98,8 +107,7 @@ st.markdown("""
     
     /* Job Card */
     .job-card {
-        background: white;
-        border: 1px solid #e2e8f0;
+        border: 1px solid rgba(128,128,128,0.2);
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 15px;
@@ -114,18 +122,17 @@ st.markdown("""
     .job-title {
         font-size: 1.2rem;
         font-weight: 700;
-        color: #1e293b;
         margin-bottom: 5px;
     }
     .job-company {
-        color: #64748b;
+        opacity: 0.7;
         font-size: 0.95rem;
         margin-bottom: 10px;
     }
     .job-meta {
         display: flex;
         gap: 15px;
-        color: #94a3b8;
+        opacity: 0.6;
         font-size: 0.85rem;
         margin-bottom: 15px;
     }
@@ -144,10 +151,10 @@ st.markdown("""
     .match-score.low {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     }
-    
+
     /* Feedback Card */
     .feedback-card {
-        background: #f8fafc;
+        background: rgba(128,128,128,0.08);
         border-radius: 10px;
         padding: 15px;
         margin-bottom: 10px;
@@ -158,11 +165,10 @@ st.markdown("""
     }
     .feedback-title {
         font-weight: 600;
-        color: #1e293b;
         margin-bottom: 5px;
     }
     .feedback-desc {
-        color: #64748b;
+        opacity: 0.7;
         font-size: 0.9rem;
     }
     
@@ -175,12 +181,12 @@ st.markdown("""
     .category-label {
         width: 120px;
         font-size: 0.9rem;
-        color: #475569;
+        opacity: 0.7;
     }
     .category-bar {
         flex: 1;
         height: 8px;
-        background: #e2e8f0;
+        background: rgba(128,128,128,0.2);
         border-radius: 4px;
         overflow: hidden;
     }
@@ -194,28 +200,27 @@ st.markdown("""
         width: 40px;
         text-align: right;
         font-weight: 600;
-        color: #1e293b;
         margin-left: 10px;
     }
     
     /* Chat Styles */
     .sugg-box {
-        background-color: white;
-        border: 1px solid #e2e8f0;
+        background: rgba(128,128,128,0.08);
+        border: 1px solid rgba(128,128,128,0.2);
         border-radius: 6px;
         padding: 10px;
         margin-bottom: 8px;
     }
     .edit-log {
-        background-color: #f0fdf4;
-        border: 1px solid #bbf7d0;
+        background-color: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.3);
         padding: 10px;
         border-radius: 6px;
         margin-top: 5px;
-        color: #166534;
+        color: #10b981;
     }
     .reverted-log {
-        background-color: #f1f5f9;
+        background: rgba(128,128,128,0.08);
         border: 1px solid #cbd5e1;
         color: #64748b;
         text-decoration: line-through;
@@ -328,6 +333,12 @@ if 'tracker_show_add_form' not in st.session_state:
     st.session_state.tracker_show_add_form = False
 if 'tracker_view' not in st.session_state:
     st.session_state.tracker_view = "table"  # "cards" or "table"
+if 'skill_status_filter' not in st.session_state:
+    st.session_state.skill_status_filter = "all"
+if 'si_editing_job' not in st.session_state:
+    st.session_state.si_editing_job = None
+if 'si_view' not in st.session_state:
+    st.session_state.si_view = "charts"  # "charts" or "data"
 
 
 # --- Helper Functions ---
@@ -505,18 +516,22 @@ with st.sidebar:
                 st.session_state.page = "interview"
                 st.rerun()
 
-    # Job Tracker — always accessible (not gated on resume_data)
+    # Job Tracker & Skill Insights — always accessible (not gated on resume_data)
     st.divider()
     if st.button("📋 Job Tracker", use_container_width=True,
                  type="primary" if st.session_state.page == "job_tracker" else "secondary"):
         st.session_state.page = "job_tracker"
+        st.rerun()
+    if st.button("📊 Skill Insights", use_container_width=True,
+                 type="primary" if st.session_state.page == "skill_insights" else "secondary"):
+        st.session_state.page = "skill_insights"
         st.rerun()
 
 
 # --- Main Content ---
 
 # ========== WELCOME / SAVED SESSIONS PAGE ==========
-if (not st.session_state.resume_data and st.session_state.page != "job_tracker") or st.session_state.page == "home":
+if (not st.session_state.resume_data and st.session_state.page not in ("job_tracker", "skill_insights")) or st.session_state.page == "home":
     st.markdown("""
         <div style="text-align: center; padding: 40px 0;">
             <h1>🚀 Welcome to CareerOps Pro</h1>
@@ -696,6 +711,10 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
     if 'custom_job' not in st.session_state:
         st.session_state.custom_job = None
     
+    if st.session_state.get("jd_error"):
+        st.error(f"❌ {st.session_state.jd_error}")
+        st.session_state.jd_error = None
+    
     with st.expander("📝 Enter Job Description", expanded=st.session_state.custom_job is None):
         jd_input = st.text_area(
             "Paste JD URL or text",
@@ -711,10 +730,16 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                     result = parse_custom_jd(jd_input, st.session_state.resume_data, model, api_key)
                     if result["success"]:
                         st.session_state.custom_job = result["job"]
-                        st.success("✅ JD analyzed successfully!")
+                        st.session_state.jd_error = None
+                        if result.get("warning"):
+                            st.warning(f"⚠️ {result['warning']}")
+                        else:
+                            st.success("✅ JD analyzed successfully!")
                         st.rerun()
                     else:
-                        st.error(f"❌ {result['error']}")
+                        st.session_state.custom_job = None
+                        st.session_state.jd_error = result['error']
+                        st.rerun()
         
         with col_clear:
             if st.session_state.custom_job and st.button("🗑️ Clear", use_container_width=True):
@@ -728,7 +753,7 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
         score_class = "" if score >= 80 else "medium" if score >= 60 else "low"
         
         st.markdown(f"""
-            <div class="job-card" style="border: 2px solid #667eea; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);">
+            <div class="job-card" style="border: 2px solid #667eea;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                     <div>
                         <div style="font-size: 0.75rem; color: #667eea; font-weight: 600; margin-bottom: 5px;">📌 CUSTOM JD</div>
@@ -866,21 +891,22 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
         score_html = ""
         if score is not None:
             score_html = f'<div class="match-score {score_class}">{score}% Match</div>'
+        job_display = job.get('title') if job.get('company', '').lower() in job.get('title', '').lower() else job.get('title') + ' @ ' + job.get('company', '')
         st.markdown(f"""
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         padding: 15px 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-size: 0.85rem; opacity: 0.9;">Tailoring Resume For:</div>
-                        <div style="font-size: 1.3rem; font-weight: 700;">{job.get('title') if job.get('company', '').lower() in job.get('title', '').lower() else job.get('title') + ' @ ' + job.get('company', '')}</div>
+                        <div style="font-size: 1.3rem; font-weight: 700;">{job_display}</div>
                     </div>
                     {score_html}
                 </div>
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor + settings
-    opt_col1, opt_col2 = st.columns([1, 5])
+    # One-click tailor + settings + track
+    opt_col1, opt_col2, opt_col3 = st.columns([2, 5, 1])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
@@ -936,6 +962,15 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         }
                     }
                     st.rerun()
+    with opt_col3:
+        if st.session_state.selected_job:
+            if st.button("📋 Track", key="editor_track_job", use_container_width=True):
+                tracker_import(
+                    session_id=st.session_state.current_session_id or "unsaved",
+                    selected_job=st.session_state.selected_job,
+                    status="applied"
+                )
+                st.toast("✅ Added to Job Tracker!")
     
     # Initialize edit mode
     if 'edit_mode' not in st.session_state:
@@ -2818,30 +2853,51 @@ elif st.session_state.page == "job_tracker":
             if custom_parts:
                 custom_html = f"<div style='color: #8b5cf6; font-size: 0.82rem; margin-top: 4px;'>{'  •  '.join(custom_parts)}</div>"
 
-            notes_html = ""
-            if job.get("notes"):
-                truncated = job["notes"][:120] + ("..." if len(job["notes"]) > 120 else "")
-                notes_html = f"<div style='color: #64748b; font-size: 0.85rem; margin-top: 6px; font-style: italic;'>📝 {truncated}</div>"
-
             st.markdown(f"""
-                <div style="background: white; border-left: 4px solid {color}; border-radius: 0 10px 10px 0;
-                            padding: 15px 20px; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+                <style>
+                    .tracker-card {{
+                        border-left: 4px solid {color}; border-radius: 0 10px 10px 0;
+                        padding: 15px 20px; margin-bottom: 2px;
+                        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+                    }}
+                    @media (prefers-color-scheme: dark) {{
+                        .tracker-card {{ background: #1e293b; }}
+                        .tracker-card .tc-title {{ color: #e2e8f0; }}
+                        .tracker-card .tc-sep {{ color: #475569; }}
+                        .tracker-card .tc-company {{ color: #94a3b8; }}
+                        .tracker-card .tc-meta {{ color: #64748b; }}
+                    }}
+                    @media (prefers-color-scheme: light) {{
+                        .tracker-card {{ background: #f8fafc; }}
+                        .tracker-card .tc-title {{ color: #1e293b; }}
+                        .tracker-card .tc-sep {{ color: #94a3b8; }}
+                        .tracker-card .tc-company {{ color: #64748b; }}
+                        .tracker-card .tc-meta {{ color: #94a3b8; }}
+                    }}
+                </style>
+                <div class="tracker-card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <span style="font-size: 1.1rem; font-weight: 700; color: #1e293b;">{job["title"]}</span>
-                            <span style="color: #94a3b8; margin: 0 6px;">@</span>
-                            <span style="color: #64748b; font-size: 0.95rem;">{job["company"]}</span>
+                            <span class="tc-title" style="font-size: 1.1rem; font-weight: 700;">{job["title"]}</span>
+                            <span class="tc-sep" style="margin: 0 6px;">@</span>
+                            <span class="tc-company" style="font-size: 0.95rem;">{job["company"]}</span>
                         </div>
                         <span style="background: {color}; color: white; padding: 3px 10px;
                                      border-radius: 12px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;">{label}</span>
                     </div>
-                    <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 6px;">
+                    <div class="tc-meta" style="font-size: 0.82rem; margin-top: 6px;">
                         {meta_html}{url_html}
                     </div>
                     {custom_html}
-                    {notes_html}
                 </div>
             """, unsafe_allow_html=True)
+
+            # Notes rendered separately to avoid Streamlit HTML sanitization issues
+            if job.get("notes"):
+                clean_notes = re.sub(r'<[^>]+>', '', str(job["notes"])).strip()
+                if clean_notes:
+                    truncated = clean_notes[:120] + ("..." if len(clean_notes) > 120 else "")
+                    st.caption(f"📝 {truncated}")
 
             # Action buttons
             ac1, ac2, ac3, ac4, ac5 = st.columns([1, 1, 1, 2, 3])
@@ -2955,6 +3011,450 @@ elif st.session_state.page == "job_tracker":
                         if st.button("🗑️", key=f"del_col_{cc['id']}", help=f"Delete {cc['name']}"):
                             delete_custom_column(cc["id"])
                             st.rerun()
+
+elif st.session_state.page == "skill_insights":
+    # ============== Skill Insights Page ==============
+
+    # ── Header row: title + view toggle + refresh button ──
+    _si_title, _si_toggle, _si_refresh = st.columns([7, 1, 1])
+    with _si_title:
+        st.markdown("## 📊 Skill Insights")
+    with _si_toggle:
+        _toggle_icon = "📋" if st.session_state.si_view == "charts" else "📊"
+        _toggle_tip = "Switch to Data view" if st.session_state.si_view == "charts" else "Switch to Charts view"
+        if st.button(_toggle_icon, key="si_toggle_view", help=_toggle_tip, use_container_width=True):
+            st.session_state.si_view = "data" if st.session_state.si_view == "charts" else "charts"
+            st.rerun()
+    with _si_refresh:
+        refresh_clicked = st.button("🔄", key="si_refresh", help="Re-extract keywords (clears cache)")
+
+    if refresh_clicked:
+        # Clear keyword cache so everything re-extracts
+        from services.keyword_profile import save_keyword_cache
+        save_keyword_cache({})
+        st.toast("🔄 Cache cleared — re-extracting keywords...")
+        st.rerun()
+
+    # ── Load all tracked jobs ──
+    tracker_data = load_tracker()
+    all_tracker_jobs = tracker_data.get("jobs", [])
+
+    if not all_tracker_jobs:
+        st.info("No tracked jobs yet. Add jobs in the **📋 Job Tracker** first, then come back for insights.")
+    else:
+        # ── Status filter tabs (2 rows to avoid crowding) ──
+        status_options = [("all", "All")] + [(s[0], s[1]) for s in STATUSES]
+        row1 = status_options[:5]
+        row2 = status_options[5:]
+        for row in [row1, row2]:
+            if not row:
+                continue
+            cols = st.columns(len(row))
+            for i, (key, label) in enumerate(row):
+                count = len(all_tracker_jobs) if key == "all" else len([j for j in all_tracker_jobs if j["status"] == key])
+                with cols[i]:
+                    btn_type = "primary" if st.session_state.skill_status_filter == key else "secondary"
+                    if st.button(f"{label} ({count})", key=f"si_filter_{key}", type=btn_type, use_container_width=True):
+                        st.session_state.skill_status_filter = key
+                        st.rerun()
+
+        # ── Gather requirements from ALL linked sessions (for caching & comparison) ──
+        all_jobs_with_reqs = []
+        jobs_without_reqs = []
+        for job in all_tracker_jobs:
+            sid = job.get("linked_session_id")
+            if sid:
+                sess = load_session(sid)
+                if sess:
+                    reqs = sess.get("selected_job", {}).get("requirements", [])
+                    if reqs:
+                        all_jobs_with_reqs.append({"job_id": job["id"], "requirements": reqs})
+                        continue
+            jobs_without_reqs.append(job)
+
+        if not all_jobs_with_reqs:
+            st.warning("No jobs with keyword data available. Import jobs with linked sessions from the **📋 Job Tracker** to get skill insights.")
+        else:
+            # ── Extract & cache keywords for ALL jobs ──
+            api_key = st.session_state.get("api_key", os.getenv("OPENAI_API_KEY", ""))
+            model_choice = st.session_state.get("model_choice", "gpt-4.1-mini")
+
+            with st.spinner(f"Analyzing keywords from {len(all_jobs_with_reqs)} job(s)..."):
+                keyword_data = extract_and_cache_all(all_jobs_with_reqs, model_choice, api_key)
+
+            # ── Filter to selected status for charts ──
+            if st.session_state.skill_status_filter == "all":
+                filtered_ids = list(keyword_data.keys())
+            else:
+                filtered_ids = [
+                    j["id"] for j in all_tracker_jobs
+                    if j["status"] == st.session_state.skill_status_filter and j["id"] in keyword_data
+                ]
+
+            # ── Aggregate (filtered) ──
+            aggregated = aggregate_keywords(keyword_data, filtered_ids)
+
+            # ── Category color map for tags ──
+            _CAT_COLORS = {
+                "Languages & Frameworks": ("#dbeafe", "#1e40af"),
+                "Cloud & DevOps": ("#fef3c7", "#92400e"),
+                "Data & AI": ("#ede9fe", "#5b21b6"),
+                "Business & Strategy": ("#fce7f3", "#9d174d"),
+                "Marketing & Growth": ("#fff7ed", "#c2410c"),
+                "Sales & BD": ("#ecfdf5", "#065f46"),
+                "Product & Design": ("#e0f2fe", "#0369a1"),
+                "Operations & HR": ("#fef9c3", "#854d0e"),
+                "Soft Skills": ("#fdf2f8", "#86198f"),
+                "Tools & Platforms": ("#f1f5f9", "#475569"),
+                "Other": ("#f5f5f4", "#57534e"),
+            }
+
+            # ════════════════ CHARTS VIEW ════════════════
+            if st.session_state.si_view == "charts":
+
+                if not aggregated["skill_counts"]:
+                    st.info("No keywords extracted from the selected jobs.")
+                else:
+                    # ── Row 1: Top Skills + Category Donut ──
+                    chart_l, chart_r = st.columns([3, 2])
+
+                    with chart_l:
+                        st.markdown("### 🏆 Top Skills in Demand")
+                        top_skills = dict(list(aggregated["skill_counts"].items())[:15])
+                        # Build data with categories for color
+                        skill_names = list(top_skills.keys())
+                        skill_counts_list = list(top_skills.values())
+                        skill_cats = []
+                        for s in skill_names:
+                            cat = "Other"
+                            for c, skills in aggregated["skills_by_category"].items():
+                                if s in skills:
+                                    cat = c
+                                    break
+                            skill_cats.append(cat)
+
+                        fig_bar = px.bar(
+                            x=skill_counts_list[::-1],
+                            y=skill_names[::-1],
+                            orientation="h",
+                            color=skill_cats[::-1],
+                            color_discrete_sequence=px.colors.qualitative.Set2,
+                            labels={"x": "Job Count", "y": "", "color": "Category"},
+                        )
+                        fig_bar.update_layout(
+                            height=450,
+                            margin=dict(l=0, r=20, t=10, b=60),
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            paper_bgcolor="rgba(0,0,0,0)",
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+
+                    with chart_r:
+                        st.markdown("### 📂 Category Breakdown")
+                        cat_names = list(aggregated["category_counts"].keys())
+                        cat_vals = list(aggregated["category_counts"].values())
+                        fig_pie = px.pie(
+                            names=cat_names,
+                            values=cat_vals,
+                            hole=0.45,
+                            color_discrete_sequence=px.colors.qualitative.Set2,
+                        )
+                        fig_pie.update_layout(
+                            height=420,
+                            margin=dict(l=0, r=0, t=10, b=30),
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                        )
+                        fig_pie.update_traces(textposition="inside", textinfo="label+percent")
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+                    st.divider()
+
+                    # ── Row 2: Skills by Category + Resume Gap ──
+                    det_l, det_r = st.columns([3, 2])
+
+                    with det_l:
+                        st.markdown("### 📋 Skills by Category")
+                        for cat, skills in aggregated["skills_by_category"].items():
+                            with st.expander(f"{cat}  ({sum(skills.values())} mentions)", expanded=False):
+                                for skill, count in skills.items():
+                                    pct = count / aggregated["total_jobs"] * 100
+                                    st.markdown(
+                                        f"<div style='display:flex; align-items:center; margin-bottom:4px;'>"
+                                        f"<span style='width:140px; font-size:0.9rem;'>{skill}</span>"
+                                        f"<div style='flex:1; background:#e2e8f0; border-radius:4px; height:14px; margin:0 8px;'>"
+                                        f"<div style='width:{pct:.0f}%; background:linear-gradient(90deg,#667eea,#764ba2);"
+                                        f"border-radius:4px; height:14px;'></div></div>"
+                                        f"<span style='font-size:0.85rem; color:#64748b; width:55px; text-align:right;'>"
+                                        f"{count}/{aggregated['total_jobs']}</span></div>",
+                                        unsafe_allow_html=True,
+                                    )
+
+                    with det_r:
+                        st.markdown("### 🎯 Resume Gap Analysis")
+                        resume_skills = {}
+                        if st.session_state.get("resume_data"):
+                            resume_skills = st.session_state.resume_data.get("skills", {})
+
+                        if not resume_skills:
+                            st.info("Upload a resume to see how your skills compare to job requirements.")
+                        else:
+                            gaps = compute_resume_gaps(aggregated, resume_skills)
+
+                            # Match percentage metric
+                            pct = gaps["match_percentage"]
+                            pct_color = "#22c55e" if pct >= 70 else "#f59e0b" if pct >= 50 else "#ef4444"
+                            st.markdown(
+                                f"<div style='text-align:center; padding:15px; background:linear-gradient(135deg,#f8fafc,#e2e8f0);"
+                                f"border-radius:12px; margin-bottom:15px;'>"
+                                f"<div style='font-size:2.5rem; font-weight:800; color:{pct_color};'>{pct}%</div>"
+                                f"<div style='color:#64748b; font-size:0.9rem;'>Skill Coverage</div></div>",
+                                unsafe_allow_html=True,
+                            )
+
+                            if gaps["matched"]:
+                                st.markdown("**✅ Skills You Have**")
+                                matched_tags = " ".join(
+                                    f"<span style='display:inline-block; background:#dcfce7; color:#166534; padding:3px 10px;"
+                                    f"border-radius:12px; font-size:0.82rem; margin:2px;'>{g['skill']} ({g['count']})</span>"
+                                    for g in gaps["matched"]
+                                )
+                                st.markdown(matched_tags, unsafe_allow_html=True)
+
+                            if gaps["gaps"]:
+                                st.markdown("**❌ Skills to Develop**")
+                                gap_tags = " ".join(
+                                    f"<span style='display:inline-block; background:#fef2f2; color:#991b1b; padding:3px 10px;"
+                                    f"border-radius:12px; font-size:0.82rem; margin:2px;'>{g['skill']} ({g['count']})</span>"
+                                    for g in gaps["gaps"]
+                                )
+                                st.markdown(gap_tags, unsafe_allow_html=True)
+
+                    st.divider()
+
+                    # ── Row 3: Status Comparison ──
+                    st.markdown("### 🔀 Status Comparison")
+                    st.caption("Compare skill profiles between different application outcomes.")
+
+                    cmp1, cmp2, _ = st.columns([2, 2, 4])
+                    avail_statuses = list({j["status"] for j in all_tracker_jobs})
+                    avail_labels = [(s, STATUS_LABELS.get(s, s)) for s in avail_statuses]
+
+                    if len(avail_labels) < 2:
+                        st.info("Need jobs in at least 2 different statuses to compare.")
+                    else:
+                        with cmp1:
+                            status_a = st.selectbox(
+                                "Status A",
+                                options=[s[0] for s in avail_labels],
+                                format_func=lambda x: STATUS_LABELS.get(x, x),
+                                key="si_cmp_a",
+                            )
+                        with cmp2:
+                            remaining = [s for s in avail_labels if s[0] != status_a]
+                            status_b = st.selectbox(
+                                "Status B",
+                                options=[s[0] for s in remaining],
+                                format_func=lambda x: STATUS_LABELS.get(x, x),
+                                key="si_cmp_b",
+                            )
+
+                        # Gather keyword data for each status group
+                        jobs_a_ids = [j["id"] for j in all_tracker_jobs if j["status"] == status_a and j["id"] in keyword_data]
+                        jobs_b_ids = [j["id"] for j in all_tracker_jobs if j["status"] == status_b and j["id"] in keyword_data]
+
+                        if not jobs_a_ids or not jobs_b_ids:
+                            st.info("One or both selected statuses have no jobs with keyword data.")
+                        else:
+                            agg_a = aggregate_keywords(keyword_data, jobs_a_ids)
+                            agg_b = aggregate_keywords(keyword_data, jobs_b_ids)
+
+                            # Get union of top skills
+                            all_skills_union = list(dict.fromkeys(
+                                list(agg_a["skill_counts"].keys())[:10] + list(agg_b["skill_counts"].keys())[:10]
+                            ))
+
+                            fig_cmp = go.Figure()
+                            fig_cmp.add_trace(go.Bar(
+                                name=STATUS_LABELS.get(status_a, status_a),
+                                x=all_skills_union,
+                                y=[agg_a["skill_counts"].get(s, 0) for s in all_skills_union],
+                                marker_color=STATUS_COLORS.get(status_a, "#94a3b8"),
+                            ))
+                            fig_cmp.add_trace(go.Bar(
+                                name=STATUS_LABELS.get(status_b, status_b),
+                                x=all_skills_union,
+                                y=[agg_b["skill_counts"].get(s, 0) for s in all_skills_union],
+                                marker_color=STATUS_COLORS.get(status_b, "#64748b"),
+                            ))
+                            fig_cmp.update_layout(
+                                barmode="group",
+                                height=500,
+                                margin=dict(l=40, r=20, t=10, b=140),
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                legend=dict(orientation="h", yanchor="top", y=-0.45, xanchor="center", x=0.5),
+                                xaxis_title="",
+                                yaxis_title="Job Count",
+                                yaxis=dict(dtick=1),
+                            )
+                            fig_cmp.update_xaxes(tickangle=-45, tickfont=dict(size=11))
+                            st.plotly_chart(fig_cmp, use_container_width=True)
+
+            # ════════════════ DATA VIEW ════════════════
+            elif st.session_state.si_view == "data":
+                st.caption("View and edit all job data that feeds into Skill Insights charts.")
+
+                # Build a lookup: job_id → job info
+                _job_lookup = {j["id"]: j for j in all_tracker_jobs}
+
+                # Collect all displayable job IDs (with keywords + manual with cache)
+                cache = load_keyword_cache()
+                _display_job_ids = list(keyword_data.keys())
+                for j in jobs_without_reqs:
+                    if j["id"] in cache and cache[j["id"]].get("keywords"):
+                        _display_job_ids.append(j["id"])
+                        keyword_data[j["id"]] = cache[j["id"]]["keywords"]
+                # Also include manual jobs WITHOUT cache
+                _manual_no_cache = [j for j in jobs_without_reqs if j["id"] not in _display_job_ids]
+                _all_data_ids = _display_job_ids + [j["id"] for j in _manual_no_cache]
+
+                if not _all_data_ids:
+                    st.info("No job data to display.")
+                else:
+                    for _idx, _jid in enumerate(_all_data_ids):
+                        _job_info = _job_lookup.get(_jid, {})
+                        _company = _job_info.get("company", "Unknown")
+                        _title = _job_info.get("title", "Unknown")
+                        _status = _job_info.get("status", "")
+                        _status_label = STATUS_LABELS.get(_status, _status)
+                        _status_color = STATUS_COLORS.get(_status, "#94a3b8")
+                        _kws = keyword_data.get(_jid, [])
+                        _kw_count = len(_kws)
+
+                        with st.expander(
+                            f"**{_company}** — {_title}  ({_kw_count} keywords)",
+                            expanded=(st.session_state.si_editing_job == _jid),
+                        ):
+                            # ── Job Details Section ──
+                            st.markdown("##### Job Details")
+                            _d1, _d2 = st.columns(2)
+                            with _d1:
+                                _new_company = st.text_input(
+                                    "Company", value=_company,
+                                    key=f"sid_company_{_jid}",
+                                )
+                                _new_title = st.text_input(
+                                    "Title", value=_title,
+                                    key=f"sid_title_{_jid}",
+                                )
+                                _status_keys = [s[0] for s in STATUSES]
+                                _status_idx = _status_keys.index(_status) if _status in _status_keys else 0
+                                _new_status = st.selectbox(
+                                    "Status",
+                                    options=_status_keys,
+                                    index=_status_idx,
+                                    format_func=lambda x: STATUS_LABELS.get(x, x),
+                                    key=f"sid_status_{_jid}",
+                                )
+                            with _d2:
+                                _new_salary = st.text_input(
+                                    "Salary", value=_job_info.get("salary", ""),
+                                    key=f"sid_salary_{_jid}",
+                                )
+                                _new_url = st.text_input(
+                                    "URL", value=_job_info.get("url", ""),
+                                    key=f"sid_url_{_jid}",
+                                )
+                                _new_notes = st.text_area(
+                                    "Notes", value=_job_info.get("notes", ""),
+                                    key=f"sid_notes_{_jid}",
+                                    height=68,
+                                )
+
+                            # Save details button
+                            if st.button("💾 Save Details", key=f"sid_save_{_jid}", use_container_width=True):
+                                _updates = {}
+                                if _new_company != _company:
+                                    _updates["company"] = _new_company
+                                if _new_title != _title:
+                                    _updates["title"] = _new_title
+                                if _new_status != _status:
+                                    _updates["status"] = _new_status
+                                if _new_salary != _job_info.get("salary", ""):
+                                    _updates["salary"] = _new_salary
+                                if _new_url != _job_info.get("url", ""):
+                                    _updates["url"] = _new_url
+                                if _new_notes != _job_info.get("notes", ""):
+                                    _updates["notes"] = _new_notes
+                                if _updates:
+                                    update_job(_jid, _updates)
+                                    st.toast(f"✅ Saved changes for {_new_company} — {_new_title}")
+                                    st.rerun()
+                                else:
+                                    st.toast("No changes to save.")
+
+                            st.divider()
+
+                            # ── Keywords Section ──
+                            st.markdown("##### Keywords")
+                            if _kws:
+                                _tags_html = ""
+                                for _kw in _kws:
+                                    _bg, _fg = _CAT_COLORS.get(_kw.get("category", "Other"), _CAT_COLORS["Other"])
+                                    _tags_html += (
+                                        f"<span style='display:inline-block; background:{_bg}; color:{_fg}; "
+                                        f"padding:2px 10px; border-radius:12px; font-size:0.8rem; margin:2px;'>"
+                                        f"{_kw['skill']}</span> "
+                                    )
+                                st.markdown(_tags_html, unsafe_allow_html=True)
+
+                                # Deletable keyword list
+                                _rm_cols = st.columns(min(len(_kws), 6))
+                                for _ki, _kw in enumerate(_kws):
+                                    with _rm_cols[_ki % len(_rm_cols)]:
+                                        if st.button(
+                                            f"❌ {_kw['skill']}",
+                                            key=f"sid_rm_{_jid}_{_ki}",
+                                            help=f"Remove {_kw['skill']}",
+                                            use_container_width=True,
+                                        ):
+                                            remove_keyword_from_job(_jid, _kw["skill"])
+                                            st.rerun()
+                            else:
+                                st.caption("No keywords extracted yet.")
+
+                            # Add new keyword row
+                            _ak1, _ak2, _ak3 = st.columns([3, 2, 1])
+                            with _ak1:
+                                _new_skill = st.text_input(
+                                    "Add keyword", placeholder="e.g. Docker",
+                                    key=f"sid_newsk_{_jid}", label_visibility="collapsed",
+                                )
+                            with _ak2:
+                                _cat_options = list(SKILL_CATEGORIES.keys()) + ["Other"]
+                                _new_cat = st.selectbox(
+                                    "Category", _cat_options,
+                                    key=f"sid_newcat_{_jid}", label_visibility="collapsed",
+                                )
+                            with _ak3:
+                                if st.button("➕", key=f"sid_add_{_jid}", help="Add keyword", use_container_width=True):
+                                    if _new_skill and _new_skill.strip():
+                                        # Ensure cache entry exists for manual jobs
+                                        if _jid not in cache:
+                                            from services.keyword_profile import save_keyword_cache as _save_kc
+                                            cache[_jid] = {"keywords": [], "extracted_at": ""}
+                                            _save_kc(cache)
+                                        add_keyword_to_job(_jid, _new_skill.strip(), _new_cat)
+                                        st.rerun()
+
+        # ── Warning for jobs without keyword data ──
+        if jobs_without_reqs:
+            with st.expander(f"⚠️ {len(jobs_without_reqs)} job(s) without keyword data", expanded=False):
+                st.caption("These jobs were added manually or have no linked session with requirements.")
+                for j in jobs_without_reqs:
+                    st.markdown(f"- **{j['title']}** @ {j['company']}")
 
 elif st.session_state.page == "cover_letter" and st.session_state.resume_data and st.session_state.selected_job:
     # ============== Cover Letter Page ==============
