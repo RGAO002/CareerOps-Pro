@@ -1,6 +1,7 @@
 streamlit
 langchain-openai
 langchain-anthropic
+langchain-google-genai
 langchain-core
 openai
 pypdf
@@ -12,3 +13,6 @@ streamlit-js-eval
 requests
 beautifulsoup4
 plotly
+fastapi
+uvicorn[standard]
+websockets
