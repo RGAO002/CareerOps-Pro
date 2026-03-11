@@ -74,7 +74,8 @@ def save_session(
     session_id: str = None,
     cover_letter_text: str = "",
     cover_letter_question: str = "",
-    cl_timeline: list = None
+    cl_timeline: list = None,
+    visitor_id: str = None,
 ) -> str:
     """
     Save a session. If session_id is provided, update existing session.
@@ -148,7 +149,8 @@ def save_session(
         "id": session_id,
         "pdf_md5": pdf_md5,
         "pdf_filename": pdf_filename,
-        "updated_at": now
+        "updated_at": now,
+        "visitor_id": visitor_id or "",
     }
 
     if existing:
@@ -250,6 +252,9 @@ def get_thumbnail_path(session_id: str) -> Path:
     return SESSIONS_DIR / "sessions" / session_id / "thumbnail.png"
 
 
-def list_sessions() -> list:
-    """List all saved sessions with their info."""
-    return load_index()
+def list_sessions(visitor_id: str = None) -> list:
+    """List saved sessions, optionally filtered by visitor_id."""
+    index = load_index()
+    if visitor_id:
+        return [s for s in index if s.get("visitor_id") == visitor_id]
+    return index

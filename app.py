@@ -4,6 +4,7 @@ AI-Powered Resume Analysis & Optimization Platform
 """
 import os
 import sys
+import uuid
 
 # --- macOS Fix for WeasyPrint/GTK libraries ---
 # Fix for "OSError: cannot load library 'libgobject-2.0-0'" on macOS
@@ -377,6 +378,9 @@ if 'cover_letter_question' not in st.session_state:
     st.session_state.cover_letter_question = ""
 if 'cl_timeline' not in st.session_state:
     st.session_state.cl_timeline = []
+# Visitor isolation (per browser tab)
+if 'visitor_id' not in st.session_state:
+    st.session_state.visitor_id = str(uuid.uuid4())[:12]
 # Guided tour
 if 'tour_step' not in st.session_state:
     st.session_state.tour_step = 0  # 0 = off, 1-4 = active steps
@@ -464,7 +468,8 @@ def auto_save_session():
             session_id=st.session_state.current_session_id,
             cover_letter_text=st.session_state.cover_letter_text,
             cover_letter_question=st.session_state.cover_letter_question,
-            cl_timeline=st.session_state.cl_timeline
+            cl_timeline=st.session_state.cl_timeline,
+            visitor_id=st.session_state.visitor_id,
         )
 
 
@@ -588,7 +593,8 @@ with st.sidebar:
                 selected_job=st.session_state.selected_job,
                 current_diff=st.session_state.current_diff,
                 page=st.session_state.page,
-                session_id=st.session_state.current_session_id
+                session_id=st.session_state.current_session_id,
+                visitor_id=st.session_state.visitor_id,
             )
             st.session_state.current_session_id = session_id
             st.success(f"✅ Session saved!")
@@ -666,7 +672,8 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
             This app is built with <strong style="color:#e2e8f0;">Streamlit</strong> and is being
             migrated to <strong style="color:#38bdf8;">Next.js</strong> for a better UI experience.<br>
             🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
-            🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta
+            🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta<br>
+            💾 Saved sessions are <strong style="color:#fbbf24;">per-browser</strong> and may reset on server updates
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -679,7 +686,7 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
             st.rerun()
 
     # Show saved sessions
-    saved_sessions = list_sessions()
+    saved_sessions = list_sessions(visitor_id=st.session_state.visitor_id)
     
     if saved_sessions:
         st.markdown("## 📂 Your Saved Sessions")
@@ -2838,7 +2845,7 @@ elif st.session_state.page == "job_tracker":
     _imp_l, _imp_r = st.columns([5, 1])
     with _imp_r:
         if st.button("📥 Import Sessions", key="import_sessions_btn", use_container_width=True):
-            sessions = list_sessions()
+            sessions = list_sessions(visitor_id=st.session_state.visitor_id)
             before_count = len(get_jobs_by_status("all"))
             for sess in sessions:
                 loaded = load_session(sess["id"])
