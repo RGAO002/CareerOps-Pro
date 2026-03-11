@@ -234,20 +234,47 @@ def rename_session(session_id: str, new_name: str) -> bool:
     return False
 
 
-def delete_session(session_id: str) -> bool:
-    """Delete a session."""
+def _demo_dismissed_path() -> Path:
+    return SESSIONS_DIR / ".demo_dismissed_vids"
+
+
+def _load_dismissed_vids() -> set:
+    """Load set of visitor_ids that have dismissed the demo session."""
+    p = _demo_dismissed_path()
+    if p.exists():
+        try:
+            return set(json.loads(p.read_text()))
+        except Exception:
+            return set()
+    return set()
+
+
+def _save_dismissed_vids(vids: set):
+    _demo_dismissed_path().write_text(json.dumps(list(vids)))
+
+
+def delete_session(session_id: str, visitor_id: str = None) -> bool:
+    """Delete a session. Demo sessions are not physically deleted —
+    instead the visitor_id is recorded as having dismissed it."""
     import shutil
-    
+
+    # Demo session: don't delete files, just mark this visitor as dismissed
+    if session_id == "demo0001" and visitor_id:
+        dismissed = _load_dismissed_vids()
+        dismissed.add(visitor_id)
+        _save_dismissed_vids(dismissed)
+        return True
+
     session_dir = SESSIONS_DIR / "sessions" / session_id
-    
+
     if session_dir.exists():
         shutil.rmtree(session_dir)
-    
+
     # Update index
     index = load_index()
     index = [s for s in index if s["id"] != session_id]
     save_index(index)
-    
+
     return True
 
 
@@ -259,7 +286,7 @@ def get_thumbnail_path(session_id: str) -> Path:
 def list_sessions(visitor_id: str = None) -> list:
     """List saved sessions, optionally filtered by visitor_id.
     - Local: show ALL sessions (no filtering) so the developer sees everything
-    - Cloud: filter by visitor_id, plus demo sessions visible to everyone
+    - Cloud: filter by visitor_id, plus demo sessions (unless dismissed by this visitor)
     """
     import os
     is_cloud = bool(os.environ.get("SPACE_ID"))  # HuggingFace Spaces sets SPACE_ID
@@ -270,9 +297,15 @@ def list_sessions(visitor_id: str = None) -> list:
     if not is_cloud:
         return index
 
-    # Cloud: isolate by visitor_id, always show demo sessions
+    # Cloud: isolate by visitor_id
     if visitor_id:
-        return [s for s in index
-                if s.get("visitor_id") == visitor_id
-                or s.get("visitor_id") == "demo"]
+        dismissed = _load_dismissed_vids()
+        result = []
+        for s in index:
+            vid = s.get("visitor_id")
+            if vid == visitor_id:
+                result.append(s)
+            elif vid == "demo" and visitor_id not in dismissed:
+                result.append(s)
+        return result
     return index

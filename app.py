@@ -796,7 +796,7 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
 
                 with btn_col2:
                     if st.button("🗑️ Delete", key=f"main_delete_{session_id}", use_container_width=True):
-                        delete_session(session_id)
+                        delete_session(session_id, visitor_id=st.session_state.visitor_id)
                         st.rerun()
                 
                 st.markdown("---")
