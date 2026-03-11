@@ -698,7 +698,7 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
         <p style="margin:0 0 0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
             🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
             🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta<br>
-            Frontend is being refactored, migrating from Streamlit to <strong style="color:#38bdf8;">Next.js</strong>
+            Frontend is undergoing refactoring, migrating from Streamlit to <strong style="color:#38bdf8;">Next.js</strong>
         </p>
         <hr style="border:none; border-top:1px solid #475569; margin:16px 0 12px;">
         <p style="margin:0; font-size:0.85rem; color:#94a3b8;">
