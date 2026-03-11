@@ -121,6 +121,7 @@ def add_job(
     location: str = "",
     work_type: str = "",
     requirements: list = None,
+    visitor_id: str = None,
 ) -> dict:
     """Add a new job entry. Returns the created entry."""
     data = load_tracker()
@@ -145,6 +146,8 @@ def add_job(
         "created_at": now,
         "updated_at": now,
     }
+    if visitor_id:
+        entry["visitor_id"] = visitor_id
     data["jobs"].insert(0, entry)  # newest first
     save_tracker(data)
     return entry
@@ -177,7 +180,7 @@ def delete_job(job_id: str) -> bool:
     return False
 
 
-def import_from_session(session_id: str, selected_job: dict, status: str = "applied") -> dict:
+def import_from_session(session_id: str, selected_job: dict, status: str = "applied", visitor_id: str = None) -> dict:
     """
     Import a job from a session's selected_job into the tracker.
     Prevents duplicate imports for the same session_id + job title combo.
@@ -231,15 +234,28 @@ def import_from_session(session_id: str, selected_job: dict, status: str = "appl
         location=location,
         work_type=work_type,
         requirements=selected_job.get("requirements", []),
+        visitor_id=visitor_id,
     )
 
 
-def get_jobs_by_status(status: str = None) -> list:
-    """Get jobs filtered by status. If status is None or 'all', returns all."""
+def get_jobs_by_status(status: str = None, visitor_id: str = None) -> list:
+    """Get jobs filtered by status and visitor_id.
+    - Local: show all jobs (no visitor_id filtering)
+    - Cloud: filter by visitor_id, plus demo jobs visible to everyone
+    """
+    is_cloud = bool(os.environ.get("SPACE_ID"))
     data = load_tracker()
+    jobs = data["jobs"]
+
+    # Cloud: isolate by visitor_id
+    if is_cloud and visitor_id:
+        jobs = [j for j in jobs
+                if j.get("visitor_id") == visitor_id
+                or j.get("visitor_id") == "demo"]
+
     if status is None or status == "all":
-        return data["jobs"]
-    return [j for j in data["jobs"] if j["status"] == status]
+        return jobs
+    return [j for j in jobs if j["status"] == status]
 
 
 def get_custom_columns() -> list:

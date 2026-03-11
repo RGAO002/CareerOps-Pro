@@ -992,7 +992,8 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                 tracker_import(
                     session_id=st.session_state.current_session_id or "unsaved",
                     selected_job=job,
-                    status="applied"
+                    status="applied",
+                    visitor_id=st.session_state.visitor_id,
                 )
                 st.toast("✅ Added to Job Tracker!")
 
@@ -1078,7 +1079,8 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                         tracker_import(
                             session_id=st.session_state.current_session_id or "unsaved",
                             selected_job=job,
-                            status="applied"
+                            status="applied",
+                            visitor_id=st.session_state.visitor_id,
                         )
                         st.toast("✅ Added to Job Tracker!")
 
@@ -1200,7 +1202,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 tracker_import(
                     session_id=st.session_state.current_session_id or "unsaved",
                     selected_job=st.session_state.selected_job,
-                    status="applied"
+                    status="applied",
+                    visitor_id=st.session_state.visitor_id,
                 )
                 st.toast("✅ Added to Job Tracker!")
     
@@ -2865,7 +2868,7 @@ elif st.session_state.page == "job_tracker":
             st.rerun()
 
     # --- Status filter tabs ---
-    all_jobs = get_jobs_by_status("all")
+    all_jobs = get_jobs_by_status("all", visitor_id=st.session_state.visitor_id)
     tab_keys = ["all"] + [s[0] for s in STATUSES]
     tab_labels = ["All"] + [s[1] for s in STATUSES]
 
@@ -2888,12 +2891,12 @@ elif st.session_state.page == "job_tracker":
     with _imp_r:
         if st.button("📥 Import Sessions", key="import_sessions_btn", use_container_width=True):
             sessions = list_sessions(visitor_id=st.session_state.visitor_id)
-            before_count = len(get_jobs_by_status("all"))
+            before_count = len(get_jobs_by_status("all", visitor_id=st.session_state.visitor_id))
             for sess in sessions:
                 loaded = load_session(sess["id"])
                 if loaded and loaded.get("selected_job"):
-                    tracker_import(session_id=sess["id"], selected_job=loaded["selected_job"], status="applied")
-            added = len(get_jobs_by_status("all")) - before_count
+                    tracker_import(session_id=sess["id"], selected_job=loaded["selected_job"], status="applied", visitor_id=st.session_state.visitor_id)
+            added = len(get_jobs_by_status("all", visitor_id=st.session_state.visitor_id)) - before_count
             st.toast(f"✅ Imported {added} job(s)!" if added else "ℹ️ All already tracked.")
             st.rerun()
 
@@ -2965,6 +2968,7 @@ elif st.session_state.page == "job_tracker":
                         notes=new_notes, contacts=contacts, follow_up_date=new_follow_up,
                         location=new_location, work_type=new_work_type,
                         requirements=_parsed.get("requirements", []),
+                        visitor_id=st.session_state.visitor_id,
                     )
                     # Queue auto keyword extraction
                     st.session_state._newly_added_job = {
@@ -3007,7 +3011,7 @@ elif st.session_state.page == "job_tracker":
         st.session_state._newly_added_job = None
 
     # --- Get data ---
-    jobs = get_jobs_by_status(st.session_state.tracker_filter)
+    jobs = get_jobs_by_status(st.session_state.tracker_filter, visitor_id=st.session_state.visitor_id)
     custom_cols = get_custom_columns()
 
     if not jobs:
@@ -3427,9 +3431,8 @@ elif st.session_state.page == "skill_insights":
         st.toast("🔄 Cache cleared — re-extracting keywords...")
         st.rerun()
 
-    # ── Load all tracked jobs ──
-    tracker_data = load_tracker()
-    all_tracker_jobs = tracker_data.get("jobs", [])
+    # ── Load all tracked jobs (filtered by visitor on cloud) ──
+    all_tracker_jobs = get_jobs_by_status("all", visitor_id=st.session_state.visitor_id)
 
     if not all_tracker_jobs:
         st.info("No tracked jobs yet. Add jobs in the **📋 Job Tracker** first, then come back for insights.")
@@ -3662,7 +3665,7 @@ elif st.session_state.page == "skill_insights":
                         st.markdown("### 🏢 Work Type Distribution")
                         from collections import Counter as _Counter
                         _wt_counts = _Counter()
-                        _all_trk = load_tracker().get("jobs", [])
+                        _all_trk = get_jobs_by_status("all", visitor_id=st.session_state.visitor_id)
                         if st.session_state.skill_status_filter and st.session_state.skill_status_filter != "all":
                             _all_trk = [j for j in _all_trk if j.get("status") == st.session_state.skill_status_filter]
                         for _j in _all_trk:

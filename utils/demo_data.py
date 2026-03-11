@@ -514,7 +514,9 @@ def _seed_job_tracker():
     existing_ids = {j["id"] for j in data["jobs"]}
     for job in DEMO_JOBS:
         if job["id"] not in existing_ids:
-            data["jobs"].append(job)
+            job_copy = dict(job)
+            job_copy["visitor_id"] = "demo"
+            data["jobs"].append(job_copy)
 
     with open(tracker_path, "w") as f:
         json.dump(data, f, indent=2)
