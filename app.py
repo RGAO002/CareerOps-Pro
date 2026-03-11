@@ -551,14 +551,22 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
     <div style="background: linear-gradient(135deg, #1e293b, #334155); border-radius: 12px;
                 padding: 20px 28px; margin: 0 auto 24px; max-width: 720px;
                 border: 1px solid #475569; color: #e2e8f0;">
-        <p style="margin:0 0 6px; font-size:0.95rem;">
+        <p style="margin:0 0 8px; font-size:0.95rem;">
             <strong>📌 Project Status</strong>
         </p>
-        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.6;">
-            🔬 <strong>Multi-LLM Review</strong> — refactoring with
-            <strong style="color:#38bdf8;">Next.js + FastAPI WebSocket</strong><br>
-            🎤 <strong>Mock Interview</strong> — in beta<br>
-            Core features (resume analysis, job matching, keyword insights) are fully functional.
+        <p style="margin:0 0 12px; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
+            This app is built with <strong style="color:#e2e8f0;">Streamlit</strong> and is being
+            migrated to <strong style="color:#38bdf8;">Next.js</strong> for a better UI experience.<br>
+            🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
+            🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta
+        </p>
+        <p style="margin:0 0 4px; font-size:0.95rem;">
+            <strong>🚀 Quick Start</strong>
+        </p>
+        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
+            1. Enter your <strong style="color:#e2e8f0;">API key</strong> in the sidebar (supports OpenAI, Anthropic, Google)<br>
+            2. Upload your <strong style="color:#e2e8f0;">resume PDF</strong> — AI parses it automatically<br>
+            3. Paste a <strong style="color:#e2e8f0;">job description</strong> to get tailored analysis, editing, and cover letters
         </p>
     </div>
     """, unsafe_allow_html=True)
