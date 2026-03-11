@@ -21,29 +21,47 @@ DEMO_VISITOR_ID = "demo"
 
 # Bump this version whenever the demo data structure changes so the
 # seeder re-runs on existing deployments.
-_SEED_VERSION = "2"
+_SEED_VERSION = "3"
 
 
 def seed_demo_data():
     """Seed demo data if not already present. Safe to call on every startup."""
+    print(f"[demo_data] seed_demo_data() called. SESSIONS_DIR={SESSIONS_DIR}")
     if SENTINEL.exists():
         existing_ver = SENTINEL.read_text().strip().split("|")[0]
         if existing_ver == _SEED_VERSION:
+            print(f"[demo_data] Sentinel v{_SEED_VERSION} exists, skipping.")
             return
         # Version mismatch → re-seed (clean old demo files first)
+        print(f"[demo_data] Version mismatch ({existing_ver} → {_SEED_VERSION}), re-seeding...")
         import shutil
         demo_dir = SESSIONS_DIR / "sessions" / DEMO_SESSION_ID
         if demo_dir.exists():
             shutil.rmtree(demo_dir)
+    else:
+        print("[demo_data] No sentinel, seeding fresh...")
     SESSIONS_DIR.mkdir(exist_ok=True)
     (SESSIONS_DIR / "sessions").mkdir(exist_ok=True)
 
-    _seed_session()
-    _seed_job_tracker()
-    _seed_keyword_cache()
+    try:
+        _seed_session()
+        print("[demo_data] ✅ Session seeded")
+    except Exception as e:
+        print(f"[demo_data] ❌ Session seed failed: {e}")
+    try:
+        _seed_job_tracker()
+        print("[demo_data] ✅ Job tracker seeded")
+    except Exception as e:
+        print(f"[demo_data] ❌ Job tracker seed failed: {e}")
+    try:
+        _seed_keyword_cache()
+        print("[demo_data] ✅ Keyword cache seeded")
+    except Exception as e:
+        print(f"[demo_data] ❌ Keyword cache seed failed: {e}")
 
     # Write sentinel so we don't re-seed (version|timestamp)
     SENTINEL.write_text(f"{_SEED_VERSION}|{datetime.now().isoformat()}")
+    print(f"[demo_data] Sentinel written. Done.")
 
 
 # ---------------------------------------------------------------------------
