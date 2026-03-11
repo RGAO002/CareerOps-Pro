@@ -273,6 +273,47 @@ st.markdown("""
         box-shadow: none !important;
         outline: none !important;
     }
+
+    /* Guided tour callout */
+    .tour-callout {
+        background: linear-gradient(135deg, #1e40af, #3b82f6);
+        border: 1px solid #60a5fa;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin: 8px 0;
+        color: #f0f9ff;
+        position: relative;
+        animation: tour-pulse 2s ease-in-out infinite;
+    }
+    .tour-callout::before {
+        content: "";
+        position: absolute;
+        top: -8px;
+        left: 20px;
+        width: 0; height: 0;
+        border-left: 8px solid transparent;
+        border-right: 8px solid transparent;
+        border-bottom: 8px solid #1e40af;
+    }
+    .tour-callout .tour-step-badge {
+        display: inline-block;
+        background: #dbeafe;
+        color: #1e3a8a;
+        font-weight: 700;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-bottom: 6px;
+    }
+    .tour-callout .tour-text {
+        font-size: 0.85rem;
+        line-height: 1.5;
+        margin: 0;
+    }
+    @keyframes tour-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+        50% { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -336,6 +377,41 @@ if 'cover_letter_question' not in st.session_state:
     st.session_state.cover_letter_question = ""
 if 'cl_timeline' not in st.session_state:
     st.session_state.cl_timeline = []
+# Guided tour
+if 'tour_step' not in st.session_state:
+    st.session_state.tour_step = 0  # 0 = off, 1-4 = active steps
+
+def _tour_callout(step: int, total: int, text: str, arrow_down: bool = False):
+    """Render a tour callout bubble if the current tour step matches."""
+    if st.session_state.tour_step != step:
+        return
+    arrow_css = ""
+    if arrow_down:
+        arrow_css = """
+        .tour-callout::before { top: auto; bottom: -8px;
+            border-bottom: none; border-top: 8px solid #1e40af; }
+        """
+    st.markdown(f"""
+    <style>{arrow_css}</style>
+    <div class="tour-callout">
+        <span class="tour-step-badge">Step {step} / {total}</span>
+        <p class="tour-text">{text}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    tc1, tc2 = st.columns(2)
+    with tc1:
+        if st.button("Skip Tour", key=f"tour_skip_{step}", use_container_width=True):
+            st.session_state.tour_step = 0
+            st.rerun()
+    with tc2:
+        if step < total:
+            if st.button("Next →", key=f"tour_next_{step}", type="primary", use_container_width=True):
+                st.session_state.tour_step = step + 1
+                st.rerun()
+        else:
+            if st.button("Done ✓", key=f"tour_done_{step}", type="primary", use_container_width=True):
+                st.session_state.tour_step = 0
+                st.rerun()
 if 'cl_trigger_action' not in st.session_state:
     st.session_state.cl_trigger_action = None
 # Job Tracker UI state
@@ -444,10 +520,20 @@ with st.sidebar:
         api_key = default_key  # ensure fallback even if input cleared
     if default_key:
         st.caption("🔓 Demo key pre-configured")
-    
+
+    _tour_callout(1, 4,
+        "👆 <b>Choose a model</b> and enter your API key above. "
+        "OpenAI, Anthropic, and Google keys all work. "
+        "If a demo key is pre-configured, you're good to go!")
+
     st.divider()
-    
+
     uploaded_file = st.file_uploader("📄 Upload Resume (PDF)", type="pdf")
+
+    _tour_callout(2, 4,
+        "👆 <b>Upload your resume PDF</b> here. "
+        "The AI will use Vision to parse every section automatically. "
+        "Then click <b>🔍 Analyze Resume</b> below.")
     
     if uploaded_file and api_key:
         if st.button("🔍 Analyze Resume", type="primary", use_container_width=True):
@@ -515,6 +601,10 @@ with st.sidebar:
     if st.session_state.resume_data:
         st.divider()
         st.subheader("📍 Navigation")
+        _tour_callout(4, 4,
+            "🎉 <b>You're all set!</b> Use these buttons to navigate between tools. "
+            "After selecting a job, <b>Editor</b>, <b>Cover Letter</b>, and <b>Mock Interview</b> "
+            "will appear here. <b>Job Tracker</b> and <b>Skill Insights</b> are always available below.")
 
         if st.button("🏠 Home", use_container_width=True,
                      type="primary" if st.session_state.page == "home" else "secondary"):
@@ -581,35 +671,12 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Guided Tour ────────────────────────────────────────────
-    @st.dialog("🗺️ How to Use CareerOps Pro", width="large")
-    def _show_tour():
-        steps = [
-            ("1️⃣", "sidebar ← API Key", "Enter your API key in the **sidebar** on the left. Supports OpenAI, Anthropic, and Google keys. *A demo key may already be pre-configured.*"),
-            ("2️⃣", "sidebar ← Upload PDF", "Upload your **resume PDF** using the file uploader in the sidebar, then click **🔍 Analyze Resume**. The AI will parse every section automatically."),
-            ("3️⃣", "Resume Analysis", "You'll land on **Resume Analysis** — an overall score, section-by-section feedback, and **AI job matches** scraped from real listings."),
-            ("4️⃣", "Select a Job → Unlock Tools", "Click a matched job (or paste a custom JD). This unlocks:\n- ✏️ **Resume Editor** — AI rewrites tailored to the job\n- 📝 **Cover Letter** — auto-generated and editable\n- 🎙️ **Mock Interview** — practice Q&A with AI feedback"),
-            ("5️⃣", "Job Tracker & Skill Insights", "These pages work **independently** — no resume needed.\n- 📋 **Job Tracker** — manage all your applications\n- 📊 **Skill Insights** — keyword gap analysis across all tracked jobs"),
-        ]
-        for emoji, title, desc in steps:
-            st.markdown(f"""
-            <div style="display:flex; gap:14px; align-items:flex-start; margin-bottom:16px;
-                        padding:14px 16px; border-radius:10px;
-                        background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
-                <div style="font-size:1.5rem; line-height:1;">{emoji}</div>
-                <div>
-                    <p style="margin:0 0 4px; font-weight:600; color:#e2e8f0;">{title}</p>
-                    <p style="margin:0; font-size:0.88rem; color:#94a3b8; line-height:1.6;">{desc}</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        if st.button("Got it!", use_container_width=True, type="primary"):
-            st.rerun()
-
+    # ── Guided Tour trigger ──────────────────────────────────
     _tour_col1, _tour_col2, _tour_col3 = st.columns([1, 1, 1])
     with _tour_col2:
         if st.button("🗺️ Take a Tour", use_container_width=True, type="primary"):
-            _show_tour()
+            st.session_state.tour_step = 1
+            st.rerun()
 
     # Show saved sessions
     saved_sessions = list_sessions()
@@ -710,6 +777,9 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
         """, unsafe_allow_html=True)
 
 elif st.session_state.page == "analysis" and st.session_state.resume_data:
+    # Auto-advance tour: user just analyzed their resume
+    if st.session_state.tour_step in (1, 2):
+        st.session_state.tour_step = 3
     # ============== Analysis Page ==============
     st.markdown("## 📊 Resume Analysis Dashboard")
     
@@ -876,7 +946,9 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                 html = render_resume_html(st.session_state.resume_data)
                 st.session_state.pdf_bytes = convert_html_to_pdf(html)
                 st.session_state.current_diff = {}
-
+                # Auto-advance tour
+                if st.session_state.tour_step == 3:
+                    st.session_state.tour_step = 4
                 st.rerun()
             if st.button("📋 Track", key="track_custom"):
                 tracker_import(
@@ -890,6 +962,24 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
     if matches:
         st.divider()
         st.markdown("## 🎯 Best Matching Jobs")
+        if st.session_state.tour_step == 3:
+            st.markdown("""
+            <div class="tour-callout" style="margin-bottom:12px;">
+                <span class="tour-step-badge">Step 3 / 4</span>
+                <p class="tour-text">👇 <b>Click any job card</b> below to select it.
+                This unlocks the <b>Resume Editor</b>, <b>Cover Letter</b>, and <b>Mock Interview</b> tools
+                — all tailored to that specific job.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            _tc1, _tc2 = st.columns(2)
+            with _tc1:
+                if st.button("Skip Tour", key="tour_skip_3", use_container_width=True):
+                    st.session_state.tour_step = 0
+                    st.rerun()
+            with _tc2:
+                if st.button("Next →", key="tour_next_3", type="primary", use_container_width=True):
+                    st.session_state.tour_step = 4
+                    st.rerun()
         st.caption(matches.get("recommended_focus", ""))
         
         for job in matches.get("matches", [])[:5]:
@@ -942,7 +1032,9 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
                         html = render_resume_html(st.session_state.resume_data)
                         st.session_state.pdf_bytes = convert_html_to_pdf(html)
                         st.session_state.current_diff = {}
-
+                        # Auto-advance tour
+                        if st.session_state.tour_step == 3:
+                            st.session_state.tour_step = 4
                         st.rerun()
                     if st.button("📋 Track", key=f"track_{job.get('id')}"):
                         tracker_import(
