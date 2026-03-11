@@ -453,6 +453,12 @@ if 'si_view' not in st.session_state:
 
 
 # --- Helper Functions ---
+def _get_undetectable_key() -> str:
+    """Get Undetectable.ai API key: user input (resume or CL) > env var."""
+    return (st.session_state.get("undetectable_api_key_input", "").strip()
+            or st.session_state.get("cl_undetectable_api_key_input", "").strip()
+            or os.getenv("UNDETECTABLE_API_KEY", "").strip())
+
 def auto_save_session():
     """Auto-save current session if we have enough data."""
     if (st.session_state.resume_data and 
@@ -1124,6 +1130,17 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             st.checkbox("Auto-humanize after tailor", key="auto_humanize", value=False)
             st.divider()
             st.caption("🔒 Humanize Settings")
+            st.markdown(
+                "Powered by [**Undetectable.ai**](https://undetectable.ai) — "
+                "rewrites AI-generated text to sound more natural and bypass AI detectors. "
+                "Enter your API key below, or set `UNDETECTABLE_API_KEY` in `.env`."
+            )
+            st.text_input(
+                "🔑 Undetectable.ai API Key",
+                type="password",
+                key="undetectable_api_key_input",
+                placeholder="Paste your Undetectable.ai API key here",
+            )
             h_s_col1, h_s_col2 = st.columns(2)
             with h_s_col1:
                 st.selectbox("Strength", ["Quality", "Balanced", "More Human"], index=2, key="humanize_strength")
@@ -1133,7 +1150,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 st.selectbox("Readability", ["High School", "University", "Doctorate", "Journalist", "Marketing"], index=3, key="humanize_readability")
             st.multiselect("Sections to humanize", ["summary", "experience", "projects"], default=["summary", "experience", "projects"], key="humanize_sections")
             # Show credits
-            _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+            _ukey = _get_undetectable_key()
             if _ukey:
                 try:
                     _credits = check_credits(_ukey)
@@ -1142,8 +1159,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                     st.caption("💰 Credits: unable to check")
             st.divider()
             if st.button("🔒 Humanize Resume Text", type="secondary", use_container_width=True):
-                if not os.getenv("UNDETECTABLE_API_KEY"):
-                    st.warning("UNDETECTABLE_API_KEY not found in .env")
+                if not _get_undetectable_key():
+                    st.warning("Please enter your Undetectable.ai API key above, or set UNDETECTABLE_API_KEY in .env.")
                 elif not st.session_state.resume_data:
                     st.warning("No resume loaded.")
                 else:
@@ -1648,7 +1665,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
 
                 # Auto-humanize if enabled
                 if st.session_state.get("auto_humanize"):
-                    undetectable_key = os.getenv("UNDETECTABLE_API_KEY", "")
+                    undetectable_key = _get_undetectable_key()
                     if undetectable_key:
                         with st.status("🔒 Auto-humanizing AI text...", expanded=True) as h_status:
                             try:
@@ -1682,7 +1699,7 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                                 h_status.update(label="⚠️ Auto-humanization failed", state="error", expanded=True)
                                 st.warning(f"Auto-humanization failed: {str(e)}")
                     else:
-                        st.warning("Auto-humanize enabled but UNDETECTABLE_API_KEY not found in .env")
+                        st.warning("Auto-humanize enabled but no Undetectable.ai API key found. Enter it in ⚙️ Tailor & Humanize Settings.")
 
                 st.rerun()
 
@@ -1735,10 +1752,10 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             elif action['type'] == "start_humanize":
                 settings = action['payload']
                 sections = settings.pop("sections", ["summary", "experience", "projects"])
-                undetectable_key = os.getenv("UNDETECTABLE_API_KEY", "")
+                undetectable_key = _get_undetectable_key()
 
                 if not undetectable_key:
-                    st.error("UNDETECTABLE_API_KEY not found in .env")
+                    st.error("No Undetectable.ai API key found. Enter it in ⚙️ Tailor & Humanize Settings.")
                 else:
                     with st.status("🔒 Humanizing AI text...", expanded=True) as status:
                         try:
@@ -4001,9 +4018,9 @@ elif st.session_state.page == "cover_letter" and st.session_state.resume_data an
 
         with btn_col2:
             if st.button("🔒 Humanize"):
-                _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+                _ukey = _get_undetectable_key()
                 if not _ukey:
-                    st.warning("UNDETECTABLE_API_KEY not found in .env")
+                    st.warning("Please enter your Undetectable.ai API key in ⚙️ Humanize Settings, or set UNDETECTABLE_API_KEY in .env.")
                 elif not st.session_state.cover_letter_text.strip():
                     st.warning("Generate a cover letter first.")
                 else:
@@ -4031,6 +4048,20 @@ elif st.session_state.page == "cover_letter" and st.session_state.resume_data an
 
         with btn_col3:
             with st.expander("⚙️ Humanize Settings"):
+                st.markdown(
+                    "Powered by [**Undetectable.ai**](https://undetectable.ai) — "
+                    "rewrites AI-generated text to sound more natural and bypass AI detectors. "
+                    "Enter your API key below, or set `UNDETECTABLE_API_KEY` in `.env`."
+                )
+                if not st.session_state.get("undetectable_api_key_input"):
+                    st.text_input(
+                        "🔑 Undetectable.ai API Key",
+                        type="password",
+                        key="cl_undetectable_api_key_input",
+                        placeholder="Paste your Undetectable.ai API key here",
+                    )
+                else:
+                    st.caption("🔑 Using API key from Resume Humanize settings")
                 _hc1, _hc2 = st.columns(2)
                 with _hc1:
                     st.selectbox("Strength", ["Quality", "Balanced", "More Human"], index=2, key="cl_humanize_strength")
@@ -4038,7 +4069,7 @@ elif st.session_state.page == "cover_letter" and st.session_state.resume_data an
                     st.selectbox("Readability", ["High School", "University", "Doctorate", "Journalist", "Marketing"], index=3, key="cl_humanize_readability")
                 st.selectbox("Model", ["v11", "v11sr", "v2"], index=0, key="cl_humanize_model",
                              help="v11: English-optimized | v11sr: Best English, slower | v2: Multilingual")
-                _ukey = os.getenv("UNDETECTABLE_API_KEY", "")
+                _ukey = _get_undetectable_key()
                 if _ukey:
                     try:
                         _credits = check_credits(_ukey)
