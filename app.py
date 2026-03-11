@@ -1481,27 +1481,18 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 preview_pdf = st.session_state.pdf_bytes
 
             if preview_pdf:
-                import base64 as _b64
-                pdf_base64 = _b64.b64encode(preview_pdf).decode("utf-8")
-                # Edge blocks data: URIs in iframes. Use JS to create a Blob URL instead.
-                _pdf_viewer_html = f'''
-                <html><body style="margin:0;padding:0;">
-                <iframe id="pdfFrame" width="100%" height="800px"
-                        style="border:1px solid #e5e7eb;border-radius:8px;"></iframe>
-                <script>
-                (function() {{
-                    var b64 = "{pdf_base64}";
-                    var bin = atob(b64);
-                    var len = bin.length;
-                    var bytes = new Uint8Array(len);
-                    for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-                    var blob = new Blob([bytes], {{type: "application/pdf"}});
-                    document.getElementById("pdfFrame").src = URL.createObjectURL(blob);
-                }})();
-                </script>
-                </body></html>
-                '''
-                components.html(_pdf_viewer_html, height=820)
+                # Render PDF pages as images via PyMuPDF — avoids iframe/CSP
+                # issues on Streamlit Cloud while keeping the PDF pipeline intact.
+                try:
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(stream=preview_pdf, filetype="pdf")
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        pix = page.get_pixmap(dpi=150)
+                        st.image(pix.tobytes("png"), use_container_width=True)
+                    doc.close()
+                except Exception as _pdf_err:
+                    st.warning(f"PDF preview unavailable: {_pdf_err}")
             else:
                 st.warning("PDF preview unavailable. Try refreshing the page.")
     
