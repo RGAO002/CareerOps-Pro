@@ -318,6 +318,33 @@ def _seed_session():
     with open(session_dir / "state.json", "w") as f:
         json.dump(state, f, indent=2)
 
+    # --- resume.html (render from resume_data so preview works) ---
+    try:
+        from utils.html_renderer import render_resume_html, render_resume_html_for_pdf
+
+        resume_html = render_resume_html(state["resume_data"], editable=False)
+        with open(session_dir / "resume.html", "w", encoding="utf-8") as f:
+            f.write(resume_html)
+
+        # --- original.pdf + thumbnail ---
+        try:
+            from utils.pdf_utils import convert_html_to_pdf
+            from utils.session_manager import generate_thumbnail
+
+            pdf_html = render_resume_html_for_pdf(state["resume_data"])
+            pdf_bytes = convert_html_to_pdf(pdf_html)
+            if pdf_bytes:
+                with open(session_dir / "original.pdf", "wb") as f:
+                    f.write(pdf_bytes)
+                thumb = generate_thumbnail(pdf_bytes)
+                if thumb:
+                    with open(session_dir / "thumbnail.png", "wb") as f:
+                        f.write(thumb)
+        except Exception as e:
+            print(f"[demo_data] PDF/thumbnail generation skipped: {e}")
+    except Exception as e:
+        print(f"[demo_data] HTML generation skipped: {e}")
+
     # --- index.json ---
     index_path = SESSIONS_DIR / "index.json"
     if index_path.exists():
