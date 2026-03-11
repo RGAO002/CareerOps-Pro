@@ -529,9 +529,9 @@ with st.sidebar:
         st.caption("✅ Demo key active — ready to go")
 
     _tour_callout(1, 4,
-        "👆 <b>Choose a model</b> and enter your API key above. "
-        "OpenAI, Anthropic, and Google keys all work. "
-        "If a demo key is pre-configured, you're good to go!")
+        "👆 Leave the API key field <b>blank</b> to use the built-in "
+        "<b>GPT-5.2</b> model for free. You're also welcome to enter "
+        "your own OpenAI / Anthropic / Google key if you prefer.")
 
     st.divider()
 
