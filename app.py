@@ -555,8 +555,9 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
             <strong>📌 Project Status</strong>
         </p>
         <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.6;">
-            Currently refactoring the Multi-LLM Review module with
-            <strong style="color:#38bdf8;">Next.js + FastAPI WebSocket</strong>.
+            🔬 <strong>Multi-LLM Review</strong> — refactoring with
+            <strong style="color:#38bdf8;">Next.js + FastAPI WebSocket</strong><br>
+            🎤 <strong>Mock Interview</strong> — in beta<br>
             Core features (resume analysis, job matching, keyword insights) are fully functional.
         </p>
     </div>
@@ -985,18 +986,25 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         }
                     }
                     st.rerun()
+    @st.dialog("🔬 Multi-LLM Review (Debate)")
+    def _show_debate_wip():
+        st.markdown(
+            "Two AI models **independently draft** your resume section, "
+            "**cross-review** each other's work, then produce final versions "
+            "— you pick the best one in a **blind comparison**."
+        )
+        st.markdown("---")
+        st.markdown(
+            "🚧 &nbsp; **Under development** — the Next.js + WebSocket "
+            "frontend for this feature is being built. Stay tuned!"
+        )
+        if st.button("OK", use_container_width=True):
+            st.rerun()
+
     with opt_col_debate:
         if st.button("🤖 Debate", key="editor_debate", use_container_width=True,
                       help="Multi-LLM Review: have two AI models debate and refine your resume"):
-            st.info(
-                "🤖 **Multi-LLM Review (Debate)**\n\n"
-                "This feature lets two AI models independently draft, cross-review, "
-                "and refine your resume section — then you pick the best version in a "
-                "blind comparison.\n\n"
-                "🚧 **Currently under development** — the Next.js frontend for this "
-                "feature is being built. Stay tuned!",
-                icon="🔬"
-            )
+            _show_debate_wip()
     with opt_col3:
         if st.session_state.selected_job:
             if st.button("📋 Track", key="editor_track_job", use_container_width=True):
