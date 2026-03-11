@@ -546,7 +546,22 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
             <p style="font-size: 1.2rem; color: #64748b;">AI-Powered Resume Analysis & Optimization Platform</p>
         </div>
     """, unsafe_allow_html=True)
-    
+
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #1e293b, #334155); border-radius: 12px;
+                padding: 20px 28px; margin: 0 auto 24px; max-width: 720px;
+                border: 1px solid #475569; color: #e2e8f0;">
+        <p style="margin:0 0 6px; font-size:0.95rem;">
+            <strong>📌 Project Status</strong>
+        </p>
+        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.6;">
+            Currently refactoring the Multi-LLM Review module with
+            <strong style="color:#38bdf8;">Next.js + FastAPI WebSocket</strong>.
+            Core features (resume analysis, job matching, keyword insights) are fully functional.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Show saved sessions
     saved_sessions = list_sessions()
     
@@ -972,27 +987,16 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                     st.rerun()
     with opt_col_debate:
         if st.button("🤖 Debate", key="editor_debate", use_container_width=True,
-                      help="Open Multi-LLM Review to have two AI models debate and refine your resume"):
-            import json as _json
-            _ctx = {
-                "resume_data": st.session_state.resume_data,
-                "job_data": {},
-            }
-            if st.session_state.selected_job:
-                _job = st.session_state.selected_job
-                _ctx["job_data"] = {
-                    "title": _job.get("title", ""),
-                    "company": _job.get("company", ""),
-                    "requirements": _job.get("tailoring_tips", []) + _job.get("gaps", []),
-                    "description": _job.get("description", ""),
-                }
-            _ctx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_sessions", "_review_context.json")
-            os.makedirs(os.path.dirname(_ctx_path), exist_ok=True)
-            with open(_ctx_path, "w", encoding="utf-8") as _f:
-                _f.write(_json.dumps(_ctx, ensure_ascii=False, indent=2))
-            import webbrowser
-            webbrowser.open_new_tab("http://localhost:3000/review")
-            st.toast("✅ Context saved — Review page opened in new tab")
+                      help="Multi-LLM Review: have two AI models debate and refine your resume"):
+            st.info(
+                "🤖 **Multi-LLM Review (Debate)**\n\n"
+                "This feature lets two AI models independently draft, cross-review, "
+                "and refine your resume section — then you pick the best version in a "
+                "blind comparison.\n\n"
+                "🚧 **Currently under development** — the Next.js frontend for this "
+                "feature is being built. Stay tuned!",
+                icon="🔬"
+            )
     with opt_col3:
         if st.session_state.selected_job:
             if st.button("📋 Track", key="editor_track_job", use_container_width=True):
