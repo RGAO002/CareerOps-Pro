@@ -523,7 +523,9 @@ with st.sidebar:
     api_key = st.text_input("🔑 API Key", value=default_key, type="password",
                             help="Supports OpenAI, Anthropic, and Google API keys")
     api_key = (api_key or default_key or "").strip()
-    if default_key:
+    if api_key:
+        st.caption(f"🔑 Key loaded ({api_key[:7]}...{api_key[-4:]})")
+    elif default_key:
         st.caption("🔓 Demo key pre-configured")
 
     _tour_callout(1, 4,

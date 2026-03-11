@@ -307,10 +307,12 @@ Return ONLY valid JSON, no other text."""
                 }
             })
         
+        # gpt-5.2 / o-series use max_completion_tokens; others use max_tokens
+        _token_kwarg = "max_completion_tokens" if ("gpt-5" in model or model.startswith("o")) else "max_tokens"
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": content}],
-            max_tokens=4096,
+            **{_token_kwarg: 4096},
             response_format={"type": "json_object"}
         )
         
