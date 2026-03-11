@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.claude
+__pycache__
+*.pyc
+saved_sessions/sessions/
+saved_sessions/index.json
+saved_sessions/job_tracker.json
+saved_sessions/keyword_cache.json
+saved_sessions/.demo_seeded
+node_modules
+nextjs-frontend
+.venv
+*.md
+!README.md
