@@ -58,11 +58,13 @@ from services.keyword_profile import (
     add_keyword_to_job, remove_keyword_from_job,
     update_job_keywords, SKILL_CATEGORIES, is_soft_skill,
 )
+from utils.demo_data import seed_demo_data
 import plotly.express as px
 import plotly.graph_objects as go
 
 # --- Config ---
 load_dotenv()
+seed_demo_data()  # Create demo session + jobs + keywords on first launch
 
 # ── Streamlit Cloud secrets → env fallback ─────────────────────
 # On Streamlit Cloud, secrets are set in the dashboard and accessed
@@ -671,16 +673,23 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
             <strong>📌 About This Project</strong>
         </p>
         <p style="margin:0 0 10px; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
-            Built by <strong style="color:#e2e8f0;">Ruoping Gao</strong>
-            · <a href="https://github.com/RGAO002/CareerOps-Pro" target="_blank"
-                 style="color:#38bdf8; text-decoration:none;">GitHub ↗</a><br>
             This app is for <strong style="color:#fbbf24;">demonstration purposes</strong>.
-            Data is stored per-browser and may reset — we are not responsible for data loss.
+            Data is stored per-browser and may reset.
         </p>
-        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
+        <p style="margin:0 0 12px; font-size:1.05rem; color:#f87171; font-weight:700;
+                  text-transform:uppercase; letter-spacing:0.5px;">
+            ⚠️ WE ARE NOT RESPONSIBLE FOR DATA LOSS
+        </p>
+        <p style="margin:0 0 0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
             🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
             🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta<br>
-            Frontend migrating from Streamlit to <strong style="color:#38bdf8;">Next.js</strong>
+            Frontend is being refactored, migrating from Streamlit to <strong style="color:#38bdf8;">Next.js</strong>
+        </p>
+        <hr style="border:none; border-top:1px solid #475569; margin:16px 0 12px;">
+        <p style="margin:0; font-size:0.85rem; color:#94a3b8;">
+            Built by <strong style="color:#e2e8f0;">Ruoping Gao</strong>
+            · <a href="https://github.com/RGAO002/CareerOps-Pro" target="_blank"
+                 style="color:#38bdf8; text-decoration:none;">GitHub ↗</a>
         </p>
     </div>
     """, unsafe_allow_html=True)
