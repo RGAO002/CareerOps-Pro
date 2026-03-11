@@ -65,15 +65,30 @@ def seed_demo_data():
 
 
 def ensure_demo_session():
-    """Lightweight check — re-create demo session if deleted. Safe to call on every page load."""
-    demo_state = SESSIONS_DIR / "sessions" / DEMO_SESSION_ID / "state.json"
-    if demo_state.exists():
-        return  # fast path: demo session exists, nothing to do
-    # Demo session missing (user deleted it) → re-create
+    """Ensure demo session files AND index entry exist. Safe to call on every page load."""
     SESSIONS_DIR.mkdir(exist_ok=True)
     (SESSIONS_DIR / "sessions").mkdir(exist_ok=True)
+
+    demo_state = SESSIONS_DIR / "sessions" / DEMO_SESSION_ID / "state.json"
+    index_path = SESSIONS_DIR / "index.json"
+
+    # Check if demo entry exists in index
+    index_ok = False
+    if index_path.exists():
+        try:
+            with open(index_path, "r") as f:
+                index = json.load(f)
+            index_ok = any(s.get("id") == DEMO_SESSION_ID for s in index)
+        except Exception:
+            pass
+
+    if demo_state.exists() and index_ok:
+        return  # fast path: both files and index entry exist
+
+    # Something missing → re-seed session (creates files + index entry)
     try:
         _seed_session()
+        print("[demo_data] ensure_demo_session: re-seeded")
     except Exception as e:
         print(f"[demo_data] ensure_demo_session failed: {e}")
 
