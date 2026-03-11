@@ -804,15 +804,16 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
         # No saved sessions - show instructions
         st.markdown("""
             <div style="
-                text-align: center; 
+                text-align: center;
                 padding: 60px 40px;
-                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+                border: 1px solid #475569;
                 border-radius: 16px;
                 margin: 40px 0;
             ">
                 <div style="font-size: 4rem; margin-bottom: 20px;">📄</div>
-                <h3>Get Started</h3>
-                <p style="color: #64748b; max-width: 400px; margin: 0 auto;">
+                <h3 style="color: #e2e8f0;">Get Started</h3>
+                <p style="color: #94a3b8; max-width: 400px; margin: 0 auto;">
                     Upload your resume PDF in the sidebar to begin analyzing and optimizing your resume with AI.
                 </p>
             </div>
