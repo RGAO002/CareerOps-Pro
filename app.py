@@ -68,14 +68,15 @@ load_dotenv()
 # On Streamlit Cloud, secrets are set in the dashboard and accessed
 # via st.secrets. Bridge them to os.environ so all downstream code
 # (services/llm.py, etc.) can use os.getenv() as usual.
+try:
+    _secrets = dict(st.secrets)
+except Exception:
+    _secrets = {}
 for _secret_key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
     if not os.getenv(_secret_key):
-        try:
-            _val = st.secrets.get(_secret_key, "")
-            if _val:
-                os.environ[_secret_key] = _val
-        except Exception:
-            pass
+        _val = _secrets.get(_secret_key, "")
+        if _val:
+            os.environ[_secret_key] = str(_val).strip()
 st.set_page_config(
     layout="wide", 
     page_title="CareerOps Pro - AI Resume Platform",
@@ -517,12 +518,11 @@ with st.sidebar:
     
     st.divider()
     
-    model = st.selectbox("🧠 Brain", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
+    model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"])
     default_key = os.getenv("OPENAI_API_KEY", "")
     api_key = st.text_input("🔑 API Key", value=default_key, type="password",
                             help="Supports OpenAI, Anthropic, and Google API keys")
-    if default_key and not api_key:
-        api_key = default_key  # ensure fallback even if input cleared
+    api_key = (api_key or default_key or "").strip()
     if default_key:
         st.caption("🔓 Demo key pre-configured")
 
@@ -556,23 +556,23 @@ with st.sidebar:
                 
                 if parse_result.get("success"):
                     st.session_state.resume_data = parse_result["data"]
-                    
+
                     analysis = analyze_resume(parse_result["data"], model, api_key)
                     if analysis["success"]:
                         st.session_state.analysis_result = analysis["analysis"]
-                    
+
                     matches = match_jobs(parse_result["data"], model, api_key)
                     if matches["success"]:
                         st.session_state.job_matches = matches
-                    
+
                     st.session_state.page = "analysis"
                     st.session_state.timeline = []
                     st.session_state.selected_job = None
                     st.session_state.current_session_id = None  # New session, not saved yet
+                    st.rerun()
                 else:
                     st.error(f"❌ Failed to parse resume: {parse_result.get('error', 'Unknown error')}")
-                    
-                st.rerun()
+                    st.stop()
     
     # ========== SAVE SESSION BUTTON ==========
     if st.session_state.resume_data and st.session_state.pdf_bytes:
