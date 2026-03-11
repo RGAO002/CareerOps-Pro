@@ -64,7 +64,9 @@ import plotly.graph_objects as go
 
 # --- Config ---
 load_dotenv()
-seed_demo_data()  # Create demo session + jobs + keywords on first launch
+# Only seed demo data on cloud (HuggingFace Spaces), not locally
+if os.environ.get("SPACE_ID"):
+    seed_demo_data()
 
 # ── Streamlit Cloud secrets → env fallback ─────────────────────
 # On Streamlit Cloud, secrets are set in the dashboard and accessed
