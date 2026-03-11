@@ -62,6 +62,19 @@ import plotly.graph_objects as go
 
 # --- Config ---
 load_dotenv()
+
+# ── Streamlit Cloud secrets → env fallback ─────────────────────
+# On Streamlit Cloud, secrets are set in the dashboard and accessed
+# via st.secrets. Bridge them to os.environ so all downstream code
+# (services/llm.py, etc.) can use os.getenv() as usual.
+for _secret_key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+    if not os.getenv(_secret_key):
+        try:
+            _val = st.secrets.get(_secret_key, "")
+            if _val:
+                os.environ[_secret_key] = _val
+        except Exception:
+            pass
 st.set_page_config(
     layout="wide", 
     page_title="CareerOps Pro - AI Resume Platform",
@@ -425,7 +438,12 @@ with st.sidebar:
     
     model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
     default_key = os.getenv("OPENAI_API_KEY", "")
-    api_key = st.text_input("🔑 API Key", value=default_key, type="password")
+    api_key = st.text_input("🔑 API Key", value=default_key, type="password",
+                            help="Supports OpenAI, Anthropic, and Google API keys")
+    if default_key and not api_key:
+        api_key = default_key  # ensure fallback even if input cleared
+    if default_key:
+        st.caption("🔓 Demo key pre-configured")
     
     st.divider()
     
@@ -554,22 +572,44 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
         <p style="margin:0 0 8px; font-size:0.95rem;">
             <strong>📌 Project Status</strong>
         </p>
-        <p style="margin:0 0 12px; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
+        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
             This app is built with <strong style="color:#e2e8f0;">Streamlit</strong> and is being
             migrated to <strong style="color:#38bdf8;">Next.js</strong> for a better UI experience.<br>
             🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
             🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta
         </p>
-        <p style="margin:0 0 4px; font-size:0.95rem;">
-            <strong>🚀 Quick Start</strong>
-        </p>
-        <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
-            1. Enter your <strong style="color:#e2e8f0;">API key</strong> in the sidebar (supports OpenAI, Anthropic, Google)<br>
-            2. Upload your <strong style="color:#e2e8f0;">resume PDF</strong> — AI parses it automatically<br>
-            3. Paste a <strong style="color:#e2e8f0;">job description</strong> to get tailored analysis, editing, and cover letters
-        </p>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Guided Tour ────────────────────────────────────────────
+    @st.dialog("🗺️ How to Use CareerOps Pro", width="large")
+    def _show_tour():
+        steps = [
+            ("1️⃣", "sidebar ← API Key", "Enter your API key in the **sidebar** on the left. Supports OpenAI, Anthropic, and Google keys. *A demo key may already be pre-configured.*"),
+            ("2️⃣", "sidebar ← Upload PDF", "Upload your **resume PDF** using the file uploader in the sidebar, then click **🔍 Analyze Resume**. The AI will parse every section automatically."),
+            ("3️⃣", "Resume Analysis", "You'll land on **Resume Analysis** — an overall score, section-by-section feedback, and **AI job matches** scraped from real listings."),
+            ("4️⃣", "Select a Job → Unlock Tools", "Click a matched job (or paste a custom JD). This unlocks:\n- ✏️ **Resume Editor** — AI rewrites tailored to the job\n- 📝 **Cover Letter** — auto-generated and editable\n- 🎙️ **Mock Interview** — practice Q&A with AI feedback"),
+            ("5️⃣", "Job Tracker & Skill Insights", "These pages work **independently** — no resume needed.\n- 📋 **Job Tracker** — manage all your applications\n- 📊 **Skill Insights** — keyword gap analysis across all tracked jobs"),
+        ]
+        for emoji, title, desc in steps:
+            st.markdown(f"""
+            <div style="display:flex; gap:14px; align-items:flex-start; margin-bottom:16px;
+                        padding:14px 16px; border-radius:10px;
+                        background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);">
+                <div style="font-size:1.5rem; line-height:1;">{emoji}</div>
+                <div>
+                    <p style="margin:0 0 4px; font-weight:600; color:#e2e8f0;">{title}</p>
+                    <p style="margin:0; font-size:0.88rem; color:#94a3b8; line-height:1.6;">{desc}</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        if st.button("Got it!", use_container_width=True, type="primary"):
+            st.rerun()
+
+    _tour_col1, _tour_col2, _tour_col3 = st.columns([1, 1, 1])
+    with _tour_col2:
+        if st.button("🗺️ Take a Tour", use_container_width=True, type="primary"):
+            _show_tour()
 
     # Show saved sessions
     saved_sessions = list_sessions()
