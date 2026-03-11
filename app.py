@@ -58,7 +58,7 @@ from services.keyword_profile import (
     add_keyword_to_job, remove_keyword_from_job,
     update_job_keywords, SKILL_CATEGORIES, is_soft_skill,
 )
-from utils.demo_data import seed_demo_data
+from utils.demo_data import seed_demo_data, ensure_demo_session
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -715,6 +715,10 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
         if st.button("🗺️ Take a Tour", use_container_width=True, type="primary"):
             st.session_state.tour_step = 1
             st.rerun()
+
+    # Ensure demo session always exists on cloud (re-creates if deleted)
+    if os.environ.get("SPACE_ID"):
+        ensure_demo_session()
 
     # Show saved sessions
     saved_sessions = list_sessions(visitor_id=st.session_state.visitor_id)

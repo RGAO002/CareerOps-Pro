@@ -64,6 +64,20 @@ def seed_demo_data():
     print(f"[demo_data] Sentinel written. Done.")
 
 
+def ensure_demo_session():
+    """Lightweight check — re-create demo session if deleted. Safe to call on every page load."""
+    demo_state = SESSIONS_DIR / "sessions" / DEMO_SESSION_ID / "state.json"
+    if demo_state.exists():
+        return  # fast path: demo session exists, nothing to do
+    # Demo session missing (user deleted it) → re-create
+    SESSIONS_DIR.mkdir(exist_ok=True)
+    (SESSIONS_DIR / "sessions").mkdir(exist_ok=True)
+    try:
+        _seed_session()
+    except Exception as e:
+        print(f"[demo_data] ensure_demo_session failed: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Session
 # ---------------------------------------------------------------------------
