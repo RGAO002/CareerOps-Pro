@@ -383,9 +383,28 @@ if 'cover_letter_question' not in st.session_state:
     st.session_state.cover_letter_question = ""
 if 'cl_timeline' not in st.session_state:
     st.session_state.cl_timeline = []
-# Visitor isolation (per browser tab)
+# Visitor isolation — persist across page refreshes via localStorage
 if 'visitor_id' not in st.session_state:
     st.session_state.visitor_id = str(uuid.uuid4())[:12]
+    st.session_state._vid_synced = False
+
+if not st.session_state.get("_vid_synced"):
+    _stored_vid = streamlit_js_eval(
+        js_expressions="localStorage.getItem('careeropspro_vid')",
+        key="_vid_read"
+    )
+    if _stored_vid and isinstance(_stored_vid, str) and len(_stored_vid) >= 8:
+        # Returning visitor — use stored ID
+        if st.session_state.visitor_id != _stored_vid:
+            st.session_state.visitor_id = _stored_vid
+        st.session_state._vid_synced = True
+    elif _stored_vid is not None:
+        # First visit or no stored ID — save current ID to localStorage
+        streamlit_js_eval(
+            js_expressions=f"localStorage.setItem('careeropspro_vid', '{st.session_state.visitor_id}')",
+            key="_vid_write"
+        )
+        st.session_state._vid_synced = True
 # Guided tour
 if 'tour_step' not in st.session_state:
     st.session_state.tour_step = 0  # 0 = off, 1-4 = active steps
