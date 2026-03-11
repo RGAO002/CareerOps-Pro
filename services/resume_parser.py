@@ -240,8 +240,8 @@ def merge_pdf_links(result_data, pdf_links):
     return result_data
 
 
-def parse_resume_from_image(pdf_bytes, api_key):
-    """Use GPT-4 Vision to extract resume from scanned PDF."""
+def parse_resume_from_image(pdf_bytes, api_key, model="gpt-4o"):
+    """Use GPT Vision to extract resume from scanned PDF."""
     try:
         import fitz  # PyMuPDF
         
@@ -308,9 +308,9 @@ Return ONLY valid JSON, no other text."""
             })
         
         response = client.chat.completions.create(
-            model="gpt-5.2",
+            model=model,
             messages=[{"role": "user", "content": content}],
-            max_completion_tokens=4096,
+            max_tokens=4096,
             response_format={"type": "json_object"}
         )
         

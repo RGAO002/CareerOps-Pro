@@ -517,7 +517,7 @@ with st.sidebar:
     
     st.divider()
     
-    model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
+    model = st.selectbox("🧠 Brain", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
     default_key = os.getenv("OPENAI_API_KEY", "")
     api_key = st.text_input("🔑 API Key", value=default_key, type="password",
                             help="Supports OpenAI, Anthropic, and Google API keys")
@@ -550,7 +550,7 @@ with st.sidebar:
                 
                 # Always use Vision mode for better accuracy
                 st.info("🔍 Using Vision AI for accurate parsing...")
-                parse_result = parse_resume_from_image(pdf_bytes, api_key)
+                parse_result = parse_resume_from_image(pdf_bytes, api_key, model=model)
                 if parse_result.get("success"):
                     st.session_state.raw_text = parse_result.get("raw_text", "")
                 
@@ -666,14 +666,19 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
                 padding: 20px 28px; margin: 0 auto 24px; max-width: 720px;
                 border: 1px solid #475569; color: #e2e8f0;">
         <p style="margin:0 0 8px; font-size:0.95rem;">
-            <strong>📌 Project Status</strong>
+            <strong>📌 About This Project</strong>
+        </p>
+        <p style="margin:0 0 10px; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
+            Built by <strong style="color:#e2e8f0;">Ruoping Gao</strong>
+            · <a href="https://github.com/RGAO002/CareerOps-Pro" target="_blank"
+                 style="color:#38bdf8; text-decoration:none;">GitHub ↗</a><br>
+            This app is for <strong style="color:#fbbf24;">demonstration purposes</strong>.
+            Data is stored per-browser and may reset — we are not responsible for data loss.
         </p>
         <p style="margin:0; font-size:0.85rem; color:#94a3b8; line-height:1.7;">
-            This app is built with <strong style="color:#e2e8f0;">Streamlit</strong> and is being
-            migrated to <strong style="color:#38bdf8;">Next.js</strong> for a better UI experience.<br>
             🔬 <strong style="color:#e2e8f0;">Multi-LLM Review</strong> — under development (Next.js + WebSocket)<br>
             🎤 <strong style="color:#e2e8f0;">Mock Interview</strong> — in beta<br>
-            💾 Saved sessions are <strong style="color:#fbbf24;">per-browser</strong> and may reset on server updates
+            Frontend migrating from Streamlit to <strong style="color:#38bdf8;">Next.js</strong>
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -2335,7 +2340,7 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                                     'Content-Type': 'application/json'
                                 }},
                                 body: JSON.stringify({{
-                                    model: 'gpt-5.2',
+                                    model: 'gpt-4o',
                                     messages: [{{
                                         role: 'user',
                                         content: `You are an expert interviewer evaluating a candidate's response for the position of ${{jobData.title || 'Unknown'}}.
