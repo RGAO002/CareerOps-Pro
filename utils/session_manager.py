@@ -254,19 +254,21 @@ def get_thumbnail_path(session_id: str) -> Path:
 
 def list_sessions(visitor_id: str = None) -> list:
     """List saved sessions, optionally filtered by visitor_id.
-    Sessions with visitor_id='demo' are always visible to everyone.
-    Legacy sessions (no visitor_id) are visible only when running locally.
+    - Local: show ALL sessions (no filtering) so the developer sees everything
+    - Cloud: filter by visitor_id, plus demo sessions visible to everyone
     """
     import os
     is_cloud = bool(os.environ.get("SPACE_ID"))  # HuggingFace Spaces sets SPACE_ID
 
     index = load_index()
+
+    # Local dev: show everything, no isolation
+    if not is_cloud:
+        return index
+
+    # Cloud: isolate by visitor_id, always show demo sessions
     if visitor_id:
-        result = [s for s in index
-                  if s.get("visitor_id") == visitor_id
-                  or s.get("visitor_id") == "demo"]
-        # Show legacy sessions (no visitor_id) only when running locally
-        if not is_cloud:
-            result += [s for s in index if not s.get("visitor_id")]
-        return result
+        return [s for s in index
+                if s.get("visitor_id") == visitor_id
+                or s.get("visitor_id") == "demo"]
     return index
