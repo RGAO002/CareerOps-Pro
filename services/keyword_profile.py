@@ -14,7 +14,12 @@ from typing import Optional
 from langchain_core.messages import SystemMessage
 from services.llm import get_llm, clean_json
 
-SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
+import os as _os
+# On HuggingFace Spaces, use /data for persistent storage
+if _os.environ.get("SPACE_ID") and Path("/data").exists():
+    SESSIONS_DIR = Path("/data/saved_sessions")
+else:
+    SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
 KEYWORD_CACHE_FILE = SESSIONS_DIR / "keyword_cache.json"
 
 # ── Skill aliases: map common variants → canonical name ──────

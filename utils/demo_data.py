@@ -5,10 +5,15 @@ entries, and keyword cache so new visitors see a populated app right away.
 Runs once on first launch; subsequent runs are no-ops (checks a sentinel file).
 """
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
-SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
+# On HuggingFace Spaces, use /data for persistent storage
+if os.environ.get("SPACE_ID") and Path("/data").exists():
+    SESSIONS_DIR = Path("/data/saved_sessions")
+else:
+    SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
 SENTINEL = SESSIONS_DIR / ".demo_seeded"
 
 DEMO_SESSION_ID = "demo0001"

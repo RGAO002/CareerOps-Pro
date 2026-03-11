@@ -9,7 +9,11 @@ from datetime import datetime
 from pathlib import Path
 
 # Base directory for saved sessions
-SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
+# On HuggingFace Spaces, use /data for persistent storage across restarts
+if os.environ.get("SPACE_ID") and Path("/data").exists():
+    SESSIONS_DIR = Path("/data/saved_sessions")
+else:
+    SESSIONS_DIR = Path(__file__).parent.parent / "saved_sessions"
 SESSIONS_INDEX = SESSIONS_DIR / "index.json"
 
 

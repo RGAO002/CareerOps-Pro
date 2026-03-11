@@ -570,6 +570,9 @@ with st.sidebar:
                     matches = match_jobs(parse_result["data"], model, api_key)
                     if matches["success"]:
                         st.session_state.job_matches = matches
+                    else:
+                        print(f"[DEBUG] match_jobs failed: {matches.get('error', 'unknown')}")
+                        st.session_state.job_matches = None
 
                     st.session_state.page = "analysis"
                     st.session_state.timeline = []

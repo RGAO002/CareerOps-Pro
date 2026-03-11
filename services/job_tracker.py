@@ -3,11 +3,16 @@ Job Application Tracker Service — Manage job application tracking data.
 Global tracker (not per-session), persisted to saved_sessions/job_tracker.json.
 """
 import json
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-TRACKER_DIR = Path(__file__).parent.parent / "saved_sessions"
+# On HuggingFace Spaces, use /data for persistent storage
+if os.environ.get("SPACE_ID") and Path("/data").exists():
+    TRACKER_DIR = Path("/data/saved_sessions")
+else:
+    TRACKER_DIR = Path(__file__).parent.parent / "saved_sessions"
 TRACKER_FILE = TRACKER_DIR / "job_tracker.json"
 
 
