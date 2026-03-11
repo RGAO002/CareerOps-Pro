@@ -519,14 +519,14 @@ with st.sidebar:
     st.divider()
     
     model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"])
-    default_key = os.getenv("OPENAI_API_KEY", "")
-    api_key = st.text_input("🔑 API Key", value=default_key, type="password",
-                            help="Supports OpenAI, Anthropic, and Google API keys")
-    api_key = (api_key or default_key or "").strip()
-    if api_key:
-        st.caption(f"🔑 Key loaded ({api_key[:7]}...{api_key[-4:]})")
-    elif default_key:
-        st.caption("🔓 Demo key pre-configured")
+    _env_key = os.getenv("OPENAI_API_KEY", "")
+    _user_key = st.text_input("🔑 API Key (optional)", value="", type="password",
+                              help="Leave blank to use the built-in demo key, or enter your own")
+    api_key = (_user_key or _env_key or "").strip()
+    if _user_key.strip():
+        st.caption("🔑 Using your key")
+    elif _env_key:
+        st.caption("✅ Demo key active — ready to go")
 
     _tour_callout(1, 4,
         "👆 <b>Choose a model</b> and enter your API key above. "
