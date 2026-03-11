@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# System dependencies for WeasyPrint + PyMuPDF
+# System dependencies for WeasyPrint + PyMuPDF + healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     shared-mime-info \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -28,4 +29,6 @@ ENTRYPOINT ["streamlit", "run", "app.py", \
     "--server.address=0.0.0.0", \
     "--server.headless=true", \
     "--server.fileWatcherType=none", \
-    "--browser.gatherUsageStats=false"]
+    "--browser.gatherUsageStats=false", \
+    "--server.enableCORS=false", \
+    "--server.enableXsrfProtection=false"]
