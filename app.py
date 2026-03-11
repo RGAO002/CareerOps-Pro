@@ -1481,55 +1481,17 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 preview_pdf = st.session_state.pdf_bytes
 
             if preview_pdf:
-                import base64 as _b64
-                _pdf_b64 = _b64.b64encode(preview_pdf).decode("utf-8")
-                # pdf.js renders PDF on <canvas> — no iframe, no data: URI,
-                # completely bypasses Streamlit Cloud CSP restrictions.
-                _pdfjs_html = '''<!DOCTYPE html>
-<html><head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<style>
-  body{margin:0;padding:8px 0;background:#d1d5db;display:flex;flex-direction:column;align-items:center}
-  canvas{display:block;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.18);background:#fff}
-  #loading{color:#64748b;font-family:sans-serif;padding:40px;text-align:center}
-</style>
-</head><body>
-<div id="loading">Loading PDF preview…</div>
-<div id="viewer" style="width:100%%;display:flex;flex-direction:column;align-items:center"></div>
-<script>
-pdfjsLib.GlobalWorkerOptions.workerSrc=
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-(function(){
-  var b64="%s";
-  var raw=atob(b64);
-  var u8=new Uint8Array(raw.length);
-  for(var i=0;i<raw.length;i++) u8[i]=raw.charCodeAt(i);
-  pdfjsLib.getDocument({data:u8}).promise.then(function(pdf){
-    document.getElementById("loading").style.display="none";
-    var viewer=document.getElementById("viewer");
-    function renderPage(num){
-      if(num>pdf.numPages) return;
-      pdf.getPage(num).then(function(page){
-        var vw=viewer.clientWidth-16;
-        var raw_vp=page.getViewport({scale:1});
-        var scale=vw/raw_vp.width;
-        var vp=page.getViewport({scale:scale});
-        var c=document.createElement("canvas");
-        c.width=vp.width; c.height=vp.height;
-        c.style.maxWidth="100%%";
-        viewer.appendChild(c);
-        page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise.then(function(){
-          renderPage(num+1);
-        });
-      });
-    }
-    renderPage(1);
-  }).catch(function(err){
-    document.getElementById("loading").textContent="PDF preview error: "+err.message;
-  });
-})();
-</script></body></html>''' % _pdf_b64
-                components.html(_pdfjs_html, height=820, scrolling=True)
+                import base64
+                pdf_base64 = base64.b64encode(preview_pdf).decode("utf-8")
+                pdf_display = f'''
+                <iframe
+                    src="data:application/pdf;base64,{pdf_base64}"
+                    width="100%"
+                    height="800px"
+                    style="border: 1px solid #e5e7eb; border-radius: 8px;"
+                ></iframe>
+                '''
+                st.markdown(pdf_display, unsafe_allow_html=True)
             else:
                 st.warning("PDF preview unavailable. Try refreshing the page.")
     

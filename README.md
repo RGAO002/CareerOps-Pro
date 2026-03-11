@@ -1,3 +1,14 @@
+---
+title: CareerOps Pro
+emoji: 🚀
+colorFrom: blue
+colorTo: purple
+sdk: streamlit
+sdk_version: "1.45.1"
+app_file: app.py
+pinned: false
+---
+
 # 🚀 CareerOps Pro
 
 **AI-Powered Resume Analysis & Optimization Platform**
