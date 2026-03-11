@@ -36,8 +36,8 @@ ICON_PHONE = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox=
   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
 </svg>'''
 
-ICON_GITHUB = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+ICON_GITHUB = '''<svg class="icon-svg" fill="currentColor" viewBox="0 0 24 24">
+  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"></path>
 </svg>'''
 
 ICON_PORTFOLIO = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -58,20 +58,45 @@ ICON_LINK = '''<svg class="icon-svg" fill="none" stroke="currentColor" viewBox="
 
 
 def _get_contact_icon(text: str) -> str:
-    """Return appropriate icon based on contact type."""
-    t = (text or "").lower()
-    if "@" in t:
+    """Return appropriate icon based on contact type (display text and URL)."""
+    raw = (text or "").strip()
+    # Normalize: remove zero-width/invisible chars so "github" etc. match reliably
+    raw_norm = re.sub(r"[\u200b-\u200d\ufeff\u00ad]", "", raw)
+    t = raw_norm.lower()
+    url_part = ""
+    # Markdown [text](url)
+    md = re.match(r'\[(.+?)\]\((.+?)\)', raw_norm)
+    if md:
+        url_part = (md.group(2) or "").strip().lower()
+    else:
+        # Plain "text (url)" with URL in parentheses
+        paren = re.search(r'\((https?://[^)]+)\)', raw_norm)
+        if paren:
+            url_part = (paren.group(1) or "").strip().lower()
+        else:
+            # HTML <a href="...">...</a>
+            href_match = re.search(r'href\s*=\s*["\']([^"\']+)["\']', t)
+            if href_match:
+                url_part = href_match.group(1).strip().lower()
+            # Whole string is a bare URL (e.g. user pasted just the link)
+            elif raw_norm.startswith("http://") or raw_norm.startswith("https://"):
+                url_part = t
+            elif re.match(r'^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/', t) or t.startswith("github.com") or t.startswith("www.github"):
+                url_part = t if "://" in t else "https://" + t
+    combined = re.sub(r"[\u200b-\u200d\ufeff\u00ad]", "", t + " " + url_part)
+
+    if "mailto:" in url_part or re.search(r"[\w.+-]+@[\w.-]+\.\w+", raw_norm):
         return ICON_EMAIL
     if re.search(r"\d{3}.*\d{3}.*\d{4}", t) or "phone" in t:
         return ICON_PHONE
-    if "github" in t:
-        return ICON_GITHUB
-    if "linkedin" in t:
-        return ICON_LINKEDIN
-    if "portfolio" in t or "vercel" in t or "netlify" in t:
-        return ICON_PORTFOLIO
-    if "blog" in t:
+    if "blog" in combined or ".github.io" in combined:
         return ICON_BLOG
+    if "github.com" in combined or "github" in combined:
+        return ICON_GITHUB
+    if "linkedin.com" in combined or "linkedin" in combined:
+        return ICON_LINKEDIN
+    if "portfolio" in combined or "vercel" in combined or "netlify" in combined:
+        return ICON_PORTFOLIO
     return ICON_LINK
 
 
@@ -254,8 +279,16 @@ def render_projects_html(projects: list, editable: bool = True, diff_info: dict 
         
         name = proj.get("name") or proj.get("title") or ""
         tech = proj.get("tech") or ""
-        link = proj.get("link") or ""
         bullets = proj.get("bullets") or []
+        
+        # Normalize links: support "links" list or legacy single "link" + "link_text"
+        raw_links = proj.get("links")
+        if isinstance(raw_links, list) and raw_links:
+            links_list = [{"url": (x.get("url") or "").strip(), "text": (x.get("text") or "").strip()} for x in raw_links if isinstance(x, dict) and (x.get("url") or "").strip()]
+        elif proj.get("link"):
+            links_list = [{"url": (proj.get("link") or "").strip(), "text": (proj.get("link_text") or "").strip()}]
+        else:
+            links_list = []
         
         # Get diff info for this project
         item_diff = diff_info.get(i, {})
@@ -264,15 +297,20 @@ def render_projects_html(projects: list, editable: bool = True, diff_info: dict 
         edit_attr = lambda field: f'contenteditable="true" data-field="proj_{field}" data-index="{i}"' if editable else ""
         
         # Determine highlights
-        name_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("name")) else ""
+        name_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and (item_diff.get("name") or item_diff.get("links"))) else ""
         tech_class = "diff-highlight" if is_new or (isinstance(item_diff, dict) and item_diff.get("tech")) else ""
         bullet_changes = item_diff.get("bullets", []) if isinstance(item_diff, dict) else (list(range(len(bullets))) if is_new else [])
         
-        # Build title with optional link
+        # Build title with optional link(s); multiple joined by " | "
         title_text = escape(name)
-        if link:
-            link_text = "GitHub Repo" if "github" in link.lower() else "Live Demo" if "demo" in link.lower() or "netlify" in link.lower() else link
-            title_text += f' - <a href="{escape(link)}" target="_blank">{escape(link_text)}</a>'
+        if links_list:
+            parts = []
+            for entry in links_list:
+                url = entry["url"]
+                text = (entry.get("text") or "").strip()
+                display = text if text else (url.replace("https://", "").replace("http://", "").rstrip("/") or url)
+                parts.append(f'<a href="{escape(url)}" target="_blank">{escape(display)}</a>')
+            title_text += " - " + " | ".join(parts)
         
         # Tech subtitle
         tech_html = f'<p class="text-gray-500 text-sm {tech_class}">{escape(tech)}</p>' if tech else ""

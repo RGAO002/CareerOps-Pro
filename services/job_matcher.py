@@ -167,6 +167,7 @@ Return a JSON object with the following structure:
     "description": "<Brief 1-2 sentence summary of the role>",
     "requirements": ["Requirement 1", "Requirement 2", "..."],
     "type": "<Full-time/Part-time/Contract/Not specified>",
+    "work_type": "<onsite/remote/hybrid/unknown — the work arrangement, NOT employment type>",
     "category": "<Engineering/Marketing/Finance/Healthcare/Design/Business/Sales/HR/Other>",
     "match_score": <0-100 based on how well resume matches>,
     "match_reasons": ["Why candidate is a good fit 1", "Why 2", "Why 3"],
@@ -209,6 +210,7 @@ Return ONLY valid JSON.
             "description": "",
             "requirements": [],
             "type": "Full-time",
+            "work_type": "",
             "category": "Other",
             "match_score": 50,
             "match_reasons": [],
@@ -219,6 +221,17 @@ Return ONLY valid JSON.
         for field, default in required_fields.items():
             if field not in result:
                 result[field] = default
+
+        # Normalize work_type
+        wt = result.get("work_type", "").lower().strip()
+        if wt in ("onsite", "on-site", "in-office", "in office"):
+            result["work_type"] = "onsite"
+        elif wt == "remote":
+            result["work_type"] = "remote"
+        elif wt == "hybrid":
+            result["work_type"] = "hybrid"
+        else:
+            result["work_type"] = ""
 
         # Preserve the original URL if input was a URL
         if is_url:
@@ -231,6 +244,97 @@ Return ONLY valid JSON.
         
     except Exception as e:
         print(f"[DEBUG] Custom JD parsing error: {e}")
+        return {"success": False, "error": f"Failed to parse JD: {str(e)}"}
+
+
+def parse_jd_for_tracker(jd_input: str, model_choice: str, api_key: str) -> dict:
+    """Parse a JD (URL or pasted text) and extract structured fields for the Job Tracker.
+
+    Unlike parse_custom_jd, this does NOT require resume data and does NOT compute
+    match scores. It focuses purely on extracting job metadata.
+
+    Returns:
+        {"success": True,
+         "job": {"title", "company", "location", "work_type", "salary_min",
+                 "salary_max", "description", "requirements", "url"},
+         "raw_jd": "<fetched/pasted text>"}
+        or {"success": False, "error": "..."}
+    """
+    llm = get_llm(model_choice, api_key)
+
+    jd_text = jd_input.strip()
+    is_url = jd_text.startswith("http://") or jd_text.startswith("https://")
+    original_url = jd_text if is_url else ""
+
+    if is_url:
+        fetch_result = fetch_jd_from_url(jd_text)
+        if not fetch_result["success"]:
+            return {"success": False, "error": fetch_result["error"]}
+        jd_text = fetch_result["content"]
+
+    system_text = f"""You are an expert job description parser. Extract structured fields from the following job description.
+
+JOB DESCRIPTION TEXT:
+{jd_text}
+
+Return a JSON object:
+{{
+    "title": "<Job Title, without company name>",
+    "company": "<Company Name or 'Unknown Company'>",
+    "location": "<City, State/Country or 'Not specified'>",
+    "work_type": "<onsite|remote|hybrid|unknown>",
+    "salary_min": "<minimum salary as string, e.g. '$140,000', or '' if not mentioned>",
+    "salary_max": "<maximum salary as string, e.g. '$170,000', or '' if not mentioned>",
+    "description": "<Brief 1-2 sentence summary of the role>",
+    "requirements": ["Key requirement 1", "Key requirement 2", "..."]
+}}
+
+RULES:
+- Extract 5-10 key requirements/qualifications.
+- For work_type: choose "onsite" if it says on-site/in-office, "remote" if fully remote, "hybrid" if mixed. Use "unknown" only if truly not mentioned.
+- For salary: split into min and max. If only one number, put it in salary_min. If not mentioned, use empty strings.
+- ONLY use information explicitly stated. Do NOT guess or infer missing fields — use empty string or "Not specified".
+- Return ONLY valid JSON."""
+
+    try:
+        res = llm.invoke(
+            [SystemMessage(content=system_text)],
+            response_format={"type": "json_object"},
+        )
+        result = clean_json(res.content)
+
+        # Normalize work_type
+        wt = result.get("work_type", "").lower().strip()
+        if wt in ("onsite", "on-site", "in-office", "in office"):
+            result["work_type"] = "onsite"
+        elif wt == "remote":
+            result["work_type"] = "remote"
+        elif wt == "hybrid":
+            result["work_type"] = "hybrid"
+        else:
+            result["work_type"] = ""
+
+        # Normalize location
+        loc = result.get("location", "")
+        if loc.lower() in ("not specified", "unknown", "n/a"):
+            result["location"] = ""
+
+        # Ensure all fields exist
+        for field, default in [
+            ("title", "Unknown Position"), ("company", "Unknown Company"),
+            ("location", ""), ("work_type", ""), ("salary_min", ""),
+            ("salary_max", ""), ("description", ""), ("requirements", []),
+        ]:
+            if field not in result:
+                result[field] = default
+
+        if original_url:
+            result["url"] = original_url
+
+        return {"success": True, "job": result, "raw_jd": jd_text}
+
+    except Exception as e:
+        print(f"[DEBUG] JD tracker parse error: {e}")
         return {"success": False, "error": f"Failed to parse JD: {str(e)}"}
 
 

@@ -31,7 +31,7 @@ from streamlit_js_eval import streamlit_js_eval
 
 from services.resume_parser import parse_resume, parse_resume_from_image, is_scanned_pdf
 from services.resume_analyzer import analyze_resume
-from services.job_matcher import match_jobs, parse_custom_jd, SAMPLE_JOBS
+from services.job_matcher import match_jobs, parse_custom_jd, parse_jd_for_tracker, SAMPLE_JOBS
 from services.resume_editor import edit_resume, tailor_section
 from services.humanizer import humanize_resume, humanize_text, check_credits
 from services.cover_letter import generate_cover_letter, edit_cover_letter
@@ -48,13 +48,14 @@ from services.job_tracker import (
     import_from_session as tracker_import,
     get_jobs_by_status, get_custom_columns, add_custom_column,
     delete_custom_column, update_custom_field,
-    STATUSES, STATUS_LABELS, STATUS_COLORS, COLUMN_TYPES, COLUMN_TYPE_LABELS
+    STATUSES, STATUS_LABELS, STATUS_COLORS, COLUMN_TYPES, COLUMN_TYPE_LABELS,
+    WORK_TYPES, WORK_TYPE_LABELS
 )
 from services.keyword_profile import (
     extract_and_cache_all, aggregate_keywords,
     compute_resume_gaps, load_keyword_cache,
     add_keyword_to_job, remove_keyword_from_job,
-    update_job_keywords, SKILL_CATEGORIES,
+    update_job_keywords, SKILL_CATEGORIES, is_soft_skill,
 )
 import plotly.express as px
 import plotly.graph_objects as go
@@ -331,8 +332,16 @@ if 'tracker_editing_id' not in st.session_state:
     st.session_state.tracker_editing_id = None
 if 'tracker_show_add_form' not in st.session_state:
     st.session_state.tracker_show_add_form = False
+if 'smart_add_parsed' not in st.session_state:
+    st.session_state.smart_add_parsed = None
+if 'smart_add_raw_jd' not in st.session_state:
+    st.session_state.smart_add_raw_jd = None
+if '_newly_added_job' not in st.session_state:
+    st.session_state._newly_added_job = None
 if 'tracker_view' not in st.session_state:
     st.session_state.tracker_view = "table"  # "cards" or "table"
+if 'tracker_sort' not in st.session_state:
+    st.session_state.tracker_sort = "date_desc"
 if 'skill_status_filter' not in st.session_state:
     st.session_state.skill_status_filter = "all"
 if 'si_editing_job' not in st.session_state:
@@ -383,10 +392,9 @@ def execute_edit(new_data, message_text):
 
     st.session_state.resume_data = new_data
     
-    # Update HTML (source of truth) and PDF
+    # Update HTML (source of truth) and PDF — keep PDF clean for download; preview can show diff separately
     st.session_state.resume_html = render_resume_html_for_pdf(new_data)
-    html_with_diff = render_resume_html(new_data, diff=diff, show_diff=st.session_state.show_diff)
-    st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+    st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
     
     # Auto-save session if we have one
     auto_save_session()
@@ -905,8 +913,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor + settings + track
-    opt_col1, opt_col2, opt_col3 = st.columns([2, 5, 1])
+    # One-click tailor + settings + debate + track
+    opt_col1, opt_col2, opt_col_debate, opt_col3 = st.columns([2, 5, 1.2, 1])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
@@ -962,6 +970,29 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         }
                     }
                     st.rerun()
+    with opt_col_debate:
+        if st.button("🤖 Debate", key="editor_debate", use_container_width=True,
+                      help="Open Multi-LLM Review to have two AI models debate and refine your resume"):
+            import json as _json
+            _ctx = {
+                "resume_data": st.session_state.resume_data,
+                "job_data": {},
+            }
+            if st.session_state.selected_job:
+                _job = st.session_state.selected_job
+                _ctx["job_data"] = {
+                    "title": _job.get("title", ""),
+                    "company": _job.get("company", ""),
+                    "requirements": _job.get("tailoring_tips", []) + _job.get("gaps", []),
+                    "description": _job.get("description", ""),
+                }
+            _ctx_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_sessions", "_review_context.json")
+            os.makedirs(os.path.dirname(_ctx_path), exist_ok=True)
+            with open(_ctx_path, "w", encoding="utf-8") as _f:
+                _f.write(_json.dumps(_ctx, ensure_ascii=False, indent=2))
+            import webbrowser
+            webbrowser.open_new_tab("http://localhost:3000/review")
+            st.toast("✅ Context saved — Review page opened in new tab")
     with opt_col3:
         if st.session_state.selected_job:
             if st.button("📋 Track", key="editor_track_job", use_container_width=True):
@@ -977,21 +1008,21 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
         st.session_state.edit_mode = False
     
     # ========== Maintain HTML as source of truth ==========
-    # Generate/update HTML and PDF whenever resume_data changes
+    # Generate/update HTML whenever resume_data changes; PDF only in preview mode
     import hashlib
     _diff = st.session_state.current_diff or {}
     _diff_str = str(_diff) if _diff else ""
     data_hash = hashlib.md5((str(st.session_state.resume_data) + _diff_str).encode()).hexdigest()[:8]
 
     if 'resume_html_hash' not in st.session_state or st.session_state.resume_html_hash != data_hash:
-        # Generate fresh HTML from current data
         st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
         st.session_state.resume_html_hash = data_hash
-        # Generate PDF with diff highlighting if present
-        html_for_pdf = render_resume_html(
-            st.session_state.resume_data, diff=_diff, show_diff=st.session_state.show_diff
-        )
-        st.session_state.pdf_bytes = convert_html_to_pdf(html_for_pdf)
+        # Defer PDF generation — only when preview mode actually needs it
+        st.session_state.pdf_bytes = None
+
+    # Generate PDF only in preview mode, and only if not already cached
+    if not st.session_state.edit_mode and st.session_state.pdf_bytes is None:
+        st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
     
     col_preview, col_chat = st.columns([1.3, 1])
     
@@ -1159,6 +1190,38 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                     st.markdown(f"**{proj.get('name', 'Project')}**")
                     new_proj_name = st.text_input("Project Name", value=proj.get("name", ""), key=f"edit_proj_name_{i}")
                     new_tech = st.text_input("Tech Stack", value=proj.get("tech", ""), key=f"edit_proj_tech_{i}")
+                    # Links: support "links" list or legacy single "link" + "link_text"
+                    proj_links = proj.get("links")
+                    if not isinstance(proj_links, list) or not proj_links:
+                        if proj.get("link"):
+                            proj_links = [{"url": proj.get("link", ""), "text": proj.get("link_text", "")}]
+                        else:
+                            proj_links = []
+                    new_links = []
+                    links_to_delete = []
+                    for j, lnk in enumerate(proj_links):
+                        if not isinstance(lnk, dict):
+                            continue
+                        st.markdown(f"*Link {j + 1}*")
+                        c1, c2, c3 = st.columns([3, 2, 1])
+                        with c1:
+                            new_url = st.text_input("URL", value=lnk.get("url", ""), key=f"edit_proj_link_url_{i}_{j}", label_visibility="collapsed", placeholder="https://...")
+                        with c2:
+                            new_text = st.text_input("Text (optional)", value=lnk.get("text", ""), key=f"edit_proj_link_text_{i}_{j}", label_visibility="collapsed", placeholder="e.g. GitHub Repo — empty = show URL")
+                        with c3:
+                            if st.button("🗑️", key=f"del_proj_link_{i}_{j}"):
+                                links_to_delete.append(j)
+                        if j not in links_to_delete:
+                            new_links.append({"url": new_url, "text": new_text})
+                    if st.button("➕ Add Link", key=f"add_proj_link_{i}"):
+                        # New list to avoid reference sharing; don't mutate dict with del
+                        data["projects"][i]["links"] = [{"url": e.get("url", ""), "text": e.get("text", "")} for e in new_links] + [{"url": "", "text": ""}]
+                        changed = True
+                    elif links_to_delete or new_links != proj_links:
+                        data["projects"][i]["links"] = [{"url": e.get("url", ""), "text": e.get("text", "")} for e in new_links]
+                        changed = True
+                        if links_to_delete:
+                            st.rerun()
                     
                     if new_proj_name != proj.get("name"):
                         data["projects"][i]["name"] = new_proj_name
@@ -1220,18 +1283,18 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                     st.markdown("---")
             
             if changed:
-                st.session_state.resume_data = data
-                # Update HTML and auto-save
-                st.session_state.resume_html = render_resume_html_for_pdf(data)
-                st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
+                st.session_state.resume_data = copy.deepcopy(data)
+                # Update HTML; defer PDF generation to preview mode to avoid malloc crashes
+                st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
+                st.session_state.resume_html_hash = None  # Force PDF regen when switching to preview
                 auto_save_session()
                 st.rerun()
         
         else:
             # ========== PREVIEW MODE: PDF Display ==========
-            # Generate preview PDF (with diff highlighting if enabled)
+            # Preview: when diff on, show PDF with highlights; when off, show clean PDF.
+            # Download (above) always uses st.session_state.pdf_bytes = clean PDF.
             if st.session_state.show_diff and st.session_state.current_diff:
-                # Generate HTML with diff highlighting for preview
                 preview_html = render_resume_html(
                     st.session_state.resume_data,
                     diff=st.session_state.current_diff,
@@ -1240,12 +1303,11 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 )
                 preview_pdf = convert_html_to_pdf(preview_html)
             else:
-                # Use the clean PDF (no diff)
                 preview_pdf = st.session_state.pdf_bytes
-            
+
             if preview_pdf:
                 import base64
-                pdf_base64 = base64.b64encode(preview_pdf).decode('utf-8')
+                pdf_base64 = base64.b64encode(preview_pdf).decode("utf-8")
                 pdf_display = f'''
                 <iframe 
                     src="data:application/pdf;base64,{pdf_base64}" 
@@ -1392,10 +1454,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                 st.session_state.previous_data = snapshot_before
 
                 st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-                html_with_diff = render_resume_html(
-                    st.session_state.resume_data, diff=diff, show_diff=st.session_state.show_diff
-                )
-                st.session_state.pdf_bytes = convert_html_to_pdf(html_with_diff)
+                # Keep PDF clean for download; preview shows diff in iframe when toggle is on
+                st.session_state.pdf_bytes = convert_html_to_pdf(st.session_state.resume_html)
 
                 st.session_state.timeline.append(tailor_entry)
                 st.session_state.tailor_results = tailor_entry["id"]
@@ -2638,33 +2698,112 @@ elif st.session_state.page == "job_tracker":
 
     st.divider()
 
-    # --- Add Job Form ---
+    # --- Add Job Form (Smart) ---
     if st.session_state.tracker_show_add_form:
+        st.markdown("### ➕ Add New Job")
+
+        # Section A: Smart parse (outside form so we can rerun)
+        smart_input = st.text_area(
+            "Paste Job URL or Description",
+            placeholder="Paste a job posting URL (e.g. https://jobs.lever.co/...) or the full JD text to auto-fill fields below...",
+            height=100,
+            key="smart_jd_input",
+        )
+        _parse_col, _clear_col, _ = st.columns([1, 1, 4])
+        with _parse_col:
+            _has_api = bool(st.session_state.get("api_key") or os.getenv("OPENAI_API_KEY"))
+            if st.button("🔍 Auto-Parse", disabled=not smart_input or not _has_api,
+                         help="Parse JD to auto-fill fields" if _has_api else "Requires API key in sidebar"):
+                _api = st.session_state.get("api_key") or os.getenv("OPENAI_API_KEY", "")
+                _model = st.session_state.get("model_choice", "gpt-4.1-mini")
+                with st.spinner("Parsing job description..."):
+                    _result = parse_jd_for_tracker(smart_input, _model, _api)
+                if _result["success"]:
+                    st.session_state.smart_add_parsed = _result["job"]
+                    st.session_state.smart_add_raw_jd = _result.get("raw_jd", "")
+                    st.toast("✅ Parsed! Review the pre-filled fields below.")
+                    st.rerun()
+                else:
+                    st.error(f"Could not parse: {_result['error']}")
+        with _clear_col:
+            if st.session_state.smart_add_parsed and st.button("🗑️ Clear"):
+                st.session_state.smart_add_parsed = None
+                st.session_state.smart_add_raw_jd = None
+                st.rerun()
+
+        # Pre-fill from parsed data
+        _parsed = st.session_state.smart_add_parsed or {}
+        _wt_keys = [w[0] for w in WORK_TYPES]
+        _parsed_wt = _parsed.get("work_type", "")
+        _wt_idx = _wt_keys.index(_parsed_wt) if _parsed_wt in _wt_keys else 0
+
+        # Section B: Form with pre-filled fields
         with st.form("add_job_form"):
-            st.markdown("### Add New Job")
             fc1, fc2 = st.columns(2)
             with fc1:
-                new_company = st.text_input("Company *")
-                new_title = st.text_input("Job Title *")
+                new_company = st.text_input("Company *", value=_parsed.get("company", ""))
+                new_title = st.text_input("Job Title *", value=_parsed.get("title", ""))
                 new_status = st.selectbox("Status", [s[0] for s in STATUSES],
                                           format_func=lambda x: STATUS_LABELS[x])
-                new_url = st.text_input("Job URL")
+                new_url = st.text_input("Job URL", value=_parsed.get("url", ""))
+                new_location = st.text_input("Location", value=_parsed.get("location", ""))
             with fc2:
-                new_salary_min = st.text_input("Salary Min")
-                new_salary_max = st.text_input("Salary Max")
+                new_salary_min = st.text_input("Salary Min", value=_parsed.get("salary_min", ""))
+                new_salary_max = st.text_input("Salary Max", value=_parsed.get("salary_max", ""))
+                new_work_type = st.selectbox("Work Type", _wt_keys, index=_wt_idx,
+                                              format_func=lambda x: WORK_TYPE_LABELS[x])
                 new_follow_up = st.text_input("Follow-up Date (YYYY-MM-DD)")
                 new_contact_name = st.text_input("Contact Name")
-            new_notes = st.text_area("Notes", height=80)
+            new_notes = st.text_area("Notes", value=_parsed.get("description", ""), height=80)
             if st.form_submit_button("💾 Save Job", type="primary", use_container_width=True):
                 if new_company and new_title:
                     contacts = [{"name": new_contact_name, "role": "", "email": ""}] if new_contact_name else []
-                    add_job(company=new_company, title=new_title, status=new_status, url=new_url,
-                            salary_min=new_salary_min, salary_max=new_salary_max,
-                            notes=new_notes, contacts=contacts, follow_up_date=new_follow_up)
+                    entry = add_job(
+                        company=new_company, title=new_title, status=new_status, url=new_url,
+                        salary_min=new_salary_min, salary_max=new_salary_max,
+                        notes=new_notes, contacts=contacts, follow_up_date=new_follow_up,
+                        location=new_location, work_type=new_work_type,
+                        requirements=_parsed.get("requirements", []),
+                    )
+                    # Queue auto keyword extraction
+                    st.session_state._newly_added_job = {
+                        "job_id": entry["id"],
+                        "requirements": _parsed.get("requirements", []),
+                        "raw_jd": st.session_state.smart_add_raw_jd or "",
+                    }
+                    st.session_state.smart_add_parsed = None
+                    st.session_state.smart_add_raw_jd = None
                     st.session_state.tracker_show_add_form = False
                     st.rerun()
                 else:
                     st.error("Company and Job Title are required.")
+
+    # --- Auto keyword extraction for newly added job ---
+    if st.session_state.get("_newly_added_job"):
+        _new = st.session_state._newly_added_job
+        _reqs = _new.get("requirements", [])
+        _raw = _new.get("raw_jd", "")
+        _src = _reqs if _reqs else ([_raw] if _raw else [])
+        if _src:
+            _api = st.session_state.get("api_key") or os.getenv("OPENAI_API_KEY", "")
+            _model = st.session_state.get("model_choice", "gpt-4.1-mini")
+            if _api:
+                try:
+                    from services.keyword_profile import extract_keywords_llm, cache_keywords
+                    _kws = extract_keywords_llm(_src, _model, _api)
+                    cache_keywords(_new["job_id"], _kws)
+                    st.toast(f"✅ Extracted {len(_kws)} keywords for Skill Insights")
+                except Exception as _e:
+                    st.toast(f"⚠️ Keyword extraction skipped: {_e}")
+            else:
+                try:
+                    from services.keyword_profile import extract_keywords_regex, cache_keywords
+                    _kws = extract_keywords_regex(_src)
+                    cache_keywords(_new["job_id"], _kws)
+                    st.toast(f"✅ Extracted {len(_kws)} keywords (regex) for Skill Insights")
+                except Exception:
+                    pass
+        st.session_state._newly_added_job = None
 
     # --- Get data ---
     jobs = get_jobs_by_status(st.session_state.tracker_filter)
@@ -2690,6 +2829,8 @@ elif st.session_state.page == "job_tracker":
                 "Company": job["company"],
                 "Title": job["title"],
                 "Status": STATUS_LABELS.get(job["status"], job["status"]),
+                "Location": job.get("location", ""),
+                "Work Type": WORK_TYPE_LABELS.get(job.get("work_type", ""), ""),
                 "Date Applied": job.get("date_applied", ""),
                 "Salary": (f"{job.get('salary_min', '')} – {job.get('salary_max', '')}"
                            if job.get("salary_min") and job.get("salary_max")
@@ -2816,6 +2957,46 @@ elif st.session_state.page == "job_tracker":
 
     # ========== CARDS VIEW ==========
     else:
+        # Sort controls
+        _sort_options = {
+            "date_desc": "📅 Applied (newest first)",
+            "date_asc": "📅 Applied (oldest first)",
+            "added_desc": "🕐 Added (newest first)",
+            "added_asc": "🕐 Added (oldest first)",
+            "company_asc": "🏢 Company (A → Z)",
+            "title_asc": "💼 Title (A → Z)",
+            "status": "📊 Status",
+        }
+        _sort_col1, _sort_col2 = st.columns([1, 5])
+        with _sort_col1:
+            _new_sort = st.selectbox(
+                "Sort by", list(_sort_options.keys()),
+                index=list(_sort_options.keys()).index(st.session_state.tracker_sort),
+                format_func=lambda x: _sort_options[x],
+                key="tracker_sort_select", label_visibility="collapsed",
+            )
+            if _new_sort != st.session_state.tracker_sort:
+                st.session_state.tracker_sort = _new_sort
+                st.rerun()
+
+        # Apply sort
+        _sk = st.session_state.tracker_sort
+        if _sk == "date_desc":
+            jobs = sorted(jobs, key=lambda j: j.get("date_applied", ""), reverse=True)
+        elif _sk == "date_asc":
+            jobs = sorted(jobs, key=lambda j: j.get("date_applied", ""))
+        elif _sk == "added_desc":
+            jobs = sorted(jobs, key=lambda j: j.get("created_at", ""), reverse=True)
+        elif _sk == "added_asc":
+            jobs = sorted(jobs, key=lambda j: j.get("created_at", ""))
+        elif _sk == "company_asc":
+            jobs = sorted(jobs, key=lambda j: j.get("company", "").lower())
+        elif _sk == "title_asc":
+            jobs = sorted(jobs, key=lambda j: j.get("title", "").lower())
+        elif _sk == "status":
+            _status_order = {s[0]: i for i, s in enumerate(STATUSES)}
+            jobs = sorted(jobs, key=lambda j: _status_order.get(j.get("status", ""), 99))
+
         for job in jobs:
             jid = job["id"]
             color = STATUS_COLORS.get(job["status"], "#94a3b8")
@@ -2829,6 +3010,10 @@ elif st.session_state.page == "job_tracker":
                 salary_text = f"💰 {job['salary_min']}"
 
             meta_parts = []
+            if job.get("location"):
+                meta_parts.append(f"📍 {job['location']}")
+            if job.get("work_type"):
+                meta_parts.append(WORK_TYPE_LABELS.get(job["work_type"], job["work_type"]))
             if salary_text:
                 meta_parts.append(salary_text)
             if job.get("date_applied"):
@@ -2947,13 +3132,18 @@ elif st.session_state.page == "job_tracker":
                 with st.form(f"edit_form_{jid}"):
                     st.markdown(f"#### Editing: {job['title']} @ {job['company']}")
                     ec1, ec2 = st.columns(2)
+                    _ewt_keys = [w[0] for w in WORK_TYPES]
+                    _ewt_idx = _ewt_keys.index(job.get("work_type", "")) if job.get("work_type", "") in _ewt_keys else 0
                     with ec1:
                         e_company = st.text_input("Company", value=job["company"], key=f"e_co_{jid}")
                         e_title = st.text_input("Title", value=job["title"], key=f"e_ti_{jid}")
                         e_url = st.text_input("URL", value=job.get("url", ""), key=f"e_url_{jid}")
+                        e_location = st.text_input("Location", value=job.get("location", ""), key=f"e_loc_{jid}")
                         e_salary_min = st.text_input("Salary Min", value=job.get("salary_min", ""), key=f"e_smin_{jid}")
                     with ec2:
                         e_salary_max = st.text_input("Salary Max", value=job.get("salary_max", ""), key=f"e_smax_{jid}")
+                        e_work_type = st.selectbox("Work Type", _ewt_keys, index=_ewt_idx,
+                                                    format_func=lambda x: WORK_TYPE_LABELS[x], key=f"e_wt_{jid}")
                         e_follow_up = st.text_input("Follow-up Date", value=job.get("follow_up_date", ""), key=f"e_fu_{jid}")
                         e_date = st.text_input("Date Applied", value=job.get("date_applied", ""), key=f"e_da_{jid}")
                         e_contact = st.text_input("Contact",
@@ -2985,6 +3175,7 @@ elif st.session_state.page == "job_tracker":
                         contacts = [{"name": e_contact, "role": "", "email": ""}] if e_contact else []
                         update_job(jid, {
                             "company": e_company, "title": e_title, "url": e_url,
+                            "location": e_location, "work_type": e_work_type,
                             "salary_min": e_salary_min, "salary_max": e_salary_max,
                             "follow_up_date": e_follow_up, "date_applied": e_date,
                             "notes": e_notes, "contacts": contacts,
@@ -3058,10 +3249,16 @@ elif st.session_state.page == "skill_insights":
                         st.session_state.skill_status_filter = key
                         st.rerun()
 
-        # ── Gather requirements from ALL linked sessions (for caching & comparison) ──
+        # ── Gather requirements from tracker entries + linked sessions ──
         all_jobs_with_reqs = []
         jobs_without_reqs = []
         for job in all_tracker_jobs:
+            # First: check if job itself has requirements (smart-add or imported)
+            reqs = job.get("requirements", [])
+            if reqs:
+                all_jobs_with_reqs.append({"job_id": job["id"], "requirements": reqs})
+                continue
+            # Fallback: load from linked session
             sid = job.get("linked_session_id")
             if sid:
                 sess = load_session(sid)
@@ -3112,16 +3309,20 @@ elif st.session_state.page == "skill_insights":
             # ════════════════ CHARTS VIEW ════════════════
             if st.session_state.si_view == "charts":
 
-                if not aggregated["skill_counts"]:
+                # Separate hard skills vs soft skills in aggregated data
+                _hard_skill_counts = {s: c for s, c in aggregated["skill_counts"].items() if not is_soft_skill(s)}
+                _soft_skill_counts = {s: c for s, c in aggregated["skill_counts"].items() if is_soft_skill(s)}
+                _hard_cat_counts = {c: v for c, v in aggregated["category_counts"].items() if c != "Soft Skills"}
+
+                if not _hard_skill_counts and not _soft_skill_counts:
                     st.info("No keywords extracted from the selected jobs.")
                 else:
-                    # ── Row 1: Top Skills + Category Donut ──
+                    # ── Row 1: Top Hard Skills + Category Donut ──
                     chart_l, chart_r = st.columns([3, 2])
 
                     with chart_l:
                         st.markdown("### 🏆 Top Skills in Demand")
-                        top_skills = dict(list(aggregated["skill_counts"].items())[:15])
-                        # Build data with categories for color
+                        top_skills = dict(list(_hard_skill_counts.items())[:15])
                         skill_names = list(top_skills.keys())
                         skill_counts_list = list(top_skills.values())
                         skill_cats = []
@@ -3133,41 +3334,57 @@ elif st.session_state.page == "skill_insights":
                                     break
                             skill_cats.append(cat)
 
-                        fig_bar = px.bar(
-                            x=skill_counts_list[::-1],
-                            y=skill_names[::-1],
-                            orientation="h",
-                            color=skill_cats[::-1],
-                            color_discrete_sequence=px.colors.qualitative.Set2,
-                            labels={"x": "Job Count", "y": "", "color": "Category"},
-                        )
-                        fig_bar.update_layout(
-                            height=450,
-                            margin=dict(l=0, r=20, t=10, b=60),
-                            legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
-                            plot_bgcolor="rgba(0,0,0,0)",
-                            paper_bgcolor="rgba(0,0,0,0)",
-                        )
-                        st.plotly_chart(fig_bar, use_container_width=True)
+                        if skill_names:
+                            fig_bar = px.bar(
+                                x=skill_counts_list[::-1],
+                                y=skill_names[::-1],
+                                orientation="h",
+                                color=skill_cats[::-1],
+                                color_discrete_sequence=px.colors.qualitative.Set2,
+                                labels={"x": "Job Count", "y": "", "color": "Category"},
+                            )
+                            fig_bar.update_layout(
+                                height=450,
+                                margin=dict(l=0, r=20, t=10, b=60),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                paper_bgcolor="rgba(0,0,0,0)",
+                            )
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                        else:
+                            st.info("No hard skills extracted yet.")
 
                     with chart_r:
                         st.markdown("### 📂 Category Breakdown")
-                        cat_names = list(aggregated["category_counts"].keys())
-                        cat_vals = list(aggregated["category_counts"].values())
-                        fig_pie = px.pie(
-                            names=cat_names,
-                            values=cat_vals,
-                            hole=0.45,
-                            color_discrete_sequence=px.colors.qualitative.Set2,
+                        cat_names = list(_hard_cat_counts.keys())
+                        cat_vals = list(_hard_cat_counts.values())
+                        if cat_names:
+                            fig_pie = px.pie(
+                                names=cat_names,
+                                values=cat_vals,
+                                hole=0.45,
+                                color_discrete_sequence=px.colors.qualitative.Set2,
+                            )
+                            fig_pie.update_layout(
+                                height=420,
+                                margin=dict(l=0, r=0, t=10, b=30),
+                                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                            )
+                            fig_pie.update_traces(textposition="inside", textinfo="label+percent")
+                            st.plotly_chart(fig_pie, use_container_width=True)
+
+                    # ── Soft Skills Summary (compact) ──
+                    if _soft_skill_counts:
+                        st.markdown("### 🧠 Soft Skills Summary")
+                        st.caption("Normalized from all JD variations into canonical categories.")
+                        _ss_tags = " ".join(
+                            f"<span style='display:inline-block; background:linear-gradient(135deg,#818cf8,#6366f1);"
+                            f"color:#fff; padding:5px 14px; border-radius:20px; font-size:0.85rem; margin:3px;'>"
+                            f"{s} <span style=\"opacity:0.75;\">({c}/{aggregated['total_jobs']})</span></span>"
+                            for s, c in _soft_skill_counts.items()
                         )
-                        fig_pie.update_layout(
-                            height=420,
-                            margin=dict(l=0, r=0, t=10, b=30),
-                            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
-                            paper_bgcolor="rgba(0,0,0,0)",
-                        )
-                        fig_pie.update_traces(textposition="inside", textinfo="label+percent")
-                        st.plotly_chart(fig_pie, use_container_width=True)
+                        st.markdown(_ss_tags, unsafe_allow_html=True)
 
                     st.divider()
 
@@ -3177,8 +3394,12 @@ elif st.session_state.page == "skill_insights":
                     with det_l:
                         st.markdown("### 📋 Skills by Category")
                         for cat, skills in aggregated["skills_by_category"].items():
+                            if cat == "Soft Skills":
+                                continue  # shown separately above
                             with st.expander(f"{cat}  ({sum(skills.values())} mentions)", expanded=False):
                                 for skill, count in skills.items():
+                                    if is_soft_skill(skill):
+                                        continue
                                     pct = count / aggregated["total_jobs"] * 100
                                     st.markdown(
                                         f"<div style='display:flex; align-items:center; margin-bottom:4px;'>"
@@ -3193,6 +3414,7 @@ elif st.session_state.page == "skill_insights":
 
                     with det_r:
                         st.markdown("### 🎯 Resume Gap Analysis")
+                        st.caption("Based on hard skills only — soft skills shown separately above.")
                         resume_skills = {}
                         if st.session_state.get("resume_data"):
                             resume_skills = st.session_state.resume_data.get("skills", {})
@@ -3209,7 +3431,7 @@ elif st.session_state.page == "skill_insights":
                                 f"<div style='text-align:center; padding:15px; background:linear-gradient(135deg,#f8fafc,#e2e8f0);"
                                 f"border-radius:12px; margin-bottom:15px;'>"
                                 f"<div style='font-size:2.5rem; font-weight:800; color:{pct_color};'>{pct}%</div>"
-                                f"<div style='color:#64748b; font-size:0.9rem;'>Skill Coverage</div></div>",
+                                f"<div style='color:#64748b; font-size:0.9rem;'>Hard Skill Coverage</div></div>",
                                 unsafe_allow_html=True,
                             )
 
@@ -3230,6 +3452,72 @@ elif st.session_state.page == "skill_insights":
                                     for g in gaps["gaps"]
                                 )
                                 st.markdown(gap_tags, unsafe_allow_html=True)
+
+                    st.divider()
+
+                    # ── Row 2.5: Location & Work Type Distribution ──
+                    _loc_wt_col1, _loc_wt_col2 = st.columns(2)
+                    with _loc_wt_col1:
+                        st.markdown("### 🏢 Work Type Distribution")
+                        from collections import Counter as _Counter
+                        _wt_counts = _Counter()
+                        _all_trk = load_tracker().get("jobs", [])
+                        if st.session_state.skill_status_filter and st.session_state.skill_status_filter != "all":
+                            _all_trk = [j for j in _all_trk if j.get("status") == st.session_state.skill_status_filter]
+                        for _j in _all_trk:
+                            _wt = _j.get("work_type", "")
+                            if _wt:
+                                _wt_counts[WORK_TYPE_LABELS.get(_wt, _wt)] += 1
+                            else:
+                                _wt_counts["Not specified"] += 1
+                        if _wt_counts:
+                            import plotly.express as _px_wt
+                            _fig_wt = _px_wt.pie(
+                                names=list(_wt_counts.keys()),
+                                values=list(_wt_counts.values()),
+                                hole=0.45,
+                                color_discrete_sequence=["#3b82f6", "#22c55e", "#f59e0b", "#94a3b8"],
+                            )
+                            _fig_wt.update_layout(
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                font=dict(color="#e2e8f0"),
+                                margin=dict(t=20, b=20, l=20, r=20),
+                                height=300,
+                            )
+                            st.plotly_chart(_fig_wt, use_container_width=True)
+                        else:
+                            st.info("No work type data yet.")
+
+                    with _loc_wt_col2:
+                        st.markdown("### 📍 Top Locations")
+                        _loc_counts = _Counter()
+                        for _j in _all_trk:
+                            _loc = (_j.get("location") or "").strip()
+                            if _loc and _loc.lower() not in ("not specified", "unknown", "n/a", ""):
+                                _loc_counts[_loc] += 1
+                        if _loc_counts:
+                            _top_locs = _loc_counts.most_common(10)
+                            import plotly.express as _px_loc
+                            _fig_loc = _px_loc.bar(
+                                x=[c for _, c in _top_locs][::-1],
+                                y=[l for l, _ in _top_locs][::-1],
+                                orientation="h",
+                                color_discrete_sequence=["#6366f1"],
+                            )
+                            _fig_loc.update_layout(
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                font=dict(color="#e2e8f0"),
+                                margin=dict(t=20, b=20, l=20, r=20),
+                                height=300,
+                                xaxis_title="Count",
+                                yaxis_title="",
+                                showlegend=False,
+                            )
+                            st.plotly_chart(_fig_loc, use_container_width=True)
+                        else:
+                            st.info("No location data yet. Add locations to your tracked jobs.")
 
                     st.divider()
 
@@ -3270,22 +3558,24 @@ elif st.session_state.page == "skill_insights":
                             agg_a = aggregate_keywords(keyword_data, jobs_a_ids)
                             agg_b = aggregate_keywords(keyword_data, jobs_b_ids)
 
-                            # Get union of top skills
+                            # Get union of top hard skills (exclude soft skills)
+                            _hard_a = {s: c for s, c in agg_a["skill_counts"].items() if not is_soft_skill(s)}
+                            _hard_b = {s: c for s, c in agg_b["skill_counts"].items() if not is_soft_skill(s)}
                             all_skills_union = list(dict.fromkeys(
-                                list(agg_a["skill_counts"].keys())[:10] + list(agg_b["skill_counts"].keys())[:10]
+                                list(_hard_a.keys())[:10] + list(_hard_b.keys())[:10]
                             ))
 
                             fig_cmp = go.Figure()
                             fig_cmp.add_trace(go.Bar(
                                 name=STATUS_LABELS.get(status_a, status_a),
                                 x=all_skills_union,
-                                y=[agg_a["skill_counts"].get(s, 0) for s in all_skills_union],
+                                y=[_hard_a.get(s, 0) for s in all_skills_union],
                                 marker_color=STATUS_COLORS.get(status_a, "#94a3b8"),
                             ))
                             fig_cmp.add_trace(go.Bar(
                                 name=STATUS_LABELS.get(status_b, status_b),
                                 x=all_skills_union,
-                                y=[agg_b["skill_counts"].get(s, 0) for s in all_skills_union],
+                                y=[_hard_b.get(s, 0) for s in all_skills_union],
                                 marker_color=STATUS_COLORS.get(status_b, "#64748b"),
                             ))
                             fig_cmp.update_layout(
@@ -3306,18 +3596,23 @@ elif st.session_state.page == "skill_insights":
             elif st.session_state.si_view == "data":
                 st.caption("View and edit all job data that feeds into Skill Insights charts.")
 
+                # Apply status filter to tracker jobs for data view
+                _sf = st.session_state.skill_status_filter
+                _filtered_tracker = all_tracker_jobs if _sf == "all" else [j for j in all_tracker_jobs if j.get("status") == _sf]
+
                 # Build a lookup: job_id → job info
-                _job_lookup = {j["id"]: j for j in all_tracker_jobs}
+                _job_lookup = {j["id"]: j for j in _filtered_tracker}
 
                 # Collect all displayable job IDs (with keywords + manual with cache)
                 cache = load_keyword_cache()
-                _display_job_ids = list(keyword_data.keys())
-                for j in jobs_without_reqs:
+                _display_job_ids = [jid for jid in keyword_data.keys() if jid in _job_lookup]
+                _filtered_without_reqs = [j for j in jobs_without_reqs if j["id"] in _job_lookup]
+                for j in _filtered_without_reqs:
                     if j["id"] in cache and cache[j["id"]].get("keywords"):
                         _display_job_ids.append(j["id"])
                         keyword_data[j["id"]] = cache[j["id"]]["keywords"]
                 # Also include manual jobs WITHOUT cache
-                _manual_no_cache = [j for j in jobs_without_reqs if j["id"] not in _display_job_ids]
+                _manual_no_cache = [j for j in _filtered_without_reqs if j["id"] not in _display_job_ids]
                 _all_data_ids = _display_job_ids + [j["id"] for j in _manual_no_cache]
 
                 if not _all_data_ids:

@@ -214,6 +214,86 @@ SKILL_ALIASES = {
     "consultative selling": "Consultative Selling",
     "b2b": "B2B Sales", "b2b sales": "B2B Sales",
     "b2c": "B2C Sales", "b2c sales": "B2C Sales",
+    # --- Soft Skills (canonical buckets) ---
+    # Leadership
+    "leadership": "Leadership", "team leadership": "Leadership",
+    "people management": "Leadership", "team management": "Leadership",
+    "lead teams": "Leadership", "leading teams": "Leadership",
+    "executive leadership": "Leadership", "senior leadership": "Leadership",
+    "servant leadership": "Leadership",
+    # Communication
+    "communication": "Communication", "communication skills": "Communication",
+    "written communication": "Communication", "verbal communication": "Communication",
+    "oral communication": "Communication", "strong communicator": "Communication",
+    "excellent communication": "Communication", "effective communication": "Communication",
+    "presentation skills": "Communication", "public speaking": "Communication",
+    "storytelling": "Communication", "technical writing": "Communication",
+    # Collaboration
+    "collaboration": "Collaboration", "teamwork": "Collaboration",
+    "team player": "Collaboration", "cross-functional": "Collaboration",
+    "cross-functional collaboration": "Collaboration",
+    "cross-functional teams": "Collaboration",
+    "work collaboratively": "Collaboration", "collaborative": "Collaboration",
+    "interdepartmental": "Collaboration",
+    # Problem Solving
+    "problem solving": "Problem Solving", "problem-solving": "Problem Solving",
+    "troubleshooting": "Problem Solving", "root cause analysis": "Problem Solving",
+    "critical thinking": "Problem Solving", "complex problem solving": "Problem Solving",
+    "debugging": "Problem Solving",
+    # Analytical Thinking
+    "analytical thinking": "Analytical Thinking", "analytical skills": "Analytical Thinking",
+    "analytical": "Analytical Thinking", "data-driven": "Analytical Thinking",
+    "data driven": "Analytical Thinking", "quantitative analysis": "Analytical Thinking",
+    "strategic thinking": "Analytical Thinking",
+    # Adaptability
+    "adaptability": "Adaptability", "flexibility": "Adaptability",
+    "fast-paced": "Adaptability", "fast paced": "Adaptability",
+    "fast-paced environment": "Adaptability", "ambiguity": "Adaptability",
+    "comfortable with ambiguity": "Adaptability", "resilience": "Adaptability",
+    "growth mindset": "Adaptability", "continuous learning": "Adaptability",
+    # Initiative
+    "initiative": "Initiative", "self-starter": "Initiative",
+    "self-motivated": "Initiative", "proactive": "Initiative",
+    "ownership": "Initiative", "take ownership": "Initiative",
+    "entrepreneurial": "Initiative", "drive": "Initiative",
+    "self-directed": "Initiative", "autonomous": "Initiative",
+    # Attention to Detail
+    "attention to detail": "Attention to Detail", "detail-oriented": "Attention to Detail",
+    "detail oriented": "Attention to Detail", "meticulous": "Attention to Detail",
+    "thoroughness": "Attention to Detail", "accuracy": "Attention to Detail",
+    "quality-focused": "Attention to Detail", "precision": "Attention to Detail",
+    # Time Management
+    "time management": "Time Management", "prioritization": "Time Management",
+    "multitasking": "Time Management", "multi-tasking": "Time Management",
+    "deadline-driven": "Time Management", "meet deadlines": "Time Management",
+    "organizational skills": "Time Management", "work under pressure": "Time Management",
+    # Creativity
+    "creativity": "Creativity", "creative thinking": "Creativity",
+    "innovation": "Creativity", "innovative": "Creativity",
+    "out-of-the-box": "Creativity", "ideation": "Creativity",
+    # Mentoring
+    "mentoring": "Mentoring", "coaching": "Mentoring", "mentorship": "Mentoring",
+    "training": "Mentoring", "knowledge sharing": "Mentoring",
+    "talent development": "Mentoring",
+    # Stakeholder Management
+    "stakeholder management": "Stakeholder Management",
+    "stakeholder engagement": "Stakeholder Management",
+    "client management": "Stakeholder Management",
+    "client-facing": "Stakeholder Management",
+    "relationship building": "Stakeholder Management",
+    "relationship management": "Stakeholder Management",
+    "customer focus": "Stakeholder Management",
+    # Conflict Resolution
+    "conflict resolution": "Conflict Resolution",
+    "dispute resolution": "Conflict Resolution",
+    "mediation": "Conflict Resolution",
+    # Decision Making
+    "decision making": "Decision Making", "decision-making": "Decision Making",
+    "sound judgment": "Decision Making", "judgment": "Decision Making",
+    # Emotional Intelligence
+    "emotional intelligence": "Emotional Intelligence", "eq": "Emotional Intelligence",
+    "empathy": "Emotional Intelligence", "interpersonal skills": "Emotional Intelligence",
+    "interpersonal": "Emotional Intelligence", "people skills": "Emotional Intelligence",
 }
 
 # ── Skill categories ─────────────────────────────────────────
@@ -284,13 +364,15 @@ SKILL_CATEGORIES = {
     },
     # --- Universal ---
     "Soft Skills": {
-        "leadership", "communication", "teamwork", "agile", "scrum",
-        "project management", "stakeholder management", "mentoring",
-        "problem solving", "collaboration", "cross-functional",
+        "leadership", "communication", "collaboration", "problem solving",
+        "analytical thinking", "adaptability", "initiative", "attention to detail",
+        "time management", "creativity", "mentoring", "stakeholder management",
+        "conflict resolution", "decision making", "emotional intelligence",
     },
     "Tools & Platforms": {
         "git", "jira", "monorepo", "confluence", "notion", "asana",
         "trello", "slack", "microsoft office", "google workspace",
+        "agile", "scrum", "project management",
     },
 }
 
@@ -309,6 +391,15 @@ def _categorize(skill: str) -> str:
         if low in keywords:
             return cat
     return "Other"
+
+
+# Canonical soft skill names (the 15 buckets)
+SOFT_SKILL_NAMES: set[str] = {s.lower() for s in SKILL_CATEGORIES["Soft Skills"]}
+
+
+def is_soft_skill(skill: str) -> bool:
+    """Check if a skill is a soft skill."""
+    return skill.lower() in SOFT_SKILL_NAMES
 
 
 # ── Cache management ─────────────────────────────────────────
@@ -409,7 +500,6 @@ Return a JSON object with this format:
 {{
   "keywords": [
     {{"skill": "React", "category": "Languages & Frameworks"}},
-    {{"skill": "Node.js", "category": "Languages & Frameworks"}},
     {{"skill": "AWS", "category": "Cloud & DevOps"}},
     {{"skill": "Leadership", "category": "Soft Skills"}}
   ]
@@ -427,7 +517,12 @@ RULES:
 - Do NOT include experience-level phrases ("5+ years", "senior-level")
 - Do NOT include vague descriptions ("strong engineering culture", "fast paced")
 - Normalize names: "NodeJS" → "Node.js", "Postgres" → "PostgreSQL"
-- Include both technical and soft skills
+- For SOFT SKILLS: only use these canonical names (pick the closest match):
+  Leadership, Communication, Collaboration, Problem Solving,
+  Analytical Thinking, Adaptability, Initiative, Attention to Detail,
+  Time Management, Creativity, Mentoring, Stakeholder Management,
+  Conflict Resolution, Decision Making, Emotional Intelligence.
+  Do NOT invent new soft skill names — map to the list above.
 - Deduplicate — each skill appears only once
 - Return ONLY valid JSON"""
 
@@ -441,6 +536,11 @@ RULES:
         llm_results = parsed.get("keywords", [])
     except Exception:
         llm_results = []
+
+    # Normalize all LLM results through alias map (catches LLM deviations)
+    for kw in llm_results:
+        kw["skill"] = _normalize(kw["skill"])
+        kw["category"] = _categorize(kw["skill"])
 
     # Always merge with regex results as a safety net
     regex_results = extract_keywords_regex(requirements)
@@ -496,7 +596,12 @@ def extract_and_cache_all(
     for item in jobs_with_reqs:
         jid = item["job_id"]
         if jid in cache:
-            results[jid] = cache[jid]["keywords"]
+            # Re-normalize cached keywords (handles old entries with non-canonical names)
+            keywords = cache[jid]["keywords"]
+            for kw in keywords:
+                kw["skill"] = _normalize(kw["skill"])
+                kw["category"] = _categorize(kw["skill"])
+            results[jid] = keywords
         else:
             uncached.append(item)
 
@@ -607,6 +712,8 @@ def compute_resume_gaps(
     matched = []
     gaps = []
 
+    soft_skills_summary: Counter = Counter()
+
     for skill, count in aggregated["skill_counts"].items():
         # Determine category
         cat = "Other"
@@ -615,6 +722,11 @@ def compute_resume_gaps(
                 cat = category
                 break
 
+        # Separate soft skills from hard skills
+        if is_soft_skill(skill):
+            soft_skills_summary[skill] += count
+            continue
+
         entry = {"skill": skill, "count": count, "category": cat}
 
         if skill.lower() in resume_set:
@@ -622,6 +734,7 @@ def compute_resume_gaps(
         else:
             gaps.append(entry)
 
+    # Match percentage based on hard skills only
     total = len(matched) + len(gaps)
     pct = (len(matched) / total * 100) if total > 0 else 0
 
@@ -629,4 +742,5 @@ def compute_resume_gaps(
         "matched": sorted(matched, key=lambda x: x["count"], reverse=True),
         "gaps": sorted(gaps, key=lambda x: x["count"], reverse=True),
         "match_percentage": round(pct, 1),
+        "soft_skills": dict(soft_skills_summary.most_common()),
     }

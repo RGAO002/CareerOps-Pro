@@ -30,7 +30,7 @@ def get_llm(model_choice, api_key=None, *, provider=None):
 
     Args:
         model_choice: Model name (e.g. "gpt-4o", "claude-3-5-sonnet-20241022",
-                       "gemini-2.0-flash")
+                       "gemini-2.5-flash")
         api_key: API key for the provider. Falls back to environment variables:
                  - OpenAI:    OPENAI_API_KEY
                  - Anthropic: ANTHROPIC_API_KEY

@@ -59,7 +59,18 @@ export function useReviewSocket() {
   }, []);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Already open or connecting
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    )
+      return;
+
+    // Close any stale connection first (React Strict Mode runs effects twice)
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -68,11 +79,13 @@ export function useReviewSocket() {
       setState((prev) => ({ ...prev, connected: true, error: null }));
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.log("[Review WS] closed:", event.code, event.reason);
       setState((prev) => ({ ...prev, connected: false }));
     };
 
-    ws.onerror = () => {
+    ws.onerror = (event) => {
+      console.error("[Review WS] error:", event);
       setState((prev) => ({
         ...prev,
         error: "WebSocket connection failed. Is the API server running?",
@@ -81,6 +94,7 @@ export function useReviewSocket() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      console.log("[Review WS] received:", data.type, data);
 
       switch (data.type) {
         case "round_start":
@@ -158,16 +172,17 @@ export function useReviewSocket() {
       job_data: Record<string, unknown>;
       models: { id: string; name: string; api_key: string }[];
     }) => {
+      const msg = JSON.stringify({ type: "start", ...payload });
+      console.log("[Review WS] sending start, readyState:", wsRef.current?.readyState);
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         connect();
         // Wait a tick for connection
         setTimeout(() => {
-          wsRef.current?.send(
-            JSON.stringify({ type: "start", ...payload })
-          );
+          console.log("[Review WS] deferred send, readyState:", wsRef.current?.readyState);
+          wsRef.current?.send(msg);
         }, 500);
       } else {
-        wsRef.current.send(JSON.stringify({ type: "start", ...payload }));
+        wsRef.current.send(msg);
       }
       setState((prev) => ({
         ...prev,

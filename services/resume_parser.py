@@ -32,6 +32,7 @@ RESUME_SCHEMA = """
             "name": "Project Name",
             "tech": "Tech stack used",
             "link": "https://github.com/... or demo URL",
+            "link_text": "Display text for the link (e.g. 'GitHub Repo', 'Live Demo')",
             "bullets": ["Bullet point 1", "Bullet point 2"]
         }
     ],
@@ -74,6 +75,7 @@ CRITICAL CLASSIFICATION RULES:
    - name: The project title
    - tech: Technology stack (if mentioned)
    - link: The project's GitHub repo URL or demo URL (NOT the person's GitHub profile)
+   - link_text: The display text for the link as shown on the resume (e.g. "GitHub Repo", "Live Demo", "View Project"). If the link is shown as a raw URL, leave empty string.
    - bullets: Description bullet points
 
 3. **EXPERIENCE** - Each job should have:
@@ -215,8 +217,26 @@ def merge_pdf_links(result_data, pdf_links):
     
     # Don't add remaining PDF links - they likely cause duplicates
     # The Vision model should have captured all contact info
-    
+
     result_data["contact"] = updated_contact
+
+    # ── Enrich project link_text from PDF annotations ──
+    for proj in result_data.get("projects", []):
+        link = (proj.get("link") or "").strip()
+        if not link:
+            continue
+        # If link_text is already set by the LLM, keep it
+        if (proj.get("link_text") or "").strip():
+            continue
+        # Look up the display text from PDF annotations
+        link_key = link.lower().rstrip("/")
+        if link_key in url_to_text:
+            pdf_text = url_to_text[link_key].strip()
+            # Only use PDF text if it's meaningful (not the URL itself)
+            clean_url = link.replace("https://", "").replace("http://", "").rstrip("/")
+            if pdf_text and pdf_text != clean_url and pdf_text != link:
+                proj["link_text"] = pdf_text
+
     return result_data
 
 

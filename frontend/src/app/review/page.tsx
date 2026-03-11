@@ -1,24 +1,30 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useReviewSocket, ChatMessage, FinalVersion } from "@/lib/useReviewSocket";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ── Config Panel ─────────────────────────────────────────────
 function ConfigPanel({
   onStart,
+  contextData,
 }: {
   onStart: (cfg: {
     content: string;
     section: string;
     models: { id: string; name: string; api_key: string }[];
+    resume_data: Record<string, unknown>;
+    job_data: Record<string, unknown>;
   }) => void;
+  contextData: { resume_data: Record<string, unknown>; job_data: Record<string, unknown> } | null;
 }) {
   const [instruction, setInstruction] = useState(
     "Write a compelling professional summary tailored to this job."
   );
   const [section, setSection] = useState("summary");
   const [modelA, setModelA] = useState("gpt-4o");
-  const [modelB, setModelB] = useState("gemini-2.0-flash");
+  const [modelB, setModelB] = useState("gemini-2.5-flash");
   const [keyA, setKeyA] = useState("");
   const [keyB, setKeyB] = useState("");
 
@@ -40,8 +46,13 @@ function ConfigPanel({
         { id: "model_a", name: modelA, api_key: keyA },
         { id: "model_b", name: modelB, api_key: keyB },
       ],
+      resume_data: contextData?.resume_data || {},
+      job_data: contextData?.job_data || {},
     });
   };
+
+  const hasResume = contextData?.resume_data && Object.keys(contextData.resume_data).length > 0;
+  const hasJob = contextData?.job_data && Object.keys(contextData.job_data).length > 0;
 
   return (
     <div className="space-y-4 p-6 bg-gray-900 rounded-xl border border-gray-800">
@@ -102,6 +113,30 @@ function ConfigPanel({
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mt-2"
           />
         </div>
+      </div>
+
+      {/* Context status */}
+      <div className="flex items-center gap-3 text-xs">
+        <span className={`flex items-center gap-1 ${hasResume ? "text-green-400" : "text-gray-500"}`}>
+          {hasResume ? "✅" : "⬜"} Resume
+          {hasResume && contextData?.resume_data?.name ? (
+            <span className="text-gray-400">({String(contextData.resume_data.name)})</span>
+          ) : null}
+        </span>
+        <span className={`flex items-center gap-1 ${hasJob ? "text-green-400" : "text-gray-500"}`}>
+          {hasJob ? "✅" : "⬜"} Job
+          {hasJob && contextData?.job_data?.title ? (
+            <span className="text-gray-400">
+              ({String(contextData.job_data.title)}
+              {contextData.job_data.company ? ` @ ${String(contextData.job_data.company)}` : ""})
+            </span>
+          ) : null}
+        </span>
+        {!hasResume && (
+          <span className="text-yellow-500 ml-auto">
+            Click &quot;Debate&quot; in Resume Editor to load data
+          </span>
+        )}
       </div>
 
       <button
@@ -207,6 +242,7 @@ export default function ReviewPage() {
     phase,
     error,
     connect,
+    disconnect,
     startReview,
     sendUserMessage,
     pick,
@@ -214,6 +250,10 @@ export default function ReviewPage() {
   } = useReviewSocket();
 
   const [userInput, setUserInput] = useState("");
+  const [contextData, setContextData] = useState<{
+    resume_data: Record<string, unknown>;
+    job_data: Record<string, unknown>;
+  } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -221,21 +261,34 @@ export default function ReviewPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, finals]);
 
-  // Connect on mount
+  // Connect on mount, disconnect on unmount
   useEffect(() => {
     connect();
-  }, [connect]);
+    return () => {
+      disconnect();
+    };
+  }, [connect, disconnect]);
+
+  // Fetch review context from FastAPI (written by Streamlit's Debate button)
+  useEffect(() => {
+    fetch(`${API_BASE}/api/resume/review-context`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setContextData(data);
+      })
+      .catch(() => {
+        // No context available — user can still use the page manually
+      });
+  }, []);
 
   const handleStart = (cfg: {
     content: string;
     section: string;
     models: { id: string; name: string; api_key: string }[];
+    resume_data: Record<string, unknown>;
+    job_data: Record<string, unknown>;
   }) => {
-    startReview({
-      ...cfg,
-      resume_data: {}, // TODO: load from session selector
-      job_data: {},     // TODO: load from session selector
-    });
+    startReview(cfg);
   };
 
   const handleSend = () => {
@@ -289,7 +342,7 @@ export default function ReviewPage() {
       )}
 
       {/* Config panel — shown only when idle */}
-      {phase === "idle" && <ConfigPanel onStart={handleStart} />}
+      {phase === "idle" && <ConfigPanel onStart={handleStart} contextData={contextData} />}
 
       {/* Chat stream */}
       {messages.length > 0 && (

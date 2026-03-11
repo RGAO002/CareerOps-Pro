@@ -37,6 +37,15 @@ STATUSES = [
 STATUS_LABELS = {s[0]: s[1] for s in STATUSES}
 STATUS_COLORS = {s[0]: s[2] for s in STATUSES}
 
+# --- Work type definitions ---
+WORK_TYPES = [
+    ("", "Not specified"),
+    ("onsite", "🏢 On-site"),
+    ("remote", "🌐 Remote"),
+    ("hybrid", "🔀 Hybrid"),
+]
+WORK_TYPE_LABELS = {w[0]: w[1] for w in WORK_TYPES}
+
 
 def _ensure_dir():
     TRACKER_DIR.mkdir(exist_ok=True)
@@ -63,7 +72,7 @@ def load_tracker() -> dict:
             # Ensure custom_columns key exists (migration)
             if "custom_columns" not in data:
                 data["custom_columns"] = []
-            # Clean any legacy markdown-formatted URLs
+            # Migrate: ensure new fields exist on all jobs
             dirty = False
             for job in data.get("jobs", []):
                 raw = job.get("url", "")
@@ -71,6 +80,10 @@ def load_tracker() -> dict:
                 if cleaned != raw:
                     job["url"] = cleaned
                     dirty = True
+                for field, default in [("location", ""), ("work_type", ""), ("requirements", [])]:
+                    if field not in job:
+                        job[field] = default
+                        dirty = True
             if dirty:
                 with open(TRACKER_FILE, "w") as fw:
                     json.dump(data, fw, indent=2)
@@ -100,6 +113,9 @@ def add_job(
     follow_up_date: str = "",
     linked_session_id: str = None,
     source: str = "manual",
+    location: str = "",
+    work_type: str = "",
+    requirements: list = None,
 ) -> dict:
     """Add a new job entry. Returns the created entry."""
     data = load_tracker()
@@ -118,6 +134,9 @@ def add_job(
         "follow_up_date": follow_up_date,
         "linked_session_id": linked_session_id,
         "source": source,
+        "location": location,
+        "work_type": work_type,
+        "requirements": requirements or [],
         "created_at": now,
         "updated_at": now,
     }
@@ -177,6 +196,23 @@ def import_from_session(session_id: str, selected_job: dict, status: str = "appl
     elif salary:
         salary_min = salary
 
+    # Extract location and work type from parsed JD
+    location = selected_job.get("location", "")
+    if location and location.lower() in ("not specified", "unknown", "n/a"):
+        location = ""
+    # Prefer the dedicated work_type field (from updated parse_custom_jd);
+    # fall back to checking the employment "type" field for legacy data
+    work_type = selected_job.get("work_type", "")
+    if work_type not in ("onsite", "remote", "hybrid"):
+        work_type_raw = selected_job.get("type", "").lower()
+        work_type = ""
+        if "remote" in work_type_raw:
+            work_type = "remote"
+        elif "hybrid" in work_type_raw:
+            work_type = "hybrid"
+        elif any(w in work_type_raw for w in ("on-site", "onsite", "in-office", "in office")):
+            work_type = "onsite"
+
     return add_job(
         company=selected_job.get("company", "Unknown Company"),
         title=selected_job.get("title", "Unknown Position"),
@@ -187,6 +223,9 @@ def import_from_session(session_id: str, selected_job: dict, status: str = "appl
         notes="",
         linked_session_id=session_id,
         source="imported",
+        location=location,
+        work_type=work_type,
+        requirements=selected_job.get("requirements", []),
     )
 
 

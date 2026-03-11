@@ -66,7 +66,7 @@ def compute_diff(old_data, new_data):
     diff["projects"] = _compute_list_diff(
         old_data.get("projects", []),
         new_data.get("projects", []),
-        ["name", "tech", "link", "bullets"]
+        ["name", "tech", "link", "link_text", "links", "bullets"]
     )
     
     # Education (list of dicts)

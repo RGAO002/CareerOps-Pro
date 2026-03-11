@@ -7,7 +7,7 @@ Protocol:
      "resume_data": {...}, "job_data": {...},
      "models": [
        {"id": "model_a", "name": "gpt-4o", "api_key": "sk-..."},
-       {"id": "model_b", "name": "gemini-2.0-flash", "api_key": "AIza..."}
+       {"id": "model_b", "name": "gemini-2.5-flash", "api_key": "AIza..."}
      ]}
     {"type": "user_message", "content": "I think version A is too long..."}
     {"type": "pick", "choice": "model_a"}  — blind pick
@@ -107,11 +107,23 @@ def _build_context(resume_data: dict, job_data: dict, section: str) -> str:
 
 
 async def _call_llm(model_name: str, api_key: str, messages: list) -> str:
-    """Call an LLM synchronously (wrapped for async)."""
-    llm = get_llm(model_name, api_key)
-    loop = asyncio.get_event_loop()
-    res = await loop.run_in_executor(None, llm.invoke, messages)
-    return res.content
+    """Call an LLM synchronously (wrapped for async) with timeout."""
+    print(f"[REVIEW] Calling LLM: {model_name} ...")
+    try:
+        llm = get_llm(model_name, api_key)
+        loop = asyncio.get_running_loop()
+        res = await asyncio.wait_for(
+            loop.run_in_executor(None, llm.invoke, messages),
+            timeout=120,  # 2 min timeout
+        )
+        print(f"[REVIEW] LLM {model_name} responded ({len(res.content)} chars)")
+        return res.content
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"{model_name} timed out after 120s")
+    except Exception as e:
+        print(f"[REVIEW] LLM {model_name} error: {e}")
+        traceback.print_exc()
+        raise
 
 
 async def _send(ws: WebSocket, data: dict):
@@ -129,6 +141,7 @@ async def review_ws(ws: WebSocket):
       Final:   Each model produces a final version with rationale → blind pick
     """
     await ws.accept()
+    print("[REVIEW] WebSocket connected")
     state: dict[str, Any] = {
         "models": [],
         "context": "",
@@ -187,6 +200,10 @@ async def review_ws(ws: WebSocket):
                     resume_data, job_data, state["section"]
                 )
 
+                print(f"[REVIEW] Start: section={state['section']}, "
+                      f"models={[m['name'] for m in state['models']]}, "
+                      f"context_len={len(state['context'])}")
+
                 if len(state["models"]) < 2:
                     await _send(ws, {
                         "type": "error",
@@ -215,7 +232,10 @@ async def review_ws(ws: WebSocket):
                         _call_llm(m["name"], m["api_key"], messages)
                     )
 
+                print(f"[REVIEW] Round 1: gathering {len(draft_tasks)} drafts...")
                 drafts = await asyncio.gather(*draft_tasks, return_exceptions=True)
+                print(f"[REVIEW] Round 1: gather complete, "
+                      f"results: {[type(d).__name__ if isinstance(d, Exception) else f'{len(d)} chars' for d in drafts]}")
 
                 for m, draft in zip(state["models"], drafts):
                     if isinstance(draft, Exception):
@@ -297,9 +317,11 @@ async def review_ws(ws: WebSocket):
                     )
                     review_pairs.append((m, other))
 
+                print(f"[REVIEW] Round 2: gathering {len(review_tasks)} reviews...")
                 results = await asyncio.gather(
                     *review_tasks, return_exceptions=True
                 )
+                print(f"[REVIEW] Round 2: gather complete")
 
                 versions = []
                 for (m, other), result in zip(review_pairs, results):
@@ -359,8 +381,10 @@ async def review_ws(ws: WebSocket):
                 # (the loop continues to handle "pick" or "stop" messages)
 
     except WebSocketDisconnect:
-        pass
+        print("[REVIEW] Client disconnected")
     except Exception as e:
+        print(f"[REVIEW] Unhandled error: {e}")
+        traceback.print_exc()
         try:
             await _send(ws, {
                 "type": "error",

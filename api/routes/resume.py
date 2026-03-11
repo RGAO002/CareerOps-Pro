@@ -1,5 +1,8 @@
 """
 Resume API — read/list saved sessions for the Review page.
+
+Also serves the review context file written by the Streamlit app
+so the Next.js Review page can pick up resume + job data.
 """
 import json
 from pathlib import Path
@@ -8,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 router = APIRouter()
 
 SESSIONS_DIR = Path(__file__).parent.parent.parent / "saved_sessions"
+REVIEW_CONTEXT_FILE = SESSIONS_DIR / "_review_context.json"
 
 
 @router.get("/sessions")
@@ -42,6 +46,22 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     try:
         data = json.loads(path.read_text())
+        return data
+    except (json.JSONDecodeError, IOError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/review-context")
+async def get_review_context():
+    """Return the review context written by Streamlit's Debate button.
+
+    File: saved_sessions/_review_context.json
+    Contains: resume_data, job_data, section (optional)
+    """
+    if not REVIEW_CONTEXT_FILE.exists():
+        raise HTTPException(status_code=404, detail="No review context available. Click the Debate button in the Resume Editor first.")
+    try:
+        data = json.loads(REVIEW_CONTEXT_FILE.read_text())
         return data
     except (json.JSONDecodeError, IOError) as e:
         raise HTTPException(status_code=500, detail=str(e))
