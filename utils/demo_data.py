@@ -14,11 +14,22 @@ SENTINEL = SESSIONS_DIR / ".demo_seeded"
 DEMO_SESSION_ID = "demo0001"
 DEMO_VISITOR_ID = "demo"
 
+# Bump this version whenever the demo data structure changes so the
+# seeder re-runs on existing deployments.
+_SEED_VERSION = "2"
+
 
 def seed_demo_data():
     """Seed demo data if not already present. Safe to call on every startup."""
     if SENTINEL.exists():
-        return
+        existing_ver = SENTINEL.read_text().strip().split("|")[0]
+        if existing_ver == _SEED_VERSION:
+            return
+        # Version mismatch → re-seed (clean old demo files first)
+        import shutil
+        demo_dir = SESSIONS_DIR / "sessions" / DEMO_SESSION_ID
+        if demo_dir.exists():
+            shutil.rmtree(demo_dir)
     SESSIONS_DIR.mkdir(exist_ok=True)
     (SESSIONS_DIR / "sessions").mkdir(exist_ok=True)
 
@@ -26,8 +37,8 @@ def seed_demo_data():
     _seed_job_tracker()
     _seed_keyword_cache()
 
-    # Write sentinel so we don't re-seed
-    SENTINEL.write_text(datetime.now().isoformat())
+    # Write sentinel so we don't re-seed (version|timestamp)
+    SENTINEL.write_text(f"{_SEED_VERSION}|{datetime.now().isoformat()}")
 
 
 # ---------------------------------------------------------------------------

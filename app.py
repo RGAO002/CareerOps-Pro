@@ -1483,13 +1483,22 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             if preview_pdf:
                 import base64
                 pdf_base64 = base64.b64encode(preview_pdf).decode("utf-8")
+                # Use <object> with <embed> fallback — Edge blocks data: URIs in <iframe>
                 pdf_display = f'''
-                <iframe 
-                    src="data:application/pdf;base64,{pdf_base64}" 
-                    width="100%" 
-                    height="800px" 
+                <object
+                    data="data:application/pdf;base64,{pdf_base64}"
+                    type="application/pdf"
+                    width="100%"
+                    height="800px"
                     style="border: 1px solid #e5e7eb; border-radius: 8px;"
-                ></iframe>
+                >
+                    <embed
+                        src="data:application/pdf;base64,{pdf_base64}"
+                        type="application/pdf"
+                        width="100%"
+                        height="800px"
+                    />
+                </object>
                 '''
                 st.markdown(pdf_display, unsafe_allow_html=True)
             else:
