@@ -21,7 +21,7 @@ DEMO_VISITOR_ID = "demo"
 
 # Bump this version whenever the demo data structure changes so the
 # seeder re-runs on existing deployments.
-_SEED_VERSION = "3"
+_SEED_VERSION = "4"
 
 
 def seed_demo_data():
