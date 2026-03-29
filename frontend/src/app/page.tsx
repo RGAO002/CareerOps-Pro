@@ -1,16 +1,20 @@
-import Link from "next/link";
+"use client";
+
+import { useResumeStore } from "@/stores/resume";
+import { LandingHero } from "@/components/landing/LandingHero";
+import { AppShell } from "@/components/layout/AppShell";
+import { Dashboard } from "@/components/dashboard/Dashboard";
 
 export default function Home() {
+  const hasResume = useResumeStore((s) => !!s.resumeData);
+
+  if (!hasResume) {
+    return <LandingHero />;
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8">
-      <h1 className="text-4xl font-bold mb-4">CareerOps Pro</h1>
-      <p className="text-gray-400 mb-8">AI-Powered Resume Optimization</p>
-      <Link
-        href="/review"
-        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors"
-      >
-        🤖 Multi-LLM Review →
-      </Link>
-    </main>
+    <AppShell>
+      <Dashboard />
+    </AppShell>
   );
 }

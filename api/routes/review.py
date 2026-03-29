@@ -6,7 +6,7 @@ Protocol:
     {"type": "start", "content": "...", "section": "summary",
      "resume_data": {...}, "job_data": {...},
      "models": [
-       {"id": "model_a", "name": "gpt-4o", "api_key": "sk-..."},
+       {"id": "model_a", "name": "gpt-5.4-mini", "api_key": "sk-..."},
        {"id": "model_b", "name": "gemini-2.5-flash", "api_key": "AIza..."}
      ]}
     {"type": "user_message", "content": "I think version A is too long..."}

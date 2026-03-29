@@ -1,1 +1,252 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-positive: var(--positive);
+  --color-positive-muted: var(--positive-muted);
+  --color-caution: var(--caution);
+  --color-caution-muted: var(--caution-muted);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+ * CareerOps Pro — Design System
+ *
+ * Apple precision + Claude #DA7756 warmth
+ * OKLCH color space for perceptual uniformity
+ *
+ * Hue map:
+ *   40-45 = Claude terracotta (primary)
+ *   70    = warm neutrals (backgrounds)
+ *   150   = sage green (success/positive)
+ *   50    = amber (warnings, encouragement)
+ *   25    = red (destructive, cautious)
+ *   260   = cool blue (info, tech panels)
+ */
+:root {
+    /* ── Surfaces ── */
+    --background: oklch(0.985 0.004 70);
+    --foreground: oklch(0.15 0.02 50);
+    --card: oklch(0.995 0.003 70);
+    --card-foreground: oklch(0.15 0.02 50);
+    --popover: oklch(0.995 0.003 70);
+    --popover-foreground: oklch(0.15 0.02 50);
+
+    /* ── Primary: warm terracotta (softer than pure orange) ── */
+    --primary: oklch(0.62 0.12 32);
+    --primary-foreground: oklch(0.99 0.003 70);
+
+    /* ── Secondary: barely-there warm ── */
+    --secondary: oklch(0.96 0.008 55);
+    --secondary-foreground: oklch(0.30 0.02 50);
+
+    /* ── Muted: warm-tinted gray ── */
+    --muted: oklch(0.94 0.006 60);
+    --muted-foreground: oklch(0.50 0.01 50);
+
+    /* ── Accent: soft peach ── */
+    --accent: oklch(0.92 0.04 45);
+    --accent-foreground: oklch(0.30 0.06 42);
+
+    --destructive: oklch(0.55 0.22 25);
+    --border: oklch(0.92 0.006 60);
+    --input: oklch(0.93 0.005 60);
+    --ring: oklch(0.65 0.14 42);
+
+    /* ── Charts ── */
+    --chart-1: oklch(0.65 0.14 42);
+    --chart-2: oklch(0.60 0.12 150);
+    --chart-3: oklch(0.68 0.14 50);
+    --chart-4: oklch(0.55 0.10 260);
+    --chart-5: oklch(0.58 0.14 330);
+
+    --radius: 0.75rem;
+
+    /* ── Sidebar ── */
+    --sidebar: oklch(0.98 0.003 60);
+    --sidebar-foreground: oklch(0.20 0.02 50);
+    --sidebar-primary: oklch(0.65 0.14 42);
+    --sidebar-primary-foreground: oklch(0.99 0.003 70);
+    --sidebar-accent: oklch(0.94 0.03 45);
+    --sidebar-accent-foreground: oklch(0.30 0.06 42);
+    --sidebar-border: oklch(0.93 0.005 60);
+    --sidebar-ring: oklch(0.65 0.14 42);
+
+    /* ── Semantic ── */
+    --positive: oklch(0.55 0.12 150);
+    --positive-muted: oklch(0.94 0.04 150);
+    --caution: oklch(0.65 0.14 50);
+    --caution-muted: oklch(0.94 0.04 50);
+
+    /* ── Elevation surfaces ── */
+    --surface-0: oklch(0.985 0.004 70);
+    --surface-1: oklch(0.97 0.005 65);
+    --surface-2: oklch(0.95 0.008 60);
+
+    /* ── Motion ── */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* ── Spacing scale (4pt base) ── */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 48px;
+    --space-3xl: 64px;
+    --space-4xl: 96px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "ss02", "cv01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ── Utility: subtle dot grid ── */
+.dot-grid {
+  background-image: radial-gradient(oklch(0.50 0.02 50 / 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── Stagger animation helper ── */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 600ms var(--ease-out-expo) both;
+  animation-delay: calc(var(--stagger, 0) * 80ms);
+}
+
+/* ── Floating light orb animations ── */
+@keyframes drift-1 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(120px, -80px) scale(1.4); }
+  66% { transform: translate(-60px, 50px) scale(0.8); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes drift-2 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-100px, 70px) scale(1.35); }
+  66% { transform: translate(80px, -40px) scale(0.75); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes drift-3 {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(70px, 100px) scale(1.5); }
+  66% { transform: translate(-80px, -30px) scale(0.85); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* ── Breathing glow for drop zone ── */
+@keyframes breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 20px oklch(0.65 0.14 42 / 0.15),
+      0 0 60px oklch(0.65 0.14 42 / 0.05),
+      inset 0 0 30px oklch(0.65 0.14 42 / 0.03);
+  }
+  50% {
+    box-shadow:
+      0 0 35px oklch(0.65 0.14 42 / 0.3),
+      0 0 80px oklch(0.65 0.14 42 / 0.1),
+      inset 0 0 40px oklch(0.65 0.14 42 / 0.06);
+  }
+}
+
+@keyframes breathe-active {
+  0%, 100% {
+    box-shadow:
+      0 0 30px oklch(0.65 0.14 42 / 0.35),
+      0 0 80px oklch(0.65 0.14 42 / 0.15),
+      inset 0 0 40px oklch(0.65 0.14 42 / 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 50px oklch(0.65 0.14 42 / 0.5),
+      0 0 120px oklch(0.65 0.14 42 / 0.2),
+      inset 0 0 60px oklch(0.65 0.14 42 / 0.12);
+  }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  [style*="drift"] {
+    animation: none !important;
+  }
+}

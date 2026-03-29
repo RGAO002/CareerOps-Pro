@@ -74,7 +74,9 @@ def save_session(
     session_id: str = None,
     cover_letter_text: str = "",
     cover_letter_question: str = "",
-    cl_timeline: list = None
+    cl_timeline: list = None,
+    model: str = "",
+    company_info_cache: dict = None,
 ) -> str:
     """
     Save a session. If session_id is provided, update existing session.
@@ -120,7 +122,8 @@ def save_session(
         "page": page,
         "cover_letter_text": cover_letter_text,
         "cover_letter_question": cover_letter_question,
-        "cl_timeline": cl_timeline or []
+        "cl_timeline": cl_timeline or [],
+        "company_info_cache": company_info_cache or {},
     }
     state_path = session_dir / "state.json"
     with open(state_path, "w") as f:
@@ -148,7 +151,8 @@ def save_session(
         "id": session_id,
         "pdf_md5": pdf_md5,
         "pdf_filename": pdf_filename,
-        "updated_at": now
+        "updated_at": now,
+        "model": model,
     }
 
     if existing:
@@ -159,6 +163,9 @@ def save_session(
             entry["custom_name"] = True
         else:
             entry["name"] = display_name
+        # Preserve model from first save if not provided now
+        if not model and existing.get("model"):
+            entry["model"] = existing["model"]
         index[idx] = entry
     else:
         entry["name"] = display_name
@@ -212,6 +219,7 @@ def load_session(session_id: str) -> dict:
     if entry:
         result["pdf_filename"] = entry.get("pdf_filename", "resume.pdf")
         result["display_name"] = entry.get("name", "Unknown")
+        result["model"] = entry.get("model", "")
     
     return result
 
@@ -248,6 +256,74 @@ def delete_session(session_id: str) -> bool:
 def get_thumbnail_path(session_id: str) -> Path:
     """Get path to thumbnail image."""
     return SESSIONS_DIR / "sessions" / session_id / "thumbnail.png"
+
+
+def fork_session(session_id: str) -> str:
+    """
+    Fork a session: create a new session reusing the same PDF and resume data,
+    but with job-specific fields (selected_job, cover letter, timeline) cleared.
+    Returns the new session_id.
+    """
+    import shutil
+
+    ensure_dirs()
+
+    # Load original session
+    loaded = load_session(session_id)
+    if not loaded:
+        return None
+
+    # Generate new ID
+    new_id = str(uuid.uuid4())[:8]
+    new_dir = SESSIONS_DIR / "sessions" / new_id
+    new_dir.mkdir(parents=True, exist_ok=True)
+    old_dir = SESSIONS_DIR / "sessions" / session_id
+
+    # Copy files: original.pdf, thumbnail.png, resume.html
+    for fname in ("original.pdf", "thumbnail.png", "resume.html"):
+        src = old_dir / fname
+        if src.exists():
+            shutil.copy2(src, new_dir / fname)
+
+    # Build state: keep resume data, clear job-specific fields
+    state = {
+        "resume_data": loaded.get("resume_data"),
+        "analysis_result": loaded.get("analysis_result"),
+        "job_matches": loaded.get("job_matches"),
+        "selected_job": None,
+        "timeline": [],
+        "current_diff": {},
+        "page": "analysis",
+        "cover_letter_text": "",
+        "cover_letter_question": "",
+        "cl_timeline": []
+    }
+    with open(new_dir / "state.json", "w") as f:
+        json.dump(state, f, indent=2)
+
+    # Update index
+    index = load_index()
+    old_entry = next((s for s in index if s["id"] == session_id), {})
+    # Use resume name only (strip " @ Company", " (Fork)", and " - Role")
+    base_name = old_entry.get("name", "Unknown")
+    # Strip "(Fork)" suffix
+    if base_name.endswith(" (Fork)"):
+        base_name = base_name[:-7]
+    # Strip "@ Company" suffix
+    if " @ " in base_name:
+        base_name = base_name.split(" @ ")[0]
+
+    new_entry = {
+        "id": new_id,
+        "pdf_md5": old_entry.get("pdf_md5", ""),
+        "pdf_filename": old_entry.get("pdf_filename", "resume.pdf"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "name": base_name.strip()
+    }
+    index.insert(0, new_entry)
+    save_index(index)
+
+    return new_id
 
 
 def list_sessions() -> list:

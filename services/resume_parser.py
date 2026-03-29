@@ -240,39 +240,9 @@ def merge_pdf_links(result_data, pdf_links):
     return result_data
 
 
-def parse_resume_from_image(pdf_bytes, api_key):
-    """Use GPT-4 Vision to extract resume from scanned PDF."""
-    try:
-        import fitz  # PyMuPDF
-        
-        # First, extract hyperlinks from PDF
-        pdf_links = extract_pdf_links(pdf_bytes)
-        links_info = ""
-        if pdf_links:
-            links_info = "\n\nHYPERLINKS FOUND IN PDF (use these exact URLs):\n"
-            for link in pdf_links:
-                links_info += f"- '{link['text']}' links to: {link['url']}\n"
-        
-        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        images_base64 = []
-        
-        for page_num in range(min(len(pdf_doc), 3)):
-            page = pdf_doc[page_num]
-            mat = fitz.Matrix(2.0, 2.0)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            images_base64.append(img_base64)
-        
-        pdf_doc.close()
-        
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-        
-        content = [
-            {
-                "type": "text",
-                "text": f"""You are a resume parser. Analyze this resume image and extract ALL information into structured JSON.
+def _build_vision_prompt(links_info):
+    """Build the shared vision prompt for resume parsing."""
+    return f"""You are a resume parser. Analyze this resume image and extract ALL information into structured JSON.
 
 CRITICAL INSTRUCTIONS:
 - Extract EVERY bullet point completely - do not summarize or paraphrase
@@ -295,43 +265,141 @@ Return JSON in this exact schema:
 {RESUME_SCHEMA}
 
 Return ONLY valid JSON, no other text."""
-            }
-        ]
-        
-        for img_b64 in images_base64:
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img_b64}",
-                    "detail": "high"
-                }
-            })
-        
-        response = client.chat.completions.create(
-            model="gpt-5.2",
-            messages=[{"role": "user", "content": content}],
-            max_completion_tokens=4096,
-            response_format={"type": "json_object"}
-        )
-        
-        result_text = response.choices[0].message.content
-        result_data = json.loads(result_text)
-        
+
+
+def _pdf_to_images(pdf_bytes):
+    """Convert PDF pages to base64 PNG images."""
+    import fitz  # PyMuPDF
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    images_base64 = []
+    for page_num in range(min(len(pdf_doc), 3)):
+        page = pdf_doc[page_num]
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("png")
+        images_base64.append(base64.b64encode(img_bytes).decode('utf-8'))
+    pdf_doc.close()
+    return images_base64
+
+
+def _vision_openai(images_base64, prompt_text, api_key, model_name="gpt-5.4"):
+    """Call OpenAI Vision API."""
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+
+    content = [{"type": "text", "text": prompt_text}]
+    for img_b64 in images_base64:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{img_b64}", "detail": "high"}
+        })
+
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": content}],
+        max_completion_tokens=4096,
+        response_format={"type": "json_object"}
+    )
+    return response.choices[0].message.content
+
+
+def _vision_gemini(images_base64, prompt_text, api_key, model_name="gemini-3.1-pro"):
+    """Call Google Gemini Vision API."""
+    from google import genai
+
+    client = genai.Client(api_key=api_key)
+
+    parts = [prompt_text]
+    for img_b64 in images_base64:
+        parts.append(genai.types.Part.from_bytes(
+            data=base64.b64decode(img_b64),
+            mime_type="image/png",
+        ))
+
+    response = client.models.generate_content(
+        model=model_name,
+        contents=parts,
+        config=genai.types.GenerateContentConfig(
+            response_mime_type="application/json",
+            max_output_tokens=16384,
+        ),
+    )
+    return response.text
+
+
+def _vision_anthropic(images_base64, prompt_text, api_key, model_name="claude-3-5-sonnet-20241022"):
+    """Call Anthropic Vision API."""
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+
+    content = []
+    for img_b64 in images_base64:
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": img_b64}
+        })
+    content.append({"type": "text", "text": prompt_text})
+
+    response = client.messages.create(
+        model=model_name,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": content}],
+    )
+    return response.content[0].text
+
+
+def parse_resume_from_image(pdf_bytes, api_key, model_choice="gpt-5.4"):
+    """Use Vision AI to extract resume from scanned PDF.
+
+    Supports OpenAI, Gemini, and Anthropic vision models.
+    """
+    try:
+        # Extract hyperlinks from PDF
+        pdf_links = extract_pdf_links(pdf_bytes)
+        links_info = ""
+        if pdf_links:
+            links_info = "\n\nHYPERLINKS FOUND IN PDF (use these exact URLs):\n"
+            for link in pdf_links:
+                links_info += f"- '{link['text']}' links to: {link['url']}\n"
+
+        images_base64 = _pdf_to_images(pdf_bytes)
+        prompt_text = _build_vision_prompt(links_info)
+
+        # Route to correct provider
+        model_lower = model_choice.lower()
+        if "gemini" in model_lower:
+            result_text = _vision_gemini(images_base64, prompt_text, api_key, model_choice)
+        elif "claude" in model_lower:
+            result_text = _vision_anthropic(images_base64, prompt_text, api_key, model_choice)
+        else:
+            result_text = _vision_openai(images_base64, prompt_text, api_key, model_choice)
+
+        result_data = json.loads(clean_json_text(result_text))
+
         # Post-process: ensure PDF links are included in contact
         result_data = merge_pdf_links(result_data, pdf_links)
-        
+
         raw_text = extract_text_from_ocr_result(result_data)
-        
+
         return {
-            "success": True, 
-            "data": result_data, 
+            "success": True,
+            "data": result_data,
             "raw_text": raw_text,
             "method": "vision_ocr"
         }
-        
+
     except Exception as e:
         print(f"[DEBUG] Vision OCR error: {e}")
         return {"success": False, "error": str(e)}
+
+
+def clean_json_text(text):
+    """Extract JSON from response text (strip markdown fences etc.)."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text
 
 
 def extract_text_from_ocr_result(data):

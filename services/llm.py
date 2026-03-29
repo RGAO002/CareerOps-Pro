@@ -25,11 +25,36 @@ def detect_provider(model_choice: str) -> str:
     return PROVIDER_OPENAI
 
 
+class _GeminiWrapper:
+    """Wrap ChatGoogleGenerativeAI to handle response_format kwarg.
+
+    LangChain's Gemini integration doesn't accept
+    ``response_format={"type": "json_object"}`` in .invoke(), but all our
+    service files pass it.  This wrapper silently strips it so the rest of
+    the codebase doesn't need per-provider branches.
+    """
+
+    def __init__(self, llm):
+        self._llm = llm
+
+    def invoke(self, messages, **kwargs):
+        from langchain_core.messages import SystemMessage, HumanMessage
+        kwargs.pop("response_format", None)
+        # Gemini requires at least one HumanMessage in contents.
+        # If only SystemMessages are provided, convert the last one to HumanMessage.
+        if messages and all(isinstance(m, SystemMessage) for m in messages):
+            messages = [HumanMessage(content=m.content) for m in messages]
+        return self._llm.invoke(messages, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._llm, name)
+
+
 def get_llm(model_choice, api_key=None, *, provider=None):
     """Get LLM instance based on model choice.
 
     Args:
-        model_choice: Model name (e.g. "gpt-4o", "claude-3-5-sonnet-20241022",
+        model_choice: Model name (e.g. "gpt-5.4-mini", "claude-3-5-sonnet-20241022",
                        "gemini-2.5-flash")
         api_key: API key for the provider. Falls back to environment variables:
                  - OpenAI:    OPENAI_API_KEY
@@ -49,7 +74,8 @@ def get_llm(model_choice, api_key=None, *, provider=None):
         final_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not final_key:
             raise ValueError("Google API Key missing. Set GOOGLE_API_KEY env var.")
-        return ChatGoogleGenerativeAI(model=model_choice, google_api_key=final_key)
+        llm = ChatGoogleGenerativeAI(model=model_choice, google_api_key=final_key)
+        return _GeminiWrapper(llm)
 
     # Default: OpenAI
     final_key = api_key or os.getenv("OPENAI_API_KEY")

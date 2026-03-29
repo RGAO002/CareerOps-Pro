@@ -23,7 +23,7 @@ function ConfigPanel({
     "Write a compelling professional summary tailored to this job."
   );
   const [section, setSection] = useState("summary");
-  const [modelA, setModelA] = useState("gpt-4o");
+  const [modelA, setModelA] = useState("gpt-5.4-mini");
   const [modelB, setModelB] = useState("gemini-2.5-flash");
   const [keyA, setKeyA] = useState("");
   const [keyB, setKeyB] = useState("");

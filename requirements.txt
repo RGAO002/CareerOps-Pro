@@ -2,6 +2,7 @@ streamlit
 langchain-openai
 langchain-anthropic
 langchain-google-genai
+google-genai
 langchain-core
 openai
 pypdf

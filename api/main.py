@@ -17,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes.review import router as review_router
 from api.routes.resume import router as resume_router
+from api.routes.walkthrough import router as walkthrough_router
+from api.routes.humanize import router as humanize_router
 
 app = FastAPI(
     title="CareerOps Pro API",
@@ -27,7 +29,7 @@ app = FastAPI(
 # CORS — allow Next.js dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3003", "http://127.0.0.1:3000", "http://127.0.0.1:3003"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,6 +37,8 @@ app.add_middleware(
 
 app.include_router(resume_router, prefix="/api/resume", tags=["resume"])
 app.include_router(review_router, prefix="/api/review", tags=["review"])
+app.include_router(walkthrough_router, prefix="/api/walkthrough", tags=["walkthrough"])
+app.include_router(humanize_router, prefix="/api/humanize", tags=["humanize"])
 
 
 @app.get("/api/health")

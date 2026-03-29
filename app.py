@@ -42,7 +42,7 @@ from services.mock_interview import (
 from utils.html_renderer import render_resume_html, render_resume_html_for_pdf
 from utils.pdf_utils import convert_html_to_pdf
 from utils.diff import compute_diff
-from utils.session_manager import save_session, load_session, delete_session, rename_session, list_sessions, get_thumbnail_path
+from utils.session_manager import save_session, load_session, delete_session, rename_session, list_sessions, get_thumbnail_path, fork_session
 from services.job_tracker import (
     load_tracker, add_job, update_job, delete_job,
     import_from_session as tracker_import,
@@ -56,7 +56,9 @@ from services.keyword_profile import (
     compute_resume_gaps, load_keyword_cache,
     add_keyword_to_job, remove_keyword_from_job,
     update_job_keywords, SKILL_CATEGORIES, is_soft_skill,
+    extract_keywords_regex,
 )
+from services.company_lookup import lookup_company_info
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -260,6 +262,7 @@ st.markdown("""
         box-shadow: none !important;
         outline: none !important;
     }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -309,6 +312,9 @@ if 'show_feedback' not in st.session_state:
     st.session_state.show_feedback = False
 if 'current_evaluation' not in st.session_state:
     st.session_state.current_evaluation = None
+# Company info cache (for AI Co-Pilot panel)
+if 'company_info_cache' not in st.session_state:
+    st.session_state.company_info_cache = {}
 # Session management
 if 'current_session_id' not in st.session_state:
     st.session_state.current_session_id = None
@@ -353,14 +359,14 @@ if 'si_view' not in st.session_state:
 # --- Helper Functions ---
 def auto_save_session():
     """Auto-save current session if we have enough data."""
-    if (st.session_state.resume_data and 
-        st.session_state.pdf_bytes and 
+    if (st.session_state.resume_data and
+        st.session_state.pdf_bytes and
         st.session_state.current_session_id):
-        
+
         # Ensure we have the latest HTML
         if not st.session_state.resume_html:
             st.session_state.resume_html = render_resume_html_for_pdf(st.session_state.resume_data)
-        
+
         save_session(
             pdf_bytes=st.session_state.pdf_bytes,
             pdf_filename=st.session_state.pdf_filename or "resume.pdf",
@@ -375,7 +381,9 @@ def auto_save_session():
             session_id=st.session_state.current_session_id,
             cover_letter_text=st.session_state.cover_letter_text,
             cover_letter_question=st.session_state.cover_letter_question,
-            cl_timeline=st.session_state.cl_timeline
+            cl_timeline=st.session_state.cl_timeline,
+            model=st.session_state.get("current_model", ""),
+            company_info_cache=st.session_state.get("company_info_cache", {}),
         )
 
 
@@ -423,47 +431,75 @@ with st.sidebar:
     
     st.divider()
     
-    model = st.selectbox("🧠 Brain", ["gpt-5.2", "gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022"])
-    default_key = os.getenv("OPENAI_API_KEY", "")
+    _brain_options = [
+        "gpt-5.4", "gpt-5.4-mini",
+        "gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview",
+        "claude-3-5-sonnet-20241022",
+    ]
+    _cur = st.session_state.get("current_model", "")
+    _brain_idx = _brain_options.index(_cur) if _cur in _brain_options else 0
+    model = st.selectbox("🧠 Brain", _brain_options, index=_brain_idx)
+    # Auto-select API key based on provider
+    if "gemini" in model.lower():
+        default_key = os.getenv("GOOGLE_API_KEY", "")
+    elif "claude" in model.lower():
+        default_key = os.getenv("ANTHROPIC_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    else:
+        default_key = os.getenv("OPENAI_API_KEY", "")
     api_key = st.text_input("🔑 API Key", value=default_key, type="password")
-    
+    st.session_state.current_model = model
+
     st.divider()
     
     uploaded_file = st.file_uploader("📄 Upload Resume (PDF)", type="pdf")
     
     if uploaded_file and api_key:
         if st.button("🔍 Analyze Resume", type="primary", use_container_width=True):
-            with st.spinner("Processing your resume with Vision AI..."):
+            with st.spinner("Parsing your resume..."):
                 uploaded_file.seek(0)
                 pdf_bytes = uploaded_file.read()
                 st.session_state.pdf_bytes = pdf_bytes
                 st.session_state.pdf_filename = uploaded_file.name
-                
-                # Always use Vision mode for better accuracy
-                st.info("🔍 Using Vision AI for accurate parsing...")
-                parse_result = parse_resume_from_image(pdf_bytes, api_key)
+
+                if "gemini" in model.lower():
+                    _provider_label = "Google GenAI"
+                elif "claude" in model.lower():
+                    _provider_label = "Anthropic"
+                else:
+                    _provider_label = "OpenAI"
+                st.info(f"🔍 Parsing resume via {_provider_label} Vision...")
+                parse_result = parse_resume_from_image(pdf_bytes, api_key, model)
                 if parse_result.get("success"):
                     st.session_state.raw_text = parse_result.get("raw_text", "")
                 
                 if parse_result.get("success"):
                     st.session_state.resume_data = parse_result["data"]
                     
+                    _errors = []
+
                     analysis = analyze_resume(parse_result["data"], model, api_key)
                     if analysis["success"]:
                         st.session_state.analysis_result = analysis["analysis"]
-                    
+                    else:
+                        _errors.append(f"Analysis: {analysis.get('error', 'Unknown')}")
+
                     matches = match_jobs(parse_result["data"], model, api_key)
                     if matches["success"]:
                         st.session_state.job_matches = matches
-                    
+                    else:
+                        _errors.append(f"Job matching: {matches.get('error', 'Unknown')}")
+
+                    if _errors:
+                        st.session_state._parse_warnings = _errors
+
                     st.session_state.page = "analysis"
                     st.session_state.timeline = []
                     st.session_state.selected_job = None
                     st.session_state.current_session_id = None  # New session, not saved yet
+                    st.toast(f"✅ Resume parsed with {model}")
+                    st.rerun()
                 else:
                     st.error(f"❌ Failed to parse resume: {parse_result.get('error', 'Unknown error')}")
-                    
-                st.rerun()
     
     # ========== SAVE SESSION BUTTON ==========
     if st.session_state.resume_data and st.session_state.pdf_bytes:
@@ -484,7 +520,9 @@ with st.sidebar:
                 selected_job=st.session_state.selected_job,
                 current_diff=st.session_state.current_diff,
                 page=st.session_state.page,
-                session_id=st.session_state.current_session_id
+                session_id=st.session_state.current_session_id,
+                model=model,
+                company_info_cache=st.session_state.get("company_info_cache", {}),
             )
             st.session_state.current_session_id = session_id
             st.success(f"✅ Session saved!")
@@ -537,6 +575,28 @@ with st.sidebar:
 
 
 # --- Main Content ---
+
+# ── Global: Check for Walkthrough result ──
+_wt_result_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_sessions", "_walkthrough_result.json")
+if os.path.exists(_wt_result_path) and st.session_state.resume_data:
+    wt_c1, wt_c2, wt_c3 = st.columns([5, 2, 1])
+    with wt_c1:
+        st.info("📥 Walkthrough results available — load the optimized resume?")
+    with wt_c2:
+        if st.button("✅ Load Results", key="load_wt_result", type="primary", use_container_width=True):
+            import json as _json
+            with open(_wt_result_path, "r") as _f:
+                _wt_data = _json.load(_f)
+            st.session_state.resume_data = _wt_data.get("resume_data", st.session_state.resume_data)
+            from utils.html_renderer import render_resume_html
+            st.session_state.resume_html = render_resume_html(st.session_state.resume_data)
+            os.remove(_wt_result_path)
+            st.toast("✅ Walkthrough results loaded!")
+            st.rerun()
+    with wt_c3:
+        if st.button("✕ Dismiss", key="dismiss_wt_result", use_container_width=True):
+            os.remove(_wt_result_path)
+            st.rerun()
 
 # ========== WELCOME / SAVED SESSIONS PAGE ==========
 if (not st.session_state.resume_data and st.session_state.page not in ("job_tracker", "skill_insights")) or st.session_state.page == "home":
@@ -596,11 +656,27 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
                             st.session_state.renaming_session = session_id
                             st.rerun()
 
+                # Model badge
+                _model_name = session.get("model") or "gpt-5.2"
+                if _model_name:
+                    if "gemini" in _model_name.lower():
+                        _badge_color, _badge_icon = "#4285F4", "🔷"
+                    elif "claude" in _model_name.lower():
+                        _badge_color, _badge_icon = "#D97706", "🟠"
+                    else:
+                        _badge_color, _badge_icon = "#10A37F", "🟢"
+                    st.markdown(
+                        f'<span style="display:inline-block;background:{_badge_color}22;'
+                        f'border:1px solid {_badge_color}55;border-radius:4px;'
+                        f'padding:1px 6px;font-size:0.75em;">'
+                        f'{_badge_icon} {_model_name}</span>',
+                        unsafe_allow_html=True,
+                    )
                 st.caption(f"📄 {pdf_filename}")
                 st.caption(f"🕒 {updated_at}")
 
                 # Action buttons
-                btn_col1, btn_col2 = st.columns(2)
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
                 with btn_col1:
                     if st.button("📥 Restore", key=f"main_restore_{session_id}", use_container_width=True):
                         loaded = load_session(session_id)
@@ -619,9 +695,41 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
                             st.session_state.cover_letter_text = loaded.get("cover_letter_text", "")
                             st.session_state.cover_letter_question = loaded.get("cover_letter_question", "")
                             st.session_state.cl_timeline = loaded.get("cl_timeline", [])
+                            st.session_state.company_info_cache = loaded.get("company_info_cache", {})
+                            # Restore model so auto_save preserves the correct value
+                            _saved_model = loaded.get("model", "")
+                            if _saved_model:
+                                st.session_state.current_model = _saved_model
                             st.rerun()
 
                 with btn_col2:
+                    if st.button("🔀 Fork", key=f"main_fork_{session_id}", use_container_width=True):
+                        new_id = fork_session(session_id)
+                        if new_id:
+                            forked = load_session(new_id)
+                            if forked:
+                                st.session_state.pdf_bytes = forked.get("pdf_bytes")
+                                st.session_state.pdf_filename = forked.get("pdf_filename")
+                                st.session_state.resume_data = forked.get("resume_data")
+                                st.session_state.resume_html = forked.get("resume_html")
+                                st.session_state.analysis_result = forked.get("analysis_result")
+                                st.session_state.job_matches = forked.get("job_matches")
+                                st.session_state.timeline = []
+                                st.session_state.selected_job = None
+                                st.session_state.current_diff = {}
+                                st.session_state.page = "analysis"
+                                st.session_state.current_session_id = new_id
+                                st.session_state.cover_letter_text = ""
+                                st.session_state.cover_letter_question = ""
+                                st.session_state.cl_timeline = []
+                                st.session_state.company_info_cache = forked.get("company_info_cache", {})
+                                _saved_model = forked.get("model", "")
+                                if _saved_model:
+                                    st.session_state.current_model = _saved_model
+                                st.toast("✅ Session forked successfully!")
+                                st.rerun()
+
+                with btn_col3:
                     if st.button("🗑️ Delete", key=f"main_delete_{session_id}", use_container_width=True):
                         delete_session(session_id)
                         st.rerun()
@@ -648,7 +756,13 @@ if (not st.session_state.resume_data and st.session_state.page not in ("job_trac
 elif st.session_state.page == "analysis" and st.session_state.resume_data:
     # ============== Analysis Page ==============
     st.markdown("## 📊 Resume Analysis Dashboard")
-    
+
+    # Show any warnings from parsing step
+    if st.session_state.get("_parse_warnings"):
+        for _w in st.session_state._parse_warnings:
+            st.warning(f"⚠️ {_w}")
+        del st.session_state._parse_warnings
+
     analysis = st.session_state.analysis_result
     matches = st.session_state.job_matches
     
@@ -891,7 +1005,7 @@ elif st.session_state.page == "analysis" and st.session_state.resume_data:
 elif st.session_state.page == "editor" and st.session_state.resume_data:
     # ============== Editor Page ==============
     import uuid
-    
+
     if st.session_state.selected_job:
         job = st.session_state.selected_job
         score = job.get("match_score")
@@ -913,8 +1027,8 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
             </div>
         """, unsafe_allow_html=True)
     
-    # One-click tailor + settings + debate + track
-    opt_col1, opt_col2, opt_col_debate, opt_col3 = st.columns([2, 5, 1.2, 1])
+    # One-click tailor + settings + walkthrough + debate + track
+    opt_col1, opt_col2, opt_col_wt, opt_col_debate, opt_col3 = st.columns([2, 4, 1.5, 1.2, 1])
     with opt_col1:
         if st.button("⚡ One-click Tailor", type="primary"):
             if not st.session_state.selected_job:
@@ -970,6 +1084,32 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
                         }
                     }
                     st.rerun()
+    with opt_col_wt:
+        if st.button("🎓 Walkthrough", key="editor_walkthrough", use_container_width=True,
+                      help="Step-by-step guided resume optimization — AI asks, you choose, resume gets tailored"):
+            if not st.session_state.selected_job:
+                st.warning("Please select a target job first.")
+            else:
+                import json as _json
+                _job = st.session_state.selected_job
+                _wt_ctx = {
+                    "resume_data": st.session_state.resume_data,
+                    "job_data": {
+                        "title": _job.get("title", ""),
+                        "company": _job.get("company", ""),
+                        "requirements": _job.get("requirements", []),
+                        "gaps": _job.get("gaps", []),
+                        "tailoring_tips": _job.get("tailoring_tips", []),
+                        "description": _job.get("description", ""),
+                    },
+                }
+                _wt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_sessions", "_walkthrough_context.json")
+                os.makedirs(os.path.dirname(_wt_path), exist_ok=True)
+                with open(_wt_path, "w", encoding="utf-8") as _f:
+                    _f.write(_json.dumps(_wt_ctx, ensure_ascii=False, indent=2))
+                import webbrowser
+                webbrowser.open_new_tab("http://localhost:3000/walkthrough")
+                st.toast("✅ Walkthrough opened in new tab")
     with opt_col_debate:
         if st.button("🤖 Debate", key="editor_debate", use_container_width=True,
                       help="Open Multi-LLM Review to have two AI models debate and refine your resume"):
@@ -1323,7 +1463,113 @@ elif st.session_state.page == "editor" and st.session_state.resume_data:
     # Chat Co-Pilot
     with col_chat:
         st.markdown("### 🤖 AI Co-Pilot")
-        
+
+        selected = st.session_state.selected_job
+        if selected:
+            # ── 🏢 About Company ──
+            company_name = selected.get("company", "").strip()
+            if company_name and company_name != "Unknown Company":
+                # Cache lookup
+                if company_name not in st.session_state.company_info_cache:
+                    st.session_state.company_info_cache[company_name] = lookup_company_info(
+                        company_name,
+                        jd_text=selected.get("description", ""),
+                        model=model,
+                        api_key=api_key,
+                    )
+                cinfo = st.session_state.company_info_cache[company_name]
+                with st.expander(f"🏢 About {company_name}", expanded=False):
+                    if cinfo:
+                        parts = []
+                        if cinfo.get("industry"):
+                            parts.append(cinfo["industry"])
+                        if cinfo.get("founded"):
+                            parts.append(f"Founded {cinfo['founded']}")
+                        if cinfo.get("headquarters"):
+                            parts.append(cinfo["headquarters"])
+                        if parts:
+                            st.markdown(" · ".join(parts))
+                        if cinfo.get("employees"):
+                            st.markdown(f"👥 {cinfo['employees']} employees")
+                        if cinfo.get("description"):
+                            st.markdown(cinfo["description"])
+                        if cinfo.get("website"):
+                            _url = cinfo["website"]
+                            if not _url.startswith("http"):
+                                _url = "https://" + _url
+                            st.markdown(f"🔗 [{_url.replace('https://', '').replace('http://', '').rstrip('/')}]({_url})")
+                        if cinfo.get("source") == "ai":
+                            st.caption("ℹ️ AI-generated")
+                    else:
+                        st.caption(f"No company info found for {company_name}.")
+
+            # ── 📋 Job Summary ──
+            summary_lines = []
+            if selected.get("title"):
+                line = f"**{selected['title']}**"
+                if selected.get("type"):
+                    line += f" · {selected['type']}"
+                wt = (selected.get("work_type") or "").lower()
+                loc = (selected.get("location") or "").lower()
+                if wt and wt not in loc:
+                    line += f" · {selected['work_type'].capitalize()}"
+                summary_lines.append(line)
+            if selected.get("salary") and selected["salary"] != "Not specified":
+                _salary = selected["salary"].replace("$", r"\$")
+                summary_lines.append(f"💰 {_salary}")
+            if selected.get("location") and selected["location"] != "Not specified":
+                summary_lines.append(f"📍 {selected['location']}")
+            # Extract experience from requirements/description
+            all_text = " ".join(selected.get("requirements", [])) + " " + selected.get("description", "")
+            all_text_lower = all_text.lower()
+            exp_match = re.search(r"(\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:experience|exp)", all_text_lower)
+            if exp_match:
+                summary_lines.append(f"📅 {exp_match.group(1)}+ years experience")
+            # Sponsorship — always show
+            if re.search(r"(?:no|not|unable|cannot|can't|won't|will not|does not)[\w\s]*(?:sponsor|visa)", all_text_lower):
+                summary_lines.append("🚫 No visa sponsorship")
+            elif re.search(r"sponsor(?:ship)?|visa\s*(?:sponsor|support)", all_text_lower):
+                summary_lines.append("✅ Visa sponsorship available")
+            else:
+                summary_lines.append("❓ Sponsorship not mentioned")
+            if selected.get("description"):
+                summary_lines.append(f"\n{selected['description']}")
+
+            if summary_lines:
+                with st.expander("📋 Job Summary", expanded=False):
+                    for _line in summary_lines:
+                        st.markdown(_line)
+
+            # ── 🔧 Skills ──
+            reqs = selected.get("requirements", [])
+            if reqs:
+                tech_kws = extract_keywords_regex(reqs)
+                tech_kws = [kw for kw in tech_kws if not is_soft_skill(kw["skill"])]
+                if tech_kws:
+                    with st.expander("🔧 Skills", expanded=False):
+                        st.caption("🔴 Important → 🟡 Preferred → 🟢 Nice to have")
+                        n = max(len(tech_kws) - 1, 1)
+                        tag_spans = []
+                        for i, kw in enumerate(tech_kws):
+                            # Red(important) → Yellow(mid) → Green(nice-to-have)
+                            t = i / n  # 0.0 → 1.0
+                            if t < 0.5:
+                                # Red to Yellow
+                                r, g = 220, int(80 + 140 * (t * 2))
+                            else:
+                                # Yellow to Green
+                                r, g = int(220 - 140 * ((t - 0.5) * 2)), 220
+                            bg = f"rgba({r},{g},60,0.15)"
+                            bd = f"rgba({r},{g},60,0.4)"
+                            tag_spans.append(
+                                f'<span style="display:inline-block;background:{bg};'
+                                f'border:1px solid {bd};'
+                                f'border-radius:4px;padding:2px 8px;margin:2px;font-size:0.85em;">'
+                                f'{kw["skill"]}</span>'
+                            )
+                        st.markdown(" ".join(tag_spans), unsafe_allow_html=True)
+
+        # ── 💡 Tailoring Tips (existing) ──
         if st.session_state.selected_job and st.session_state.selected_job.get("tailoring_tips"):
             with st.expander("💡 Tailoring Tips for this Job", expanded=True):
                 for tip in st.session_state.selected_job.get("tailoring_tips", []):
@@ -2176,7 +2422,7 @@ elif st.session_state.page == "interview" and st.session_state.resume_data and s
                                     'Content-Type': 'application/json'
                                 }},
                                 body: JSON.stringify({{
-                                    model: 'gpt-5.2',
+                                    model: 'gpt-5.4',
                                     messages: [{{
                                         role: 'user',
                                         content: `You are an expert interviewer evaluating a candidate's response for the position of ${{jobData.title || 'Unknown'}}.
@@ -3113,6 +3359,10 @@ elif st.session_state.page == "job_tracker":
                             st.session_state.cover_letter_text = loaded.get("cover_letter_text", "")
                             st.session_state.cover_letter_question = loaded.get("cover_letter_question", "")
                             st.session_state.cl_timeline = loaded.get("cl_timeline", [])
+                            st.session_state.company_info_cache = loaded.get("company_info_cache", {})
+                            _saved_model = loaded.get("model", "")
+                            if _saved_model:
+                                st.session_state.current_model = _saved_model
                             st.rerun()
                         else:
                             st.toast("⚠️ Session not found.")
