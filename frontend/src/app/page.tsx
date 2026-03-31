@@ -8,7 +8,10 @@ import { Dashboard } from "@/components/dashboard/Dashboard";
 export default function Home() {
   const hasResume = useResumeStore((s) => !!s.resumeData);
 
-  if (!hasResume) {
+  // TODO: remove this bypass — temporary for design preview
+  const forceDesign = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dashboard");
+
+  if (!hasResume && !forceDesign) {
     return <LandingHero />;
   }
 

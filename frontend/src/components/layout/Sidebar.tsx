@@ -9,6 +9,7 @@ import {
   Kanban,
   Lightbulb,
   Settings,
+  SlidersHorizontal,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -27,8 +28,10 @@ const navItems = [
 ] as const;
 
 export function Sidebar() {
-  const collapsed = useAppStore((s) => s.sidebarCollapsed);
-  const toggle = useAppStore((s) => s.toggleSidebar);
+  const collapsed    = useAppStore((s) => s.sidebarCollapsed);
+  const toggle       = useAppStore((s) => s.toggleSidebar);
+  const togglePrefs  = useAppStore((s) => s.togglePrefs);
+  const prefsOpen    = useAppStore((s) => s.prefsOpen);
 
   return (
     <aside
@@ -65,6 +68,24 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-sidebar-border px-2.5 py-3 space-y-0.5">
         <NavItem href="/settings" icon={Settings} label="Settings" collapsed={collapsed} disabled />
+
+        {/* Preferences button */}
+        <button
+          onClick={togglePrefs}
+          className={cn(
+            "flex w-full items-center rounded-xl px-3 py-2.5 transition-colors",
+            prefsOpen
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-foreground/40 hover:text-foreground/70 hover:bg-[oklch(0.94_0.01_50)]",
+            collapsed && "justify-center px-2",
+          )}
+          aria-label="My Preferences"
+        >
+          <SlidersHorizontal className="size-4 shrink-0" strokeWidth={1.5} />
+          {!collapsed && (
+            <span className="ml-3 text-[12px] font-medium">Preferences</span>
+          )}
+        </button>
         <button
           onClick={toggle}
           className={cn(

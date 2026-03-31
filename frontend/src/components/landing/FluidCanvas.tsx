@@ -142,7 +142,7 @@ const FRAGMENT_SRC = `
   }
 `;
 
-export function FluidCanvas({ className }: { className?: string }) {
+export function FluidCanvas({ className, forceAnimate = false }: { className?: string; forceAnimate?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0.5, y: 0.5 });
@@ -162,8 +162,8 @@ export function FluidCanvas({ className }: { className?: string }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Check reduced motion preference
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Check reduced motion preference (forceAnimate overrides it)
+    const prefersReducedMotion = !forceAnimate && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const gl = canvas.getContext("webgl", { alpha: false, antialias: false });
     if (!gl) return; // Fallback: CSS gradient will show through

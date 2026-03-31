@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nextjs",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/usr/local/bin/npx", "next", "dev"],
+      "cwd": "frontend",
+      "env": { "PATH": "/usr/local/bin:/usr/bin:/bin" },
+      "port": 3000
+    }
+  ]
+}

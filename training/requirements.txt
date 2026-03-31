@@ -1,0 +1,8 @@
+# Data preparation (runs locally, CPU only)
+datasets>=2.18.0
+openai>=1.12.0
+tqdm>=4.66.0
+
+# Training (requires GPU — run on Google Colab or cloud)
+# pip install unsloth  (installs torch, transformers, peft, trl automatically)
+# On Colab: pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
