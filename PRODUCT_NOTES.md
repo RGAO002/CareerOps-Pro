@@ -39,31 +39,41 @@
 - LangGraph：多 Agent 状态机和编排
 - LangSmith：可观测性，调试每个 Agent 的推理链
 
+### Agent 分歧检测（重要设计要求）
+
+多 Agent 真正有力的时刻是它们**不一致**的时候。LangGraph 编排里需要专门设计一个分歧检测节点：
+
+- 当 Agent 结论有实质差异时，Dashboard 用专门 UI 展示
+- 示例："⚠ Agents disagree — Recruiter 认为技能不足，但 Hiring Manager 认为你的项目经历能弥补这个 gap，建议在面试里主动提"
+- 这是任何单一 AI 给不出的洞察，也是多 Agent 架构对用户可感知的核心价值
+
+三个 Agent 一致时 → 显示共识 badge（已做）
+三个 Agent 有分歧时 → 显示分歧卡片，解释各方理由（待做）
+
 ---
 
 ## 三、中国留学生专属功能路线图
 
-### 3.1 中式英文检测（最高优先级）
+### 3.1 经历重新框架（原"中式英文检测"，定位调整）
 
-检测语法正确但美国 HR 不会这样说的表达：
+**背景**：AI 写简历已经解决了语法层面的中式英文问题。但更深层的问题 AI 润色解决不了：中国学生普遍**低估自己的贡献**，这是文化习惯，不是语言问题。
 
 ```
-❌ "Responsible for the development of system"
-✅ "Built and shipped X system"
+❌ "Participated in the development of X"   ← AI 润色后语法正确，但仍然错
+✅ "Led the development of X"
 
-❌ "Have strong ability to work under pressure"
-✅ 删掉，用实际经历证明
+❌ 没有数字，只有动作描述
+✅ "Reduced latency by 40%, enabling 2x throughput"
 
-❌ "Familiar with Python"
-✅ "Python (3 years, production use)"
+❌ 把团队成果当个人成果模糊处理
+✅ 明确自己的角色和 ownership
 ```
 
-**实现路径：**
-- v1：规则引擎 + GPT-4o 检测
-- v2：用积累的简历数据微调专属模型
-- 数据飞轮：用户简历 → 标注 → 训练，越用越准
+**产品价值**：不是"检测中式英文"，而是"帮用户发现自己低估了自己"，然后引导补充真实数据和重新归因。
 
-这个功能 Teal / CareerSwift **永远不会做**，因为他们的用户群不需要它。
+**实现路径**：
+- v1：固定 prompt 引导用户重新审视每条 bullet（"你在这个项目里具体负责了什么？有没有可以量化的结果？"）
+- v2：分析 bullet 的主语、动词强度、是否有量化——给出具体的改写建议
 
 ### 3.2 H1B Sponsorship 数据集成
 
@@ -229,6 +239,11 @@ AI 自动准备：裁剪简历 + 写 Cover Letter + 填好表单字段
 用户 profile 存好后，检测到 Workday 表单自动填写所有字段，用户只需确认。
 光这一个功能就值得付费。
 
+**CAPTCHA 处理**：使用 2captcha-python 库（`pip install 2captcha-python`）
+- 服务：2captcha.com，人工 + AI 解题，$0.001–0.003/次
+- 注意：对 Cloudflare Turnstile 和 reCAPTCHA v3（行为检测）效果有限
+- repo 参考：https://github.com/2captcha/2captcha-python
+
 ---
 
 ## 八、一亩三分地整合策略
@@ -255,6 +270,12 @@ AI 自动准备：裁剪简历 + 写 Cover Letter + 填好表单字段
 
 ### 中期：联系合作
 切入点：帮他们把非结构化面经变成结构化产品，共同分成。
+
+### Chrome 扩展（后续规划）
+功能：在任意页面一键将内容保存到 CareerOps Pro
+- 在职位页面 → 保存 JD 到求职列表
+- 在一亩三分地面经页面 → 解析并保存结构化面经
+- 优先级：MVP 后开发，但早期就应该设计好后端 API 接口以便扩展接入
 
 ---
 
@@ -308,6 +329,92 @@ AI 自动准备：裁剪简历 + 写 Cover Letter + 填好表单字段
 - [x] Dashboard v1（mock data，5 个区块）
 - [x] AI Chat Panel（右侧抽屉，FluidCanvas 背景，mock 对话）
 - [x] Preferences Drawer（用户偏好，localStorage 持久化，注入 system prompt）
+
+## 十三、全局 AI 助手架构
+
+**核心思路：动态系统提示组装**
+
+Claude 能"了解 repo 一切"的原因是系统提示里预先注入了完整上下文。CareerOps AI 助手要做同样的事——把用户的求职上下文注入给 AI。
+
+### 系统提示分层结构
+
+```
+[1] 基础人设       → "你是 CareerOps Pro 的 AI 助手，专注北美求职..."
+[2] 用户偏好       → prefsToSystemPrompt(prefs)   ← 已实现
+[3] 当前页面上下文  → 根据所在页面动态注入          ← 关键缺口
+[4] 用户历史数据   → 工具调用按需获取              ← 不能全塞进去
+[5] 可用操作       → AI 能调用的工具列表           ← 赋予 AI 手脚
+```
+
+### 页面上下文协议（第三层）
+
+每个页面 mount 时向 Zustand store 注册自己的上下文，unmount 时清除。AI 面板打开时读取当前 `pageContext`，拼入系统提示。
+
+```ts
+// Zustand store 新增
+interface PageContext {
+  page: string
+  summary: string          // 给 AI 读的自然语言描述
+  data?: Record<string, unknown>
+}
+```
+
+各页面注册示例：
+
+| 页面 | summary 示例 | AI 自动进入的模式 |
+|------|-------------|----------------|
+| Resume Editor | "正在编辑「Google SWE」投递简历" | 简历优化、措辞建议 |
+| Mock Interview | "正在练习 Meta E5 系统设计面试" | 面试官模式、即时反馈 |
+| Job Search | "正在浏览旧金山 ML Engineer 职位" | 职位分析、申请建议 |
+| Applications | "查看 23 条申请记录" | 进度跟踪、下一步建议 |
+| Dashboard | 首页总览 | 宽泛助手，主动 nudge |
+
+### 历史数据：工具调用，不是塞进提示词
+
+把所有申请记录、面试历史塞进 system prompt 会爆 token。正确做法是给 AI **工具**，按需查询：
+
+```python
+# AI 可调用的数据工具
+get_applications(status?, company?)   # 申请记录
+get_resume(resume_id)                 # 简历全文
+get_interview_history(limit?)         # Mock interview 历史
+get_job_detail(job_id)               # 职位 JD 全文
+```
+
+用户问"我 Google 的面试准备得怎么样了？"→ AI 自动调用 `get_applications(company="Google")` + `get_interview_history()` → 综合回答。
+
+### AI 操作工具（第五层）
+
+AI 不只是"知道"，还能**执行操作**：
+
+```python
+update_resume_section(section, content)  # 直接修改简历某段
+add_job_to_tracker(job_id)              # 把当前 JD 加入申请追踪
+create_interview_session(job_id)        # 开启一次 mock interview
+set_application_status(app_id, status) # 更新申请状态
+save_insight(content)                   # 保存洞察到用户笔记
+```
+
+这是 Walkthrough Mode 的技术基础——AI 不只建议，还能帮用户直接执行。
+
+### 类比你已经在用的东西
+
+| CareerOps AI | Claude |
+|-------------|--------|
+| UserPrefs → `prefsToSystemPrompt()` | CLAUDE.md |
+| pageContext（Resume Editor、Mock Interview…） | 当前打开的代码文件 |
+| `get_applications()` 工具 | Read / Grep 工具 |
+| `update_resume_section()` 工具 | Edit / Write 工具 |
+| Walkthrough Mode | Plan Mode |
+
+### 实现路径
+
+1. `app.ts` 加 `pageContext` slice
+2. 各页面加 `useEffect` 注册/清除 pageContext
+3. 后端 `/chat` 接口把 `pageContext.summary` 拼入 system prompt
+4. 工具调用后端（等数据库建好后加）
+
+---
 
 ## 十二、待做功能（优先级排序）
 
