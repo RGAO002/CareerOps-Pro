@@ -116,19 +116,39 @@ export function AIChatPanel() {
       style={{
         bottom: 16,
         transform: "translateX(-50%)",
-        // Collapsed uses a static warm gradient + CSS sweep (see below);
-        // larger states use the dark base so the WebGL shader provides color.
-        background: state === "collapsed" ? C.panelBgStatic : C.panelBg,
-        backdropFilter: C.panelBlur,
-        WebkitBackdropFilter: C.panelBlur,
+        // Collapsed stacks 3 layers for a full-body liquid-glass look:
+        //   (1) top specular spotlight (ellipse at top-center, bright fall-off)
+        //   (2) vertical sheen (bright top → transparent mid → dark bottom)
+        //   (3) the static 3-stop color gradient underneath
+        // Larger states use the dark base + WebGL shader for color.
+        background: state === "collapsed"
+          ? `
+              radial-gradient(ellipse 110% 90% at 50% -12%, oklch(0.99 0.005 60 / 0.32), transparent 58%),
+              linear-gradient(180deg, oklch(0.99 0.005 60 / 0.14) 0%, transparent 38%, transparent 62%, rgba(0,0,0,0.18) 100%),
+              ${C.panelBgStatic}
+            `.trim()
+          : C.panelBg,
+        backdropFilter: state === "collapsed"
+          ? "blur(16px) saturate(2.0) brightness(1.10)"
+          : C.panelBlur,
+        WebkitBackdropFilter: state === "collapsed"
+          ? "blur(16px) saturate(2.0) brightness(1.10)"
+          : C.panelBlur,
         border: C.border,
-        // Outer drop shadow (for lift) + iOS-26 style inner highlights
-        // (top sheen, bottom depth, subtle rim) so the whole panel reads as glass.
+        // Outer drop shadow (for lift) + iOS-26 inset highlights.
+        // Collapsed gets an additional soft side rim for the glass curvature illusion.
         boxShadow: [
           state === "expanded" ? C.shadowUpBig : C.shadowUp,
-          "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.22)",
-          "inset 0 -1px 0 rgba(0,0,0,0.30)",
-          "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.05)",
+          "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.30)",
+          "inset 0 -1px 0 rgba(0,0,0,0.32)",
+          "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.08)",
+          ...(state === "collapsed"
+            ? [
+                // Left + right edge soft glow (curved glass catching light)
+                "inset 1.5px 0 2px oklch(0.99 0.005 60 / 0.10)",
+                "inset -1.5px 0 2px oklch(0.99 0.005 60 / 0.10)",
+              ]
+            : []),
         ].join(", "),
       }}
       animate={{
