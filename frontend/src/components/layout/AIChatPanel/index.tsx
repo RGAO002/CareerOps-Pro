@@ -2,7 +2,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAiPanelStore, type AiPanelState } from "@/stores/aiPanel";
 import { useConversationStore } from "@/stores/conversation";
 import { PanelCollapsed } from "./PanelCollapsed";
@@ -38,7 +38,7 @@ export function AIChatPanel() {
   const [typing, setTyping] = useState(false);
 
   /* ── Send + mock reply ────────────────────────────────────── */
-  const send = async (forceExpand = false) => {
+  const send = useCallback(async (forceExpand = false) => {
     const text = input.trim();
     if (!text) return;
 
@@ -55,11 +55,11 @@ export function AIChatPanel() {
       content: MOCK_RESPONSES[text] ??
         "That's a good question. Based on your resume and saved jobs, I see a pattern worth discussing.",
     });
-  };
+  }, [input, appendMessage, setState]);
 
   /* ── Keyboard shortcuts ───────────────────────────────────── */
   useEffect(() => {
-    const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+    const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
     const onKey = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey : e.ctrlKey;
@@ -82,8 +82,10 @@ export function AIChatPanel() {
         collapse();
         return;
       }
-      // Esc — collapse one (only if panel is at compact or expanded)
       if (e.key === "Escape") {
+        // Read store directly to avoid stale closure / re-running the effect on every state change.
+        // Only intercept Esc (preventDefault) when the panel is open — otherwise let it bubble
+        // so other handlers (modals, dialogs) can use it.
         const current = useAiPanelStore.getState().state;
         if (current !== "collapsed") {
           e.preventDefault();
