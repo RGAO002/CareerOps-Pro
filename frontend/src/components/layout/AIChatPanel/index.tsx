@@ -128,9 +128,11 @@ export function AIChatPanel() {
       transition={panelSpring}
     >
       {/* Animated fluid shader background (same as landing hero).
-          forceAnimate bypasses prefers-reduced-motion. speed=3 so blob motion is
-          clearly visible in the smaller panel (landing uses default speed 1). */}
-      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
+          Skipped in collapsed state — at 44px tall the extreme aspect ratio
+          distorts the shader into visible noise artifacts. */}
+      {state !== "collapsed" && (
+        <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
+      )}
       {/* Light scrim for text legibility — kept low so the fluid colors stay visible */}
       <div
         aria-hidden

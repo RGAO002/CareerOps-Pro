@@ -110,8 +110,9 @@ const FRAGMENT_SRC = `
     float field2 = 0.07 / (length(p - center2) + 0.001);
     float field3 = 0.06 / (length(p - center3) + 0.001);
 
-    // Noise distortion on fields — uses slow time so it doesn't flicker at high speed
-    float noise = fbm(p * 2.5 + tn * 0.5) * 0.3;
+    // Noise distortion on fields — sampled in unit UV space (not aspect-stretched p),
+    // so narrow/wide panels don't get over-sampled noise that reads as grain.
+    float noise = fbm(uv * 2.5 + tn * 0.5) * 0.3;
     field1 += noise * 0.15;
     field2 += noise * 0.12;
     field3 += noise * 0.10;
