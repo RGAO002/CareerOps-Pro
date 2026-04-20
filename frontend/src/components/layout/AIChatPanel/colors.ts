@@ -37,19 +37,22 @@ export const C = {
   // Send button active state — text color when button is enabled
   sendActiveText: "oklch(0.99 0.003 70)",
 
-  // Shadows
-  shadowUp:    "0 -8px 24px rgba(0,0,0,0.12)",
-  shadowUpBig: "0 -16px 40px rgba(0,0,0,0.20)",
+  // Shadows — stronger, more visible drop for the floating panel
+  shadowUp:    "0 14px 36px rgba(0,0,0,0.34), 0 4px 8px rgba(0,0,0,0.22)",
+  shadowUpBig: "0 28px 56px rgba(0,0,0,0.42), 0 8px 16px rgba(0,0,0,0.28)",
 
   // ── iOS-26-ish "liquid glass" surface (used for the message input) ──
-  glassBg:     "oklch(0.20 0.025 34 / 0.28)",        // very translucent, warm tint
-  glassBlur:   "blur(22px) saturate(1.7)",           // strong frost + color boost
-  // Combined shadow: outer drop for lift, inner top highlight (glass sheen),
-  // inner bottom shadow (depth). Applied via boxShadow.
+  // Top-to-bottom vertical gradient creates visible refraction/sheen.
+  glassBg:     "linear-gradient(180deg, oklch(0.98 0.005 60 / 0.14) 0%, oklch(0.22 0.03 34 / 0.22) 35%, oklch(0.16 0.025 34 / 0.30) 100%)",
+  // Strong frost with saturation + brightness boost so colors behind pop.
+  glassBlur:   "blur(24px) saturate(1.9) brightness(1.06)",
+  // Combined shadow: pronounced outer drop + visible inset sheen (top) +
+  // inset depth (bottom) + subtle rim around the entire shape.
   glassShadow: [
-    "0 6px 20px rgba(0,0,0,0.22)",
-    "0 1px 2px rgba(0,0,0,0.15)",
-    "inset 0 1px 0 oklch(0.98 0.005 60 / 0.14)",
-    "inset 0 -1px 0 rgba(0,0,0,0.18)",
+    "0 12px 32px rgba(0,0,0,0.34)",
+    "0 2px 6px rgba(0,0,0,0.22)",
+    "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.32)",
+    "inset 0 -1px 0 rgba(0,0,0,0.30)",
+    "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.08)",
   ].join(", "),
 } as const;
