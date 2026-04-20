@@ -41,15 +41,13 @@ export const C = {
   shadowUp:    "0 14px 36px rgba(0,0,0,0.34), 0 4px 8px rgba(0,0,0,0.22)",
   shadowUpBig: "0 28px 56px rgba(0,0,0,0.42), 0 8px 16px rgba(0,0,0,0.28)",
 
-  // ── "Liquid glass" surface for the message input — softened one notch ──
-  // Lighter top-to-bottom gradient and gentler inset highlights.
-  glassBg:     "linear-gradient(180deg, oklch(0.98 0.005 60 / 0.08) 0%, oklch(0.22 0.03 34 / 0.24) 38%, oklch(0.16 0.025 34 / 0.30) 100%)",
-  // Milder frost, less saturation/brightness lift so it feels less "wet".
-  glassBlur:   "blur(18px) saturate(1.45) brightness(1.03)",
+  // ── "Liquid glass" surface for the message input — softened ──
+  glassBg:     "linear-gradient(180deg, oklch(0.98 0.005 60 / 0.05) 0%, oklch(0.22 0.03 34 / 0.24) 40%, oklch(0.16 0.025 34 / 0.28) 100%)",
+  glassBlur:   "blur(14px) saturate(1.25) brightness(1.02)",
   glassShadow: [
-    "0 8px 22px rgba(0,0,0,0.26)",
-    "0 2px 4px rgba(0,0,0,0.18)",
-    "inset 0 1px 0 oklch(0.99 0.005 60 / 0.18)",
-    "inset 0 -1px 0 rgba(0,0,0,0.22)",
+    "0 6px 18px rgba(0,0,0,0.22)",
+    "0 1.5px 3px rgba(0,0,0,0.15)",
+    "inset 0 1px 0 oklch(0.99 0.005 60 / 0.12)",
+    "inset 0 -1px 0 rgba(0,0,0,0.18)",
   ].join(", "),
 } as const;
