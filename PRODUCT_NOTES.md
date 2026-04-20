@@ -418,6 +418,10 @@ save_insight(content)                   # 保存洞察到用户笔记
 
 ## 十二、待做功能（优先级排序）
 
+### 迁移后要加的
+- **Watchlist**：用户可以把感兴趣但还没投的职位加入 watchlist，独立于 applications tracker。watchlist 里的职位可以用作提醒来源（deadline 快到了）、AI nudge 触发器（"你 watchlist 里 82% 提到 Python，你简历没提"）、自动海投队列的候选池。
+
+### 原有待做
 1. **中式英文检测 v1**（规则 + LLM 混合）
 2. **后端 API 端点**（替换 Streamlit 直接调用）
 3. **Dashboard 接真实数据**
