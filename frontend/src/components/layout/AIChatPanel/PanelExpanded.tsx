@@ -30,7 +30,7 @@ export function PanelExpanded({ input, setInput, onSend, typing }: Props) {
           style={{
             color: C.textMuted,
             border: `1px solid ${C.innerBorder}`,
-            background: "oklch(0.18 0.025 34 / 0.4)",
+            background: C.badgeBg,
           }}
         >
           Esc collapse

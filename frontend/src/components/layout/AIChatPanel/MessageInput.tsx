@@ -75,7 +75,7 @@ export function MessageInput({
           className="mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200"
           style={{
             background: !disabled && value.trim() ? C.accent : C.surface2,
-            color: !disabled && value.trim() ? "oklch(0.99 0.003 70)" : C.textMuted,
+            color: !disabled && value.trim() ? C.sendActiveText : C.textMuted,
           }}
         >
           <Send className="size-3.5" strokeWidth={2} />
@@ -86,7 +86,7 @@ export function MessageInput({
           style={{
             color: C.textMuted,
             border: `1px solid ${C.innerBorder}`,
-            background: "oklch(0.18 0.025 34 / 0.4)",
+            background: C.badgeBg,
           }}
         >
           ⌘J

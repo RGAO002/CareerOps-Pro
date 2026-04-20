@@ -15,6 +15,8 @@ export const C = {
   surface2:    "oklch(0.20 0.04 38)",
   surfaceHover:"oklch(0.22 0.03 36 / 0.7)",
   innerBorder: "oklch(0.28 0.018 35 / 0.5)",
+  // Keyboard badge background (used in ⌘J / ⌘↑ / Esc badges)
+  badgeBg:     "oklch(0.18 0.025 34 / 0.4)",
 
   // Accents
   accent:      "oklch(0.72 0.13 38)",       // terracotta
@@ -28,6 +30,8 @@ export const C = {
   textMuted:   "oklch(0.55 0.020 50)",
   textDim:     "oklch(0.45 0.010 50)",
   userBubble:  "oklch(0.92 0.010 50)",
+  // Send button active state — text color when button is enabled
+  sendActiveText: "oklch(0.99 0.003 70)",
 
   // Shadows
   shadowUp:    "0 -8px 24px rgba(0,0,0,0.12)",

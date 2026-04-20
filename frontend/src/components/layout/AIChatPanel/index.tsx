@@ -40,7 +40,7 @@ export function AIChatPanel() {
   /* ── Send + mock reply ────────────────────────────────────── */
   const send = useCallback(async (forceExpand = false) => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || typing) return;
 
     appendMessage({ role: "user", content: text });
     setInput("");
@@ -55,7 +55,7 @@ export function AIChatPanel() {
       content: MOCK_RESPONSES[text] ??
         "That's a good question. Based on your resume and saved jobs, I see a pattern worth discussing.",
     });
-  }, [input, appendMessage, setState]);
+  }, [input, typing, appendMessage, setState]);
 
   /* ── Keyboard shortcuts ───────────────────────────────────── */
   useEffect(() => {
