@@ -123,30 +123,31 @@ export function AIChatPanel() {
         // Larger states use the dark base + WebGL shader for color.
         background: state === "collapsed"
           ? `
-              radial-gradient(ellipse 110% 90% at 50% -12%, oklch(0.99 0.005 60 / 0.32), transparent 58%),
-              linear-gradient(180deg, oklch(0.99 0.005 60 / 0.14) 0%, transparent 38%, transparent 62%, rgba(0,0,0,0.18) 100%),
+              radial-gradient(ellipse 110% 90% at 50% -12%, oklch(0.99 0.005 60 / 0.22), transparent 58%),
+              linear-gradient(180deg, oklch(0.99 0.005 60 / 0.10) 0%, transparent 38%, transparent 62%, rgba(0,0,0,0.15) 100%),
               ${C.panelBgStatic}
             `.trim()
           : C.panelBg,
         backdropFilter: state === "collapsed"
-          ? "blur(16px) saturate(2.0) brightness(1.10)"
+          ? "blur(14px) saturate(1.65) brightness(1.06)"
           : C.panelBlur,
         WebkitBackdropFilter: state === "collapsed"
-          ? "blur(16px) saturate(2.0) brightness(1.10)"
+          ? "blur(14px) saturate(1.65) brightness(1.06)"
           : C.panelBlur,
         border: C.border,
-        // Outer drop shadow (for lift) + iOS-26 inset highlights.
-        // Collapsed gets an additional soft side rim for the glass curvature illusion.
         boxShadow: [
           state === "expanded" ? C.shadowUpBig : C.shadowUp,
-          "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.30)",
-          "inset 0 -1px 0 rgba(0,0,0,0.32)",
-          "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.08)",
+          state === "collapsed"
+            ? "inset 0 1px 0 oklch(0.99 0.005 60 / 0.22)"
+            : "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.30)",
+          state === "collapsed"
+            ? "inset 0 -1px 0 rgba(0,0,0,0.24)"
+            : "inset 0 -1px 0 rgba(0,0,0,0.32)",
+          "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.07)",
           ...(state === "collapsed"
             ? [
-                // Left + right edge soft glow (curved glass catching light)
-                "inset 1.5px 0 2px oklch(0.99 0.005 60 / 0.10)",
-                "inset -1.5px 0 2px oklch(0.99 0.005 60 / 0.10)",
+                "inset 1px 0 1.5px oklch(0.99 0.005 60 / 0.07)",
+                "inset -1px 0 1.5px oklch(0.99 0.005 60 / 0.07)",
               ]
             : []),
         ].join(", "),
