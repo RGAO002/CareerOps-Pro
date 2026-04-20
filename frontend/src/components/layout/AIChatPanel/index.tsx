@@ -20,7 +20,7 @@ const MOCK_RESPONSES: Record<string, string> = {
 
 const HEIGHT_MAP: Record<AiPanelState, string> = {
   collapsed: "44px",
-  compact:   "130px",
+  compact:   "220px",
   expanded:  "88vh",
 };
 

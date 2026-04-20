@@ -16,7 +16,8 @@ interface Props {
 
 export function MessageList({ variant, typing = false }: Props) {
   const messages = useConversationStore((s) => s.messages);
-  const visible  = variant === "compact" ? messages.slice(-2) : messages;
+  // Compact shows last 3 messages (~1 user + 1 AI + 1 follow-up) for context.
+  const visible  = variant === "compact" ? messages.slice(-3) : messages;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
