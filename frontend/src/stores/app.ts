@@ -1,11 +1,9 @@
+// frontend/src/stores/app.ts
 import { create } from "zustand";
 
 interface AppState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
-
-  aiPanelOpen: boolean;
-  toggleAiPanel: () => void;
 
   prefsOpen: boolean;
   togglePrefs: () => void;
@@ -21,10 +19,6 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
   toggleSidebar: () =>
     set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-
-  aiPanelOpen: false,
-  toggleAiPanel: () =>
-    set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
 
   prefsOpen: false,
   togglePrefs: () =>
