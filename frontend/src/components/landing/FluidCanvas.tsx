@@ -126,11 +126,6 @@ const FRAGMENT_SRC = `
 
     color = c1 * w1 + c2 * w2 + c3 * w3;
 
-    // Add subtle luminance variation from noise — uses slow time, not speed-scaled,
-    // so the grain stays gentle instead of becoming visible flickering dots.
-    float luminanceNoise = fbm(p * 4.0 - tn * 0.3) * 0.08;
-    color += luminanceNoise;
-
     // Vignette — darker at edges
     float vignette = 1.0 - smoothstep(0.3, 1.2, length(uv - 0.5) * 1.4);
     color *= mix(0.15, 0.45, vignette);
@@ -139,9 +134,9 @@ const FRAGMENT_SRC = `
     float specular = smoothstep(0.4, 0.0, mouseDist) * 0.06;
     color += specular;
 
-    // Very subtle grain
-    float grain = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.02;
-    color += grain;
+    // NOTE: the prior luminanceNoise and pixel-based grain terms were removed
+    // here — they read as visible flickering dots in the smaller AI panel.
+    // The blobs + vignette alone give enough organic feel without grain.
 
     gl_FragColor = vec4(color, 1.0);
   }
