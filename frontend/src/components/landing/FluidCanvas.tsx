@@ -105,10 +105,15 @@ const FRAGMENT_SRC = `
     center2 += (mouse - center2) * mouseInfluence * 0.12;
     center3 += (mouse - center3) * mouseInfluence * 0.10;
 
-    // Metaball-style field — smooth organic blending
-    float field1 = 0.08 / (length(p - center1) + 0.001);
-    float field2 = 0.07 / (length(p - center2) + 0.001);
-    float field3 = 0.06 / (length(p - center3) + 0.001);
+    // Metaball-style field — smooth organic blending.
+    // max(length, MIN_R) caps peak intensity so blob centers don't become
+    // bright pixel-sized singularities at extreme aspect ratios (thin panels).
+    float d1 = max(length(p - center1), 0.05);
+    float d2 = max(length(p - center2), 0.05);
+    float d3 = max(length(p - center3), 0.05);
+    float field1 = 0.08 / d1;
+    float field2 = 0.07 / d2;
+    float field3 = 0.06 / d3;
 
     // Noise distortion on fields — sampled in unit UV space (not aspect-stretched p),
     // so narrow/wide panels don't get over-sampled noise that reads as grain.
