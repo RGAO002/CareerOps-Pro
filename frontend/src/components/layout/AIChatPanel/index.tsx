@@ -18,14 +18,11 @@ const MOCK_RESPONSES: Record<string, string> = {
     "Let's look at your Snapbrillia bullet #3. Right now it reads: \"Worked on developing backend APIs for the platform.\"\n\nHere's a stronger version:\n\"Designed and shipped 12 REST APIs in Node.js, cutting average response time by 40%.\"",
 };
 
-// Compact has two heights: idle and focused (when input gains focus, panel grows
-// so the user can browse more conversation while typing).
 const HEIGHT_MAP: Record<AiPanelState, string> = {
   collapsed: "44px",
-  compact:   "200px",
+  compact:   "340px",
   expanded:  "88vh",
 };
-const COMPACT_FOCUSED_HEIGHT = "340px";
 
 // Each state has its own width so it doesn't span the full viewport.
 // Collapsed = slim pill, Compact = floating card, Expanded = wide card with side margins.
@@ -46,9 +43,8 @@ export function AIChatPanel() {
 
   const appendMessage = useConversationStore((s) => s.appendMessage);
 
-  const [input, setInput]       = useState("");
-  const [typing, setTyping]     = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
+  const [input, setInput]   = useState("");
+  const [typing, setTyping] = useState(false);
 
   /* ── Send + mock reply ────────────────────────────────────── */
   const send = useCallback(async (forceExpand = false) => {
@@ -126,7 +122,7 @@ export function AIChatPanel() {
         boxShadow: state === "expanded" ? C.shadowUpBig : C.shadowUp,
       }}
       animate={{
-        height: state === "compact" && inputFocused ? COMPACT_FOCUSED_HEIGHT : HEIGHT_MAP[state],
+        height: HEIGHT_MAP[state],
         width:  WIDTH_MAP[state],
       }}
       transition={panelSpring}
@@ -146,10 +142,7 @@ export function AIChatPanel() {
           input={input}
           setInput={setInput}
           onSend={() => send(false)}
-          onSendAndExpand={() => send(true)}
           typing={typing}
-          onInputFocus={() => setInputFocused(true)}
-          onInputBlur={() => setInputFocused(false)}
         />
       )}
       {state === "expanded" && (

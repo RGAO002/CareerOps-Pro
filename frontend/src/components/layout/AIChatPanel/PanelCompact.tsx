@@ -2,24 +2,24 @@
 "use client";
 
 import { ChevronDown, Maximize2 } from "lucide-react";
+import { useMemo } from "react";
 import { useAiPanelStore } from "@/stores/aiPanel";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { ModeIndicator } from "./ModeIndicator";
 import { C } from "./colors";
+import { modKeyLabel } from "./platform";
 
 interface Props {
   input: string;
   setInput: (v: string) => void;
   onSend: () => void;
-  onSendAndExpand: () => void;
   typing: boolean;
-  onInputFocus?: () => void;
-  onInputBlur?: () => void;
 }
 
-export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing, onInputFocus, onInputBlur }: Props) {
+export function PanelCompact({ input, setInput, onSend, typing }: Props) {
   const setState = useAiPanelStore((s) => s.setState);
+  const modKey = useMemo(modKeyLabel, []);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -37,7 +37,7 @@ export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing,
             background: C.badgeBg,
           }}
         >
-          ⌘↑ expand
+          {modKey}↑ expand
         </span>
         <button
           type="button"
@@ -70,11 +70,9 @@ export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing,
           value={input}
           onChange={setInput}
           onSend={onSend}
-          onSendAndExpand={onSendAndExpand}
-          onFocus={onInputFocus}
-          onBlur={onInputBlur}
           disabled={typing}
           size="compact"
+          autoFocus
         />
       </div>
     </div>

@@ -37,7 +37,7 @@ export function MessageList({ variant, typing = false }: Props) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 overflow-y-auto px-4",
+        "flex h-full flex-col gap-3 overflow-y-auto px-4",
         variant === "compact" ? "py-2" : "py-4",
       )}
       style={{ scrollbarWidth: "none" }}

@@ -2,15 +2,14 @@
 "use client";
 
 import { Send } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { C } from "./colors";
+import { modKeyLabel } from "./platform";
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
-  /** When true, Cmd/Ctrl+Enter sends and forces panel to expanded. */
-  onSendAndExpand?: () => void;
   /** Fired when the textarea gains focus. */
   onFocus?: () => void;
   /** Fired when the textarea loses focus. */
@@ -19,29 +18,33 @@ interface Props {
   placeholder?: string;
   /** "compact" → pill input, "full" → larger input with Send button. */
   size?: "compact" | "full";
+  /** Auto-focus the textarea on mount (useful when panel opens). */
+  autoFocus?: boolean;
 }
 
 export function MessageInput({
   value,
   onChange,
   onSend,
-  onSendAndExpand,
   onFocus,
   onBlur,
   disabled = false,
-  placeholder = "Ask anything...",
+  placeholder,
   size = "compact",
+  autoFocus = false,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const isFull = size === "full";
+  const modKey = useMemo(modKeyLabel, []);
+  const computedPlaceholder = placeholder ?? `Ask anything... (${modKey}↵ to send)`;
+
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus();
+  }, [autoFocus]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      if ((e.metaKey || e.ctrlKey) && onSendAndExpand) {
-        e.preventDefault();
-        onSendAndExpand();
-        return;
-      }
+    // Cmd/Ctrl+Enter = send. Plain Enter and Shift+Enter both insert a newline.
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       onSend();
     }
@@ -66,7 +69,7 @@ export function MessageInput({
           t.style.height = `${Math.min(t.scrollHeight, isFull ? 160 : 80)}px`;
         }}
         rows={1}
-        placeholder={placeholder}
+        placeholder={computedPlaceholder}
         className="flex-1 resize-none bg-transparent text-[13px] leading-relaxed outline-none"
         style={{
           color: C.textBody,
@@ -97,7 +100,7 @@ export function MessageInput({
             background: C.badgeBg,
           }}
         >
-          ⌘J
+          {modKey}↵
         </span>
       )}
     </div>

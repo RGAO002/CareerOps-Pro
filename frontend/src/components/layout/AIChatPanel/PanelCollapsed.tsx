@@ -1,11 +1,14 @@
 "use client";
 
 import { ChevronUp } from "lucide-react";
+import { useMemo } from "react";
 import { useAiPanelStore } from "@/stores/aiPanel";
 import { C } from "./colors";
+import { modKeyLabel } from "./platform";
 
 export function PanelCollapsed() {
   const expandOne = useAiPanelStore((s) => s.expandOne);
+  const modKey = useMemo(modKeyLabel, []);
 
   return (
     <button
@@ -32,7 +35,7 @@ export function PanelCollapsed() {
           background: C.badgeBg,
         }}
       >
-        ⌘J
+        {modKey}J
       </span>
       <ChevronUp
         className="size-3.5"
