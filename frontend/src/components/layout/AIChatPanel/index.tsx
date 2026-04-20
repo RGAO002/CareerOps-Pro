@@ -116,7 +116,9 @@ export function AIChatPanel() {
       style={{
         bottom: 16,
         transform: "translateX(-50%)",
-        background: C.panelBg,
+        // Collapsed uses a static warm gradient + CSS sweep (see below);
+        // larger states use the dark base so the WebGL shader provides color.
+        background: state === "collapsed" ? C.panelBgStatic : C.panelBg,
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
         border: C.border,
@@ -128,15 +130,16 @@ export function AIChatPanel() {
       }}
       transition={panelSpring}
     >
-      {/* Animated fluid shader background (same as landing hero).
-          forceAnimate bypasses prefers-reduced-motion. Speed is lower in
-          collapsed because the 44px-tall extreme aspect ratio amplifies
-          any motion into a distracting shimmer. */}
-      <FluidCanvas
-        className="absolute inset-0 z-0"
-        forceAnimate
-        speed={state === "collapsed" ? 1 : 3}
-      />
+      {/* Compact / Expanded: WebGL fluid shader (works well at normal aspect) */}
+      {state !== "collapsed" && (
+        <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
+      )}
+      {/* Collapsed: pure-CSS horizontal shimmer sweep — gentle animation
+          that behaves correctly at the 44px × 360px extreme aspect ratio,
+          where the WebGL shader would produce pixel-sized artifacts. */}
+      {state === "collapsed" && (
+        <div aria-hidden className="ai-collapsed-sweep z-0" />
+      )}
       {/* Light scrim for text legibility — kept low so the fluid colors stay visible */}
       <div
         aria-hidden
