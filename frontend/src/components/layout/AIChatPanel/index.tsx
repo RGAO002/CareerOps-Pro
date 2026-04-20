@@ -116,6 +116,9 @@ export function AIChatPanel() {
       style={{
         bottom: 16,
         transform: "translateX(-50%)",
+        // Base dark warm gradient — shows through when FluidCanvas is skipped
+        // (collapsed state), and acts as a fallback if WebGL fails.
+        background: C.panelBg,
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
         border: C.border,
