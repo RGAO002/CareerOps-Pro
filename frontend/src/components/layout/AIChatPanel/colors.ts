@@ -7,6 +7,10 @@
 export const C = {
   // Surfaces
   panelBg:     "linear-gradient(180deg, oklch(0.13 0.025 34 / 0.96), oklch(0.10 0.025 35 / 0.98))",
+  // Static gradient that echoes the FluidCanvas shader palette
+  // (terracotta → sage → blue), used when the shader is disabled
+  // (e.g. collapsed state where animation would distort).
+  panelBgStatic: "linear-gradient(90deg, oklch(0.22 0.12 30) 0%, oklch(0.18 0.07 150) 52%, oklch(0.18 0.09 260) 100%)",
   panelBlur:   "blur(10px)",
   border:      "1px solid oklch(0.28 0.018 35 / 0.5)",
 
