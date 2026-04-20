@@ -41,18 +41,15 @@ export const C = {
   shadowUp:    "0 14px 36px rgba(0,0,0,0.34), 0 4px 8px rgba(0,0,0,0.22)",
   shadowUpBig: "0 28px 56px rgba(0,0,0,0.42), 0 8px 16px rgba(0,0,0,0.28)",
 
-  // ── iOS-26-ish "liquid glass" surface (used for the message input) ──
-  // Top-to-bottom vertical gradient creates visible refraction/sheen.
-  glassBg:     "linear-gradient(180deg, oklch(0.98 0.005 60 / 0.14) 0%, oklch(0.22 0.03 34 / 0.22) 35%, oklch(0.16 0.025 34 / 0.30) 100%)",
-  // Strong frost with saturation + brightness boost so colors behind pop.
-  glassBlur:   "blur(24px) saturate(1.9) brightness(1.06)",
-  // Combined shadow: pronounced outer drop + visible inset sheen (top) +
-  // inset depth (bottom) + subtle rim around the entire shape.
+  // ── "Liquid glass" surface for the message input — softened one notch ──
+  // Lighter top-to-bottom gradient and gentler inset highlights.
+  glassBg:     "linear-gradient(180deg, oklch(0.98 0.005 60 / 0.08) 0%, oklch(0.22 0.03 34 / 0.24) 38%, oklch(0.16 0.025 34 / 0.30) 100%)",
+  // Milder frost, less saturation/brightness lift so it feels less "wet".
+  glassBlur:   "blur(18px) saturate(1.45) brightness(1.03)",
   glassShadow: [
-    "0 12px 32px rgba(0,0,0,0.34)",
-    "0 2px 6px rgba(0,0,0,0.22)",
-    "inset 0 1.5px 0 oklch(0.99 0.005 60 / 0.32)",
-    "inset 0 -1px 0 rgba(0,0,0,0.30)",
-    "inset 0 0 0 1px oklch(0.98 0.005 60 / 0.08)",
+    "0 8px 22px rgba(0,0,0,0.26)",
+    "0 2px 4px rgba(0,0,0,0.18)",
+    "inset 0 1px 0 oklch(0.99 0.005 60 / 0.18)",
+    "inset 0 -1px 0 rgba(0,0,0,0.22)",
   ].join(", "),
 } as const;
