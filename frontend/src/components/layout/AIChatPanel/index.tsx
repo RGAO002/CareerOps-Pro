@@ -1,0 +1,134 @@
+// frontend/src/components/layout/AIChatPanel/index.tsx
+"use client";
+
+import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useAiPanelStore, type AiPanelState } from "@/stores/aiPanel";
+import { useConversationStore } from "@/stores/conversation";
+import { PanelCollapsed } from "./PanelCollapsed";
+import { PanelCompact }   from "./PanelCompact";
+import { PanelExpanded }  from "./PanelExpanded";
+import { C } from "./colors";
+
+/* ─── Mock responses (re-used from old panel) ──────────────── */
+const MOCK_RESPONSES: Record<string, string> = {
+  "Why is my score 87 and not higher?":
+    "Your resume is genuinely strong — 87 puts you in the top quartile of what we see.\n\nThe main gaps: Python and AWS don't appear in your skills section, but show up in 80% of your saved jobs.",
+  "Help me rewrite my weakest bullet":
+    "Let's look at your Snapbrillia bullet #3. Right now it reads: \"Worked on developing backend APIs for the platform.\"\n\nHere's a stronger version:\n\"Designed and shipped 12 REST APIs in Node.js, cutting average response time by 40%.\"",
+};
+
+const HEIGHT_MAP: Record<AiPanelState, string> = {
+  collapsed: "38px",
+  compact:   "180px",
+  expanded:  "88vh",
+};
+
+const panelSpring = { type: "spring" as const, stiffness: 380, damping: 38 };
+
+export function AIChatPanel() {
+  const state    = useAiPanelStore((s) => s.state);
+  const setState = useAiPanelStore((s) => s.setState);
+  const collapse = useAiPanelStore((s) => s.collapse);
+  const expandOne = useAiPanelStore((s) => s.expandOne);
+
+  const appendMessage = useConversationStore((s) => s.appendMessage);
+
+  const [input, setInput]   = useState("");
+  const [typing, setTyping] = useState(false);
+
+  /* ── Send + mock reply ────────────────────────────────────── */
+  const send = async (forceExpand = false) => {
+    const text = input.trim();
+    if (!text) return;
+
+    appendMessage({ role: "user", content: text });
+    setInput("");
+    if (forceExpand) setState("expanded");
+    setTyping(true);
+
+    await new Promise((r) => setTimeout(r, 900 + Math.random() * 600));
+
+    setTyping(false);
+    appendMessage({
+      role: "ai",
+      content: MOCK_RESPONSES[text] ??
+        "That's a good question. Based on your resume and saved jobs, I see a pattern worth discussing.",
+    });
+  };
+
+  /* ── Keyboard shortcuts ───────────────────────────────────── */
+  useEffect(() => {
+    const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
+    const onKey = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      // ⌘J — toggle up
+      if (mod && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        expandOne();
+        return;
+      }
+      // ⌘↑ — force expand
+      if (mod && e.key === "ArrowUp") {
+        e.preventDefault();
+        setState("expanded");
+        return;
+      }
+      // ⌘↓ — collapse one
+      if (mod && e.key === "ArrowDown") {
+        e.preventDefault();
+        collapse();
+        return;
+      }
+      // Esc — collapse one (only if panel is at compact or expanded)
+      if (e.key === "Escape") {
+        const current = useAiPanelStore.getState().state;
+        if (current !== "collapsed") {
+          e.preventDefault();
+          collapse();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapse, expandOne, setState]);
+
+  return (
+    <motion.aside
+      role="complementary"
+      aria-label="AI assistant"
+      className="fixed bottom-0 left-0 right-0 z-40 overflow-hidden"
+      style={{
+        background: C.panelBg,
+        backdropFilter: C.panelBlur,
+        WebkitBackdropFilter: C.panelBlur,
+        borderTop: C.border,
+        boxShadow: state === "expanded" ? C.shadowUpBig : C.shadowUp,
+      }}
+      animate={{ height: HEIGHT_MAP[state] }}
+      transition={panelSpring}
+    >
+      {state === "collapsed" && <PanelCollapsed />}
+      {state === "compact" && (
+        <PanelCompact
+          input={input}
+          setInput={setInput}
+          onSend={() => send(false)}
+          onSendAndExpand={() => send(true)}
+          typing={typing}
+        />
+      )}
+      {state === "expanded" && (
+        <PanelExpanded
+          input={input}
+          setInput={setInput}
+          onSend={() => send(false)}
+          typing={typing}
+        />
+      )}
+    </motion.aside>
+  );
+}
