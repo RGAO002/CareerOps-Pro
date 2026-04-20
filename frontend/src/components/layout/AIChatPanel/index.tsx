@@ -171,7 +171,7 @@ export function AIChatPanel() {
       <div
         aria-hidden
         className="absolute inset-0 z-0 pointer-events-none"
-        style={{ background: "oklch(0.07 0.015 35 / 0.28)" }}
+        style={{ background: "oklch(0.08 0.015 35 / 0.16)" }}
       />
 
       {/* Tech-feel scan line on top edge during AI processing */}
