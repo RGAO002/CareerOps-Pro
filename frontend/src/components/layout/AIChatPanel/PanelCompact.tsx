@@ -14,9 +14,11 @@ interface Props {
   onSend: () => void;
   onSendAndExpand: () => void;
   typing: boolean;
+  onInputFocus?: () => void;
+  onInputBlur?: () => void;
 }
 
-export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing }: Props) {
+export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing, onInputFocus, onInputBlur }: Props) {
   const setState = useAiPanelStore((s) => s.setState);
 
   return (
@@ -69,6 +71,8 @@ export function PanelCompact({ input, setInput, onSend, onSendAndExpand, typing 
           onChange={setInput}
           onSend={onSend}
           onSendAndExpand={onSendAndExpand}
+          onFocus={onInputFocus}
+          onBlur={onInputBlur}
           disabled={typing}
           size="compact"
         />

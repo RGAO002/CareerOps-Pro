@@ -11,6 +11,10 @@ interface Props {
   onSend: () => void;
   /** When true, Cmd/Ctrl+Enter sends and forces panel to expanded. */
   onSendAndExpand?: () => void;
+  /** Fired when the textarea gains focus. */
+  onFocus?: () => void;
+  /** Fired when the textarea loses focus. */
+  onBlur?: () => void;
   disabled?: boolean;
   placeholder?: string;
   /** "compact" → pill input, "full" → larger input with Send button. */
@@ -22,6 +26,8 @@ export function MessageInput({
   onChange,
   onSend,
   onSendAndExpand,
+  onFocus,
+  onBlur,
   disabled = false,
   placeholder = "Ask anything...",
   size = "compact",
@@ -52,6 +58,8 @@ export function MessageInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKey}
+        onFocus={onFocus}
+        onBlur={onBlur}
         onInput={(e) => {
           const t = e.currentTarget;
           t.style.height = "auto";
