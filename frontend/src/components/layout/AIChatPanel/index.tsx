@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { useAiPanelStore, type AiPanelState } from "@/stores/aiPanel";
 import { useConversationStore } from "@/stores/conversation";
+import { FluidCanvas } from "@/components/landing/FluidCanvas";
 import { PanelCollapsed } from "./PanelCollapsed";
 import { PanelCompact }   from "./PanelCompact";
 import { PanelExpanded }  from "./PanelExpanded";
@@ -115,7 +116,6 @@ export function AIChatPanel() {
       style={{
         bottom: 16,
         transform: "translateX(-50%)",
-        background: C.panelBg,
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
         border: C.border,
@@ -127,6 +127,16 @@ export function AIChatPanel() {
       }}
       transition={panelSpring}
     >
+      {/* Animated fluid shader background (same as landing hero).
+          forceAnimate bypasses prefers-reduced-motion so the panel keeps its life. */}
+      <FluidCanvas className="absolute inset-0 z-0" forceAnimate />
+      {/* Dark warm scrim for text legibility over the colorful shader */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{ background: "oklch(0.08 0.020 34 / 0.58)" }}
+      />
+
       {/* Tech-feel scan line on top edge during AI processing */}
       {typing && (
         <div
@@ -136,23 +146,27 @@ export function AIChatPanel() {
           <div className="ai-scanline absolute inset-y-0 w-1/3" />
         </div>
       )}
-      {state === "collapsed" && <PanelCollapsed />}
-      {state === "compact" && (
-        <PanelCompact
-          input={input}
-          setInput={setInput}
-          onSend={() => send(false)}
-          typing={typing}
-        />
-      )}
-      {state === "expanded" && (
-        <PanelExpanded
-          input={input}
-          setInput={setInput}
-          onSend={() => send(false)}
-          typing={typing}
-        />
-      )}
+
+      {/* Panel content — above the shader + scrim */}
+      <div className="relative z-10 h-full w-full">
+        {state === "collapsed" && <PanelCollapsed />}
+        {state === "compact" && (
+          <PanelCompact
+            input={input}
+            setInput={setInput}
+            onSend={() => send(false)}
+            typing={typing}
+          />
+        )}
+        {state === "expanded" && (
+          <PanelExpanded
+            input={input}
+            setInput={setInput}
+            onSend={() => send(false)}
+            typing={typing}
+          />
+        )}
+      </div>
     </motion.aside>
   );
 }
