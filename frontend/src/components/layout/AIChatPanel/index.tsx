@@ -19,9 +19,17 @@ const MOCK_RESPONSES: Record<string, string> = {
 };
 
 const HEIGHT_MAP: Record<AiPanelState, string> = {
-  collapsed: "38px",
+  collapsed: "44px",
   compact:   "130px",
   expanded:  "88vh",
+};
+
+// Each state has its own width so it doesn't span the full viewport.
+// Collapsed = slim pill, Compact = floating card, Expanded = wide card with side margins.
+const WIDTH_MAP: Record<AiPanelState, string> = {
+  collapsed: "min(360px, calc(100vw - 32px))",
+  compact:   "min(540px, calc(100vw - 32px))",
+  expanded:  "min(880px, calc(100vw - 48px))",
 };
 
 // Snappier spring with slight overshoot — feels more responsive / "tech"
@@ -103,15 +111,20 @@ export function AIChatPanel() {
     <motion.aside
       role="complementary"
       aria-label="AI assistant"
-      className="fixed bottom-0 left-0 right-0 z-40 overflow-hidden"
+      className="fixed left-1/2 z-40 overflow-hidden rounded-2xl"
       style={{
+        bottom: 16,
+        transform: "translateX(-50%)",
         background: C.panelBg,
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
-        borderTop: C.border,
+        border: C.border,
         boxShadow: state === "expanded" ? C.shadowUpBig : C.shadowUp,
       }}
-      animate={{ height: HEIGHT_MAP[state] }}
+      animate={{
+        height: HEIGHT_MAP[state],
+        width: WIDTH_MAP[state],
+      }}
       transition={panelSpring}
     >
       {/* Tech-feel scan line on top edge during AI processing */}
