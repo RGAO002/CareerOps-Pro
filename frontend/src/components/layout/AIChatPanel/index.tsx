@@ -116,9 +116,7 @@ export function AIChatPanel() {
       style={{
         bottom: 16,
         transform: "translateX(-50%)",
-        // Collapsed shows a static colorful gradient (echoes the shader palette);
-        // larger states use the dark base so FluidCanvas provides the color.
-        background: state === "collapsed" ? C.panelBgStatic : C.panelBg,
+        background: C.panelBg,
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
         border: C.border,
@@ -131,11 +129,14 @@ export function AIChatPanel() {
       transition={panelSpring}
     >
       {/* Animated fluid shader background (same as landing hero).
-          Skipped in collapsed state — at 44px tall the extreme aspect ratio
-          distorts the shader into visible noise artifacts. */}
-      {state !== "collapsed" && (
-        <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
-      )}
+          forceAnimate bypasses prefers-reduced-motion. Speed is lower in
+          collapsed because the 44px-tall extreme aspect ratio amplifies
+          any motion into a distracting shimmer. */}
+      <FluidCanvas
+        className="absolute inset-0 z-0"
+        forceAnimate
+        speed={state === "collapsed" ? 1 : 3}
+      />
       {/* Light scrim for text legibility — kept low so the fluid colors stay visible */}
       <div
         aria-hidden
