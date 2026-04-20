@@ -16,8 +16,10 @@ interface Props {
 
 export function MessageList({ variant, typing = false }: Props) {
   const messages = useConversationStore((s) => s.messages);
-  // Compact shows last 3 messages (~1 user + 1 AI + 1 follow-up) for context.
-  const visible  = variant === "compact" ? messages.slice(-3) : messages;
+  // Compact and full both render the entire conversation; the container's
+  // h-full + overflow-y-auto lets the user scroll through history.
+  // Auto-scroll on new messages keeps the newest reply visible by default.
+  const visible  = messages;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
