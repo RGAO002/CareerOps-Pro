@@ -249,6 +249,38 @@
   50% { opacity: 1; transform: scale(1.3); }
 }
 
+/* ── AI panel: scanning line on top edge while AI is "thinking" ── */
+@keyframes ai-scanline {
+  0%   { transform: translateX(-100%); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(400%); opacity: 0; }
+}
+
+.ai-scanline {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.78 0.13 42 / 0.0),
+    oklch(0.78 0.13 42 / 0.95),
+    oklch(0.78 0.13 42 / 0.0),
+    transparent
+  );
+  animation: ai-scanline 1.6s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+  filter: drop-shadow(0 0 6px oklch(0.78 0.13 42 / 0.6));
+}
+
+/* ── AI dot: subtle pulse when a fresh AI reply lands ── */
+@keyframes ai-pulse {
+  0%   { box-shadow: 0 0 0 0 oklch(0.72 0.13 38 / 0.6); }
+  60%  { box-shadow: 0 0 0 5px oklch(0.72 0.13 38 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.72 0.13 38 / 0); }
+}
+
+.ai-pulse {
+  animation: ai-pulse 1.4s ease-out 1;
+}
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up {
@@ -257,6 +289,11 @@
     transform: none;
   }
   [style*="drift"] {
+    animation: none !important;
+  }
+  .typing-dot,
+  .ai-scanline,
+  .ai-pulse {
     animation: none !important;
   }
 }

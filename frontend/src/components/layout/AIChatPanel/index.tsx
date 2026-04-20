@@ -20,11 +20,12 @@ const MOCK_RESPONSES: Record<string, string> = {
 
 const HEIGHT_MAP: Record<AiPanelState, string> = {
   collapsed: "38px",
-  compact:   "180px",
+  compact:   "130px",
   expanded:  "88vh",
 };
 
-const panelSpring = { type: "spring" as const, stiffness: 380, damping: 38 };
+// Snappier spring with slight overshoot — feels more responsive / "tech"
+const panelSpring = { type: "spring" as const, stiffness: 460, damping: 32, mass: 0.85 };
 
 export function AIChatPanel() {
   const state    = useAiPanelStore((s) => s.state);
@@ -113,6 +114,15 @@ export function AIChatPanel() {
       animate={{ height: HEIGHT_MAP[state] }}
       transition={panelSpring}
     >
+      {/* Tech-feel scan line on top edge during AI processing */}
+      {typing && (
+        <div
+          aria-hidden
+          className="absolute left-0 right-0 top-0 h-[1px] overflow-hidden pointer-events-none z-50"
+        >
+          <div className="ai-scanline absolute inset-y-0 w-1/3" />
+        </div>
+      )}
       {state === "collapsed" && <PanelCollapsed />}
       {state === "compact" && (
         <PanelCompact
