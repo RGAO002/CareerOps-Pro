@@ -53,7 +53,12 @@ export function MessageInput({
   return (
     <div
       className="flex items-end gap-2 rounded-xl px-3.5 py-2.5"
-      style={{ background: C.surface, border: `1px solid ${C.innerBorder}` }}
+      style={{
+        background: C.glassBg,
+        backdropFilter: C.glassBlur,
+        WebkitBackdropFilter: C.glassBlur,
+        boxShadow: C.glassShadow,
+      }}
       onClick={() => ref.current?.focus()}
     >
       <textarea

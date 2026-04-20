@@ -122,7 +122,13 @@ export function AIChatPanel() {
         backdropFilter: C.panelBlur,
         WebkitBackdropFilter: C.panelBlur,
         border: C.border,
-        boxShadow: state === "expanded" ? C.shadowUpBig : C.shadowUp,
+        // Outer drop shadow (for lift) + iOS-26 style inner highlights
+        // (top sheen, bottom depth) so the whole panel reads as glass.
+        boxShadow: [
+          state === "expanded" ? C.shadowUpBig : C.shadowUp,
+          "inset 0 1px 0 oklch(0.98 0.005 60 / 0.10)",
+          "inset 0 -1px 0 rgba(0,0,0,0.22)",
+        ].join(", "),
       }}
       animate={{
         height: HEIGHT_MAP[state],

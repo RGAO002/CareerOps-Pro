@@ -40,4 +40,16 @@ export const C = {
   // Shadows
   shadowUp:    "0 -8px 24px rgba(0,0,0,0.12)",
   shadowUpBig: "0 -16px 40px rgba(0,0,0,0.20)",
+
+  // ── iOS-26-ish "liquid glass" surface (used for the message input) ──
+  glassBg:     "oklch(0.20 0.025 34 / 0.28)",        // very translucent, warm tint
+  glassBlur:   "blur(22px) saturate(1.7)",           // strong frost + color boost
+  // Combined shadow: outer drop for lift, inner top highlight (glass sheen),
+  // inner bottom shadow (depth). Applied via boxShadow.
+  glassShadow: [
+    "0 6px 20px rgba(0,0,0,0.22)",
+    "0 1px 2px rgba(0,0,0,0.15)",
+    "inset 0 1px 0 oklch(0.98 0.005 60 / 0.14)",
+    "inset 0 -1px 0 rgba(0,0,0,0.18)",
+  ].join(", "),
 } as const;
