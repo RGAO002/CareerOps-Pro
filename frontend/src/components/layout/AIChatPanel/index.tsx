@@ -157,9 +157,11 @@ export function AIChatPanel() {
       }}
       transition={panelSpring}
     >
-      {/* Compact / Expanded: WebGL fluid shader (works well at normal aspect) */}
+      {/* Compact / Expanded: WebGL fluid shader (works well at normal aspect).
+          brightness=1.8 lifts shader luminance above landing's subdued default
+          so the panel doesn't read as a dark cave. */}
       {state !== "collapsed" && (
-        <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
+        <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} brightness={1.8} />
       )}
       {/* Collapsed: pure-CSS horizontal shimmer sweep — gentle animation
           that behaves correctly at the 44px × 360px extreme aspect ratio,
@@ -171,7 +173,7 @@ export function AIChatPanel() {
       <div
         aria-hidden
         className="absolute inset-0 z-0 pointer-events-none"
-        style={{ background: "oklch(0.08 0.015 35 / 0.16)" }}
+        style={{ background: "oklch(0.12 0.015 35 / 0.08)" }}
       />
 
       {/* Tech-feel scan line on top edge during AI processing */}

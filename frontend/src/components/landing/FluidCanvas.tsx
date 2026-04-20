@@ -21,6 +21,7 @@ const FRAGMENT_SRC = `
   uniform vec2 u_resolution;
   uniform vec2 u_mouse;
   uniform float u_speed;
+  uniform float u_brightness;
 
   // Agent colors
   const vec3 c1 = vec3(${COLORS.recruiter.join(", ")});
@@ -132,9 +133,10 @@ const FRAGMENT_SRC = `
 
     color = c1 * w1 + c2 * w2 + c3 * w3;
 
-    // Vignette — darker at edges
+    // Vignette — darker at edges. u_brightness scales the luminance ceiling
+    // so callers can brighten the whole shader without editing the core mix.
     float vignette = 1.0 - smoothstep(0.3, 1.2, length(uv - 0.5) * 1.4);
-    color *= mix(0.15, 0.45, vignette);
+    color *= mix(0.15, 0.45, vignette) * u_brightness;
 
     // Subtle specular highlight near mouse
     float specular = smoothstep(0.4, 0.0, mouseDist) * 0.06;
@@ -152,11 +154,14 @@ export function FluidCanvas({
   className,
   forceAnimate = false,
   speed = 1.0,
+  brightness = 1.0,
 }: {
   className?: string;
   forceAnimate?: boolean;
   /** Time-scale multiplier for shader animation. Default 1.0 (landing speed). Higher = faster blob motion. */
   speed?: number;
+  /** Multiplier on the vignette-clamped luminance. Default 1.0 (landing). Higher = brighter. */
+  brightness?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -228,6 +233,7 @@ export function FluidCanvas({
     const uRes = gl.getUniformLocation(program, "u_resolution");
     const uMouse = gl.getUniformLocation(program, "u_mouse");
     const uSpeed = gl.getUniformLocation(program, "u_speed");
+    const uBrightness = gl.getUniformLocation(program, "u_brightness");
 
     // Resize handler
     const resize = () => {
@@ -253,6 +259,7 @@ export function FluidCanvas({
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uMouse, mouseRef.current.x, mouseRef.current.y);
       gl.uniform1f(uSpeed, speed);
+      gl.uniform1f(uBrightness, brightness);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);
@@ -269,7 +276,7 @@ export function FluidCanvas({
       gl.deleteShader(fs);
       gl.deleteBuffer(buf);
     };
-  }, [handleMouseMove, forceAnimate, speed]);
+  }, [handleMouseMove, forceAnimate, speed, brightness]);
 
   return (
     <canvas
