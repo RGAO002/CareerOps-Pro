@@ -75,7 +75,10 @@ const FRAGMENT_SRC = `
     float aspect = u_resolution.x / u_resolution.y;
     vec2 p = vec2(uv.x * aspect, uv.y);
 
+    // Blob motion scales with speed; noise time stays slow to avoid jittery grain
+    // when speed > 1 (which would otherwise read as "moving dots" in smaller panels).
     float t = u_time * 0.15 * u_speed;
+    float tn = u_time * 0.15;
 
     // Mouse influence — gentle attraction
     vec2 mouse = vec2(u_mouse.x * aspect, u_mouse.y);
@@ -107,8 +110,8 @@ const FRAGMENT_SRC = `
     float field2 = 0.07 / (length(p - center2) + 0.001);
     float field3 = 0.06 / (length(p - center3) + 0.001);
 
-    // Add noise distortion to the fields
-    float noise = fbm(p * 2.5 + t * 0.5) * 0.3;
+    // Noise distortion on fields — uses slow time so it doesn't flicker at high speed
+    float noise = fbm(p * 2.5 + tn * 0.5) * 0.3;
     field1 += noise * 0.15;
     field2 += noise * 0.12;
     field3 += noise * 0.10;
@@ -123,8 +126,9 @@ const FRAGMENT_SRC = `
 
     color = c1 * w1 + c2 * w2 + c3 * w3;
 
-    // Add subtle luminance variation from noise
-    float luminanceNoise = fbm(p * 4.0 - t * 0.3) * 0.08;
+    // Add subtle luminance variation from noise — uses slow time, not speed-scaled,
+    // so the grain stays gentle instead of becoming visible flickering dots.
+    float luminanceNoise = fbm(p * 4.0 - tn * 0.3) * 0.08;
     color += luminanceNoise;
 
     // Vignette — darker at edges
