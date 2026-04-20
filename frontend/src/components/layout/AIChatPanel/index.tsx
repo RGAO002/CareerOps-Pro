@@ -128,13 +128,14 @@ export function AIChatPanel() {
       transition={panelSpring}
     >
       {/* Animated fluid shader background (same as landing hero).
-          forceAnimate bypasses prefers-reduced-motion so the panel keeps its life. */}
-      <FluidCanvas className="absolute inset-0 z-0" forceAnimate />
-      {/* Dark warm scrim for text legibility over the colorful shader */}
+          forceAnimate bypasses prefers-reduced-motion. speed=3 so blob motion is
+          clearly visible in the smaller panel (landing uses default speed 1). */}
+      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} />
+      {/* Light scrim for text legibility — kept low so the fluid colors stay visible */}
       <div
         aria-hidden
         className="absolute inset-0 z-0 pointer-events-none"
-        style={{ background: "oklch(0.08 0.020 34 / 0.58)" }}
+        style={{ background: "oklch(0.07 0.015 35 / 0.28)" }}
       />
 
       {/* Tech-feel scan line on top edge during AI processing */}

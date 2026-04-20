@@ -20,6 +20,7 @@ const FRAGMENT_SRC = `
   uniform float u_time;
   uniform vec2 u_resolution;
   uniform vec2 u_mouse;
+  uniform float u_speed;
 
   // Agent colors
   const vec3 c1 = vec3(${COLORS.recruiter.join(", ")});
@@ -74,7 +75,7 @@ const FRAGMENT_SRC = `
     float aspect = u_resolution.x / u_resolution.y;
     vec2 p = vec2(uv.x * aspect, uv.y);
 
-    float t = u_time * 0.15;
+    float t = u_time * 0.15 * u_speed;
 
     // Mouse influence — gentle attraction
     vec2 mouse = vec2(u_mouse.x * aspect, u_mouse.y);
@@ -142,7 +143,16 @@ const FRAGMENT_SRC = `
   }
 `;
 
-export function FluidCanvas({ className, forceAnimate = false }: { className?: string; forceAnimate?: boolean }) {
+export function FluidCanvas({
+  className,
+  forceAnimate = false,
+  speed = 1.0,
+}: {
+  className?: string;
+  forceAnimate?: boolean;
+  /** Time-scale multiplier for shader animation. Default 1.0 (landing speed). Higher = faster blob motion. */
+  speed?: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0.5, y: 0.5 });
@@ -212,6 +222,7 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
     const uTime = gl.getUniformLocation(program, "u_time");
     const uRes = gl.getUniformLocation(program, "u_resolution");
     const uMouse = gl.getUniformLocation(program, "u_mouse");
+    const uSpeed = gl.getUniformLocation(program, "u_speed");
 
     // Resize handler
     const resize = () => {
@@ -236,6 +247,7 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
       gl.uniform1f(uTime, prefersReducedMotion ? 0 : elapsed);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uMouse, mouseRef.current.x, mouseRef.current.y);
+      gl.uniform1f(uSpeed, speed);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);
@@ -252,7 +264,7 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
       gl.deleteShader(fs);
       gl.deleteBuffer(buf);
     };
-  }, [handleMouseMove]);
+  }, [handleMouseMove, forceAnimate, speed]);
 
   return (
     <canvas
