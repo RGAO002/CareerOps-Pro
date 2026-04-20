@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Zap, Target, TrendingUp, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { usePageContext } from "@/hooks/usePageContext";
 
 /* ── Mock data — will be replaced with real API data ── */
 const MOCK = {
@@ -69,6 +70,10 @@ const fadeUp = (delay: number) => ({
 });
 
 export function Dashboard() {
+  usePageContext({
+    page: "dashboard",
+    summary: "首页总览，最近 3 个动态",
+  });
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
