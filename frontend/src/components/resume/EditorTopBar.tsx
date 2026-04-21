@@ -16,15 +16,15 @@ export function EditorTopBar({ meta, saveStatus }: Props) {
       : "No target job selected";
 
   return (
-    <div className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-neutral-200 bg-white/80 px-5 backdrop-blur-md">
+    <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-neutral-200 bg-white/85 px-5 backdrop-blur-md">
       {/* Resume title — Plan B will replace with a variant dropdown */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-neutral-900">{meta.title}</span>
-      </div>
+      <span className="shrink-0 truncate text-sm font-medium text-neutral-900">
+        {meta.title}
+      </span>
 
-      <div className="flex-1 text-center">
+      <div className="min-w-0 flex-1 truncate text-center">
         <span className="text-[11px] uppercase tracking-wide text-neutral-500">Tailoring for</span>
-        <span className="ml-2 text-sm text-neutral-800">{tailoringLabel}</span>
+        <span className="ml-2 whitespace-nowrap text-sm text-neutral-800">{tailoringLabel}</span>
       </div>
 
       <SaveBadge status={saveStatus} />
@@ -33,7 +33,7 @@ export function EditorTopBar({ meta, saveStatus }: Props) {
       <button
         type="button"
         disabled
-        className="flex items-center gap-1.5 rounded-md bg-neutral-900/90 px-3 py-1.5 text-xs font-medium text-white opacity-40"
+        className="flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-900/90 px-3 py-1.5 text-xs font-medium text-white opacity-40"
         title="PDF export coming in Plan C"
       >
         <Download className="size-3.5" strokeWidth={2} />
