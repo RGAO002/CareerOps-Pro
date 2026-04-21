@@ -9,7 +9,6 @@ import { loadFromLocal, saveToLocal } from "@/lib/localResumeStore";
 import { SEED_DOC, SEED_META } from "./seed";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorTopBar } from "./EditorTopBar";
-import { FloatingToolbar } from "./FloatingToolbar";
 import type { ResumeDoc } from "./types";
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -73,9 +72,8 @@ export function ResumeEditor({ id }: { id: string }) {
 
   return (
     <div className="min-h-screen bg-neutral-100 pb-[240px]">
-      <EditorTopBar meta={meta} saveStatus={saveStatus} />
+      <EditorTopBar meta={meta} saveStatus={saveStatus} editor={editor} />
       <EditorCanvas doc={doc} onChange={handleChange} onReady={setEditor} />
-      <FloatingToolbar editor={editor} />
     </div>
   );
 }

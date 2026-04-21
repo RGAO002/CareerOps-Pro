@@ -1,15 +1,18 @@
 // frontend/src/components/resume/EditorTopBar.tsx
 "use client";
 
+import type { Editor } from "@tiptap/core";
 import { Download } from "lucide-react";
 import type { ResumeMeta } from "./types";
+import { FormatToolbar } from "./FormatToolbar";
 
 interface Props {
   meta: ResumeMeta;
   saveStatus: "idle" | "saving" | "saved" | "error";
+  editor: Editor | null;
 }
 
-export function EditorTopBar({ meta, saveStatus }: Props) {
+export function EditorTopBar({ meta, saveStatus, editor }: Props) {
   const tailoringLabel =
     meta.target_company && meta.target_role
       ? `${meta.target_company} · ${meta.target_role}`
@@ -17,10 +20,13 @@ export function EditorTopBar({ meta, saveStatus }: Props) {
 
   return (
     <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-neutral-200 bg-white/85 px-5 backdrop-blur-md">
-      {/* Resume title — Plan B will replace with a variant dropdown */}
+      {/* Resume title */}
       <span className="shrink-0 truncate text-sm font-medium text-neutral-900">
         {meta.title}
       </span>
+
+      {/* Format toolbar — always visible, operates on current selection */}
+      <FormatToolbar editor={editor} />
 
       <div className="min-w-0 flex-1 truncate text-center">
         <span className="text-[11px] uppercase tracking-wide text-neutral-500">Tailoring for</span>
