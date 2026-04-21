@@ -35,12 +35,20 @@ export function EditorTopBar({ meta, saveStatus, editor }: Props) {
 
       <SaveBadge status={saveStatus} />
 
-      {/* Disabled placeholder — Plan C implements actual PDF export */}
+      {/* Export PDF — triggers browser print dialog (Save as PDF).
+          @media print rules in resume-editor.css strip editor chrome so the
+          output matches the canvas. Server-side WeasyPrint is Plan C v2. */}
       <button
         type="button"
-        disabled
-        className="flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-900/90 px-3 py-1.5 text-xs font-medium text-white opacity-40"
-        title="PDF export coming in Plan C"
+        onClick={() => {
+          // Blur any active editor selection so print doesn't show cursor
+          if (typeof document !== "undefined") {
+            (document.activeElement as HTMLElement | null)?.blur?.();
+          }
+          window.print();
+        }}
+        className="flex shrink-0 items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-neutral-800"
+        title="Export PDF (⌘P)"
       >
         <Download className="size-3.5" strokeWidth={2} />
         Export PDF

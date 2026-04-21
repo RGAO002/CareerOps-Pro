@@ -107,3 +107,50 @@
 /* Editor focus cues */
 .resume-canvas .ProseMirror:focus { outline: none; }
 .resume-canvas .ProseMirror *:focus-within { outline: none; }
+
+/* ========== Print stylesheet (用户按 Export PDF → window.print()) ==========
+   Target: "Save as PDF" from the browser print dialog should produce a clean
+   resume PDF that matches the editor canvas. Everything except the canvas is
+   hidden; canvas scaffolding (shadow/margin/background) is stripped. */
+@media print {
+  @page { size: Letter; margin: 0; }
+
+  body { background: #fff !important; }
+
+  /* Hide everything outside the resume canvas */
+  body > *,
+  body > * *:not(.resume-canvas):not(.resume-canvas *):not(.ProseMirror):not(.ProseMirror *) {
+    visibility: hidden;
+  }
+  .resume-canvas,
+  .resume-canvas * {
+    visibility: visible;
+  }
+
+  /* Pull the canvas to the page origin + strip visual chrome */
+  .resume-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 8.5in;
+    min-height: 11in;
+    margin: 0;
+    padding: 0.75in 0.9in;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* ProseMirror hacks — hide cursor & editing focus rings */
+  .ProseMirror {
+    outline: none !important;
+    caret-color: transparent;
+  }
+  .ProseMirror-trailingBreak { display: none; }
+
+  /* Make sure links print as colored (some browsers gray them) */
+  .resume-canvas a {
+    color: #2563eb !important;
+    text-decoration: underline !important;
+  }
+}
