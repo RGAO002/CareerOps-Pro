@@ -1,0 +1,109 @@
+/* frontend/src/components/resume/resume-editor.css
+   Ported from templates/resume_template.html for the editor canvas.
+   Single-column flow in MVP; two-column sidebar layout is deferred to Plan C. */
+
+.resume-canvas {
+  width: 8.5in;
+  min-height: 11in;
+  margin: 24px auto;
+  padding: 0.75in 0.9in;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  color: #374151;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.resume-canvas a,
+.resume-canvas .resume-link {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
+
+.resume-header {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.resume-name {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.resume-contact-line {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+.resume-section {
+  margin-top: 1.1rem;
+}
+
+.resume-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.resume-entry {
+  margin-bottom: 0.85rem;
+}
+
+.resume-entry-title {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.resume-entry-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+}
+
+.resume-entry-bullets {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.resume-bullet {
+  position: relative;
+  padding-left: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.resume-bullet::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+/* Inline marks */
+.resume-canvas strong { color: #111827; font-weight: 600; }
+.resume-canvas em { font-style: italic; }
+.resume-canvas u { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Editor focus cues */
+.resume-canvas .ProseMirror:focus { outline: none; }
+.resume-canvas .ProseMirror *:focus-within { outline: none; }
