@@ -1,4 +1,5 @@
 // frontend/src/app/resume/[id]/page.tsx
+import { AppShell } from "@/components/layout/AppShell";
 import { ResumeEditor } from "@/components/resume/ResumeEditor";
 
 interface PageProps {
@@ -7,5 +8,9 @@ interface PageProps {
 
 export default async function ResumeEditorPage({ params }: PageProps) {
   const { id } = await params;
-  return <ResumeEditor id={id} />;
+  return (
+    <AppShell>
+      <ResumeEditor id={id} />
+    </AppShell>
+  );
 }
