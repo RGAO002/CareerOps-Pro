@@ -20,6 +20,8 @@ const FRAGMENT_SRC = `
   uniform float u_time;
   uniform vec2 u_resolution;
   uniform vec2 u_mouse;
+  uniform float u_speed;
+  uniform float u_brightness;
 
   // Agent colors
   const vec3 c1 = vec3(${COLORS.recruiter.join(", ")});
@@ -74,7 +76,10 @@ const FRAGMENT_SRC = `
     float aspect = u_resolution.x / u_resolution.y;
     vec2 p = vec2(uv.x * aspect, uv.y);
 
-    float t = u_time * 0.15;
+    // Blob motion scales with speed; noise time stays slow to avoid jittery grain
+    // when speed > 1 (which would otherwise read as "moving dots" in smaller panels).
+    float t = u_time * 0.15 * u_speed;
+    float tn = u_time * 0.15;
 
     // Mouse influence — gentle attraction
     vec2 mouse = vec2(u_mouse.x * aspect, u_mouse.y);
@@ -101,13 +106,19 @@ const FRAGMENT_SRC = `
     center2 += (mouse - center2) * mouseInfluence * 0.12;
     center3 += (mouse - center3) * mouseInfluence * 0.10;
 
-    // Metaball-style field — smooth organic blending
-    float field1 = 0.08 / (length(p - center1) + 0.001);
-    float field2 = 0.07 / (length(p - center2) + 0.001);
-    float field3 = 0.06 / (length(p - center3) + 0.001);
+    // Metaball-style field — smooth organic blending.
+    // max(length, MIN_R) caps peak intensity so blob centers don't become
+    // bright pixel-sized singularities at extreme aspect ratios (thin panels).
+    float d1 = max(length(p - center1), 0.05);
+    float d2 = max(length(p - center2), 0.05);
+    float d3 = max(length(p - center3), 0.05);
+    float field1 = 0.08 / d1;
+    float field2 = 0.07 / d2;
+    float field3 = 0.06 / d3;
 
-    // Add noise distortion to the fields
-    float noise = fbm(p * 2.5 + t * 0.5) * 0.3;
+    // Noise distortion on fields — sampled in unit UV space (not aspect-stretched p),
+    // so narrow/wide panels don't get over-sampled noise that reads as grain.
+    float noise = fbm(uv * 2.5 + tn * 0.5) * 0.3;
     field1 += noise * 0.15;
     field2 += noise * 0.12;
     field3 += noise * 0.10;
@@ -122,27 +133,36 @@ const FRAGMENT_SRC = `
 
     color = c1 * w1 + c2 * w2 + c3 * w3;
 
-    // Add subtle luminance variation from noise
-    float luminanceNoise = fbm(p * 4.0 - t * 0.3) * 0.08;
-    color += luminanceNoise;
-
-    // Vignette — darker at edges
+    // Vignette — darker at edges. u_brightness scales the luminance ceiling
+    // so callers can brighten the whole shader without editing the core mix.
     float vignette = 1.0 - smoothstep(0.3, 1.2, length(uv - 0.5) * 1.4);
-    color *= mix(0.15, 0.45, vignette);
+    color *= mix(0.15, 0.45, vignette) * u_brightness;
 
     // Subtle specular highlight near mouse
     float specular = smoothstep(0.4, 0.0, mouseDist) * 0.06;
     color += specular;
 
-    // Very subtle grain
-    float grain = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.02;
-    color += grain;
+    // NOTE: the prior luminanceNoise and pixel-based grain terms were removed
+    // here — they read as visible flickering dots in the smaller AI panel.
+    // The blobs + vignette alone give enough organic feel without grain.
 
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
-export function FluidCanvas({ className, forceAnimate = false }: { className?: string; forceAnimate?: boolean }) {
+export function FluidCanvas({
+  className,
+  forceAnimate = false,
+  speed = 1.0,
+  brightness = 1.0,
+}: {
+  className?: string;
+  forceAnimate?: boolean;
+  /** Time-scale multiplier for shader animation. Default 1.0 (landing speed). Higher = faster blob motion. */
+  speed?: number;
+  /** Multiplier on the vignette-clamped luminance. Default 1.0 (landing). Higher = brighter. */
+  brightness?: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0.5, y: 0.5 });
@@ -212,6 +232,8 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
     const uTime = gl.getUniformLocation(program, "u_time");
     const uRes = gl.getUniformLocation(program, "u_resolution");
     const uMouse = gl.getUniformLocation(program, "u_mouse");
+    const uSpeed = gl.getUniformLocation(program, "u_speed");
+    const uBrightness = gl.getUniformLocation(program, "u_brightness");
 
     // Resize handler
     const resize = () => {
@@ -236,6 +258,8 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
       gl.uniform1f(uTime, prefersReducedMotion ? 0 : elapsed);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uMouse, mouseRef.current.x, mouseRef.current.y);
+      gl.uniform1f(uSpeed, speed);
+      gl.uniform1f(uBrightness, brightness);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);
@@ -252,7 +276,7 @@ export function FluidCanvas({ className, forceAnimate = false }: { className?: s
       gl.deleteShader(fs);
       gl.deleteBuffer(buf);
     };
-  }, [handleMouseMove]);
+  }, [handleMouseMove, forceAnimate, speed, brightness]);
 
   return (
     <canvas

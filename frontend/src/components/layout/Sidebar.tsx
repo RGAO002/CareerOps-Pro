@@ -20,7 +20,7 @@ import { NavItem } from "./NavItem";
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
   { href: "/analysis", icon: BarChart3, label: "Analysis", disabled: true },
-  { href: "/editor", icon: PenLine, label: "Editor", disabled: true },
+  { href: "/resume/base", icon: PenLine, label: "Editor" },
   { href: "/cover-letter", icon: FileText, label: "Cover Letter", disabled: true },
   { href: "/interview", icon: Mic, label: "Interview", disabled: true },
   { href: "/tracker", icon: Kanban, label: "Tracker", disabled: true },
