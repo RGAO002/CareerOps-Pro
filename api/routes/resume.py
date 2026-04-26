@@ -13,13 +13,20 @@ Endpoints:
   POST   /:id/restore      restore from snapshot id
   POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
+import uuid
+
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from api.models.resume import Resume
 from api.services import resume_store
 
 
 router = APIRouter()
+
+
+class CreateResumeRequest(BaseModel):
+    title: str = "Untitled resume"
 
 
 @router.get("/")
@@ -63,3 +70,30 @@ async def upsert_resume(resume_id: str, payload: Resume) -> Resume:
 def _now_ms() -> int:
     import time
     return int(time.time() * 1000)
+
+
+@router.post("/")
+async def create_blank_resume(body: CreateResumeRequest) -> Resume:
+    """Create a new blank resume."""
+    rid = str(uuid.uuid4())
+    now = _now_ms()
+    blank_doc = {
+        "type": "doc",
+        "content": [
+            {"type": "resumeHeader", "attrs": {"contacts": []}, "content": []},
+            {
+                "type": "resumeSection",
+                "attrs": {"heading": "Experience"},
+                "content": [
+                    {
+                        "type": "entry",
+                        "attrs": {"title": "", "meta": ""},
+                        "content": [{"type": "bullet", "content": []}],
+                    }
+                ],
+            },
+        ],
+    }
+    r = Resume(id=rid, title=body.title, created_at=now, updated_at=now, doc=blank_doc)
+    resume_store.save(r)
+    return r

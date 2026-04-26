@@ -92,3 +92,13 @@ def test_put_with_mismatched_id_uses_url_id(client):
     assert resp.json()["id"] == "urlid"
     assert resume_store.get("urlid") is not None
     assert resume_store.get("bodyid") is None
+
+
+def test_post_creates_blank_resume(client):
+    resp = client.post("/api/resume/", json={"title": "Empty"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"] == "Empty"
+    assert body["id"]
+    assert body["doc"]["type"] == "doc"
+    assert resume_store.get(body["id"]) is not None
