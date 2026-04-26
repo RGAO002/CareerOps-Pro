@@ -303,7 +303,7 @@ def test_parse_rejects_non_pdf(client):
 
 # --- /pdf tests ---
 #
-# The /pdf endpoint awaits html_to_pdf_chrome (Playwright). We mock with an
+# The /pdf endpoint awaits url_to_pdf_chrome (Playwright). We mock with an
 # async lambda factory so the route's `await` works correctly.
 
 
@@ -319,7 +319,7 @@ def test_pdf_endpoint_returns_pdf_bytes_with_attachment_header(client, monkeypat
     _seed_resume("pdf1", "My Resume")
     from api.routes import resume as routes
 
-    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-fake-bytes"))
+    monkeypatch.setattr(routes, "url_to_pdf_chrome", _async_return(b"%PDF-fake-bytes"))
 
     resp = client.get("/api/resume/pdf1/pdf")
     assert resp.status_code == 200
@@ -337,7 +337,7 @@ def test_pdf_endpoint_404_for_unknown_resume(client):
 def test_pdf_endpoint_500_when_weasyprint_fails(client, monkeypatch):
     _seed_resume("pdf2", "Test")
     from api.routes import resume as routes
-    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(None))
+    monkeypatch.setattr(routes, "url_to_pdf_chrome", _async_return(None))
 
     resp = client.get("/api/resume/pdf2/pdf")
     assert resp.status_code == 500
@@ -347,7 +347,7 @@ def test_pdf_endpoint_sanitizes_filename(client, monkeypatch):
     """Title with shell-meta chars must not bleed into Content-Disposition."""
     _seed_resume("pdf3", 'Resume "evil"; rm -rf /')
     from api.routes import resume as routes
-    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-x"))
+    monkeypatch.setattr(routes, "url_to_pdf_chrome", _async_return(b"%PDF-x"))
 
     resp = client.get("/api/resume/pdf3/pdf")
     assert resp.status_code == 200
@@ -358,34 +358,41 @@ def test_pdf_endpoint_sanitizes_filename(client, monkeypatch):
     assert "rm" not in cd or "_" in cd  # at minimum sanitized to safe chars
 
 
-def test_pdf_endpoint_passes_doc_to_renderer(client, monkeypatch):
-    """The endpoint must call the converter with the actual stored doc."""
+def test_pdf_endpoint_loads_correct_print_url(client, monkeypatch):
+    """The endpoint must point Playwright at the frontend's /print route
+    for the right resume id, using CAREEROPS_FRONTEND_BASE if set."""
     _seed_resume("pdf4", "T")
-    # Patch the resume's doc to something specific
-    r = resume_store.get("pdf4")
-    r.doc = {"type": "doc", "content": [
-        {"type": "resumeHeader", "attrs": {"contacts": []},
-         "content": [{"type": "text", "text": "Captured Name"}]}
-    ]}
-    resume_store.save(r)
-
     captured: dict = {}
 
-    def fake_html(doc, title="Resume"):
-        captured["doc"] = doc
-        captured["title"] = title
-        return "<html>fake</html>"
+    async def fake_url_to_pdf(url):
+        captured["url"] = url
+        return b"%PDF-x"
 
     from api.routes import resume as routes
-    monkeypatch.setattr(routes, "tiptap_doc_to_html", fake_html)
-    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-x"))
+    monkeypatch.setattr(routes, "url_to_pdf_chrome", fake_url_to_pdf)
+    monkeypatch.setenv("CAREEROPS_FRONTEND_BASE", "http://example.test:9999")
 
     resp = client.get("/api/resume/pdf4/pdf")
     assert resp.status_code == 200
-    # Verify the actual doc + title were passed in (not stale data)
-    assert captured["title"] == "T"
-    name_node = captured["doc"]["content"][0]
-    assert name_node["content"][0]["text"] == "Captured Name"
+    assert captured["url"] == "http://example.test:9999/resume/pdf4/print"
+
+
+def test_pdf_endpoint_defaults_frontend_base_to_localhost_3000(client, monkeypatch):
+    """No env var → default localhost:3000 (the Next dev server)."""
+    _seed_resume("pdf5", "T")
+    captured: dict = {}
+
+    async def fake_url_to_pdf(url):
+        captured["url"] = url
+        return b"%PDF-x"
+
+    from api.routes import resume as routes
+    monkeypatch.setattr(routes, "url_to_pdf_chrome", fake_url_to_pdf)
+    monkeypatch.delenv("CAREEROPS_FRONTEND_BASE", raising=False)
+
+    resp = client.get("/api/resume/pdf5/pdf")
+    assert resp.status_code == 200
+    assert captured["url"] == "http://localhost:3000/resume/pdf5/print"
 
 
 def test_post_snapshot_creates_record(client):

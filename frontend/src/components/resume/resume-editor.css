@@ -42,6 +42,19 @@
   box-sizing: border-box;
 }
 
+/* Placeholder UX: only show "Date · Location" / "Title (e.g. ...)" hints
+   when the input is focused. Otherwise the placeholder text visually
+   pollutes the resume layout AND throws off pagination because PDF
+   renderers don't render placeholders — creating a height delta that
+   compounds into different page breaks. */
+.resume-canvas input::placeholder {
+  color: transparent;
+}
+.resume-canvas input:focus::placeholder {
+  color: #cbd5e1;
+  font-style: italic;
+}
+
 /* Dedicated /print route: restore white background on the canvas
    (no page-card overlay there — that's editor-view-only). */
 .resume-canvas--print {

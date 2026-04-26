@@ -22,12 +22,11 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from api.converters.resume import legacy_json_to_tiptap_doc
-from api.converters.tiptap_to_html import tiptap_doc_to_html
 from api.models.resume import Resume, ResumeSnapshot, SnapshotTrigger
 from api.services import resume_store, snapshot_store
 from api.services.resume_store import _validate_id as _validate_resume_id
 from services.resume_parser import is_scanned_pdf, parse_resume, parse_resume_from_image
-from utils.chrome_pdf import html_to_pdf_chrome
+from utils.chrome_pdf import url_to_pdf_chrome
 
 
 router = APIRouter()
@@ -296,18 +295,26 @@ async def export_pdf(resume_id: str):
     """Render the resume to PDF (headless Chromium) and stream it back as a
     download.
 
+    Architecture: Playwright loads the frontend's /resume/:id/print route
+    in headless Chromium and prints THAT to PDF. This guarantees the PDF
+    is bit-for-bit identical to what the editor canvas shows — same React
+    components, same TipTap, same CSS, same Inter font. Single source of
+    truth for rendering.
+
     GET so the frontend can use a plain <a href download> for one-click
-    download — no JS, no preview window, no print dialog. We use headless
-    Chromium (Playwright) instead of WeasyPrint so the PDF's pagination
-    matches the editor canvas's pagination (same rendering engine).
+    download — no JS, no preview window, no print dialog.
     """
     _ensure_valid_id(resume_id)
     r = resume_store.get(resume_id)
     if r is None:
         raise HTTPException(status_code=404, detail="Resume not found")
 
-    html = tiptap_doc_to_html(r.doc, title=r.title)
-    pdf_bytes = await html_to_pdf_chrome(html)
+    # The frontend URL Playwright will load. CAREEROPS_FRONTEND_BASE lets
+    # production override the dev default.
+    frontend_base = os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
+    print_url = f"{frontend_base}/resume/{resume_id}/print"
+
+    pdf_bytes = await url_to_pdf_chrome(print_url)
     if pdf_bytes is None:
         raise HTTPException(status_code=500, detail="PDF generation failed")
 

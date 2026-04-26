@@ -1,0 +1,52 @@
+/* frontend/src/app/resume/[id]/print/print.css
+   Stylesheet for the dedicated /resume/[id]/print route. Strips the
+   editor's interactive chrome so the canvas can be printed cleanly. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: white;
+}
+
+/* Inherit the editor's base resume-canvas styles, just strip the on-screen
+   chrome (margin, transparency, z-index, fake page-card stack, etc.). */
+.print-mode .resume-canvas {
+  margin: 0 !important;
+  background: white !important;
+  position: static !important;
+  z-index: auto !important;
+  box-shadow: none !important;
+  min-height: 0 !important;
+}
+
+/* Hide editor-only chrome that the regular EditorCanvas adds — page-card
+   stack, page indicators, hover affordance buttons, drag handles. None of
+   these belong in the rendered/printed output. */
+.print-mode .page-card-stack,
+.print-mode .page-indicators,
+.print-mode .group\/affordance > div[contenteditable="false"]:not(input) {
+  display: none !important;
+}
+
+/* Hide placeholder text in inputs so empty fields don't show "Date · Location"
+   in the printed output. (For the editor view itself, we apply the same rule
+   only when the input isn't focused — see resume-editor.css.) */
+.print-mode .resume-canvas input::placeholder {
+  color: transparent !important;
+}
+/* Empty entry-meta inputs collapse entirely so they don't reserve a line. */
+.print-mode .resume-canvas input.resume-entry-meta:placeholder-shown,
+.print-mode .resume-canvas input.resume-entry-title:placeholder-shown {
+  display: none !important;
+}
+
+/* Print media — apply the same canvas-stripping rules in case someone
+   ⌘P-s the print page (Playwright uses page.pdf which doesn't trigger
+   @media print, so this is just defensive). */
+@media print {
+  @page {
+    size: Letter;
+    margin: 0;
+  }
+}
