@@ -9,6 +9,7 @@ Retention:
   - auto, manual_save: combined rolling window of 50 most recent
 """
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +23,21 @@ ROLLING_TRIGGERS = ("auto", "manual_save")
 ROLLING_LIMIT = 50
 
 
+_VALID_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def _validate_id(value: str) -> None:
+    """Reject ids that could enable path traversal or filesystem mischief.
+
+    Used for both ``resume_id`` and ``snapshot_id`` since they share the same
+    on-disk constraints.
+    """
+    if not isinstance(value, str) or not _VALID_ID_RE.match(value):
+        raise ValueError(f"Invalid id: {value!r}")
+
+
 def _resume_dir(resume_id: str) -> Path:
+    _validate_id(resume_id)
     return SNAPSHOTS_DIR / resume_id
 
 
@@ -34,6 +49,8 @@ def _ensure_resume_dir(resume_id: str) -> Path:
 
 def save(snapshot: ResumeSnapshot) -> None:
     """Persist a snapshot."""
+    _validate_id(snapshot.resume_id)
+    _validate_id(snapshot.id)
     d = _ensure_resume_dir(snapshot.resume_id)
     (d / f"{snapshot.id}.json").write_text(
         snapshot.model_dump_json(indent=2),
@@ -43,6 +60,7 @@ def save(snapshot: ResumeSnapshot) -> None:
 
 def get(snapshot_id: str) -> Optional[ResumeSnapshot]:
     """Find a snapshot by id across all resume dirs."""
+    _validate_id(snapshot_id)
     if not SNAPSHOTS_DIR.exists():
         return None
     for resume_dir in SNAPSHOTS_DIR.iterdir():
@@ -59,6 +77,7 @@ def get(snapshot_id: str) -> Optional[ResumeSnapshot]:
 
 def list_for_resume(resume_id: str) -> list[ResumeSnapshot]:
     """List all snapshots for one resume, newest first."""
+    _validate_id(resume_id)
     d = _resume_dir(resume_id)
     if not d.exists():
         return []
@@ -73,6 +92,7 @@ def list_for_resume(resume_id: str) -> list[ResumeSnapshot]:
 
 def enforce_retention(resume_id: str) -> None:
     """Trim rolling snapshots to ROLLING_LIMIT, preserve ai_edit/checkpoint."""
+    _validate_id(resume_id)
     snaps = list_for_resume(resume_id)
     rolling = [s for s in snaps if s.trigger in ROLLING_TRIGGERS]
     if len(rolling) <= ROLLING_LIMIT:

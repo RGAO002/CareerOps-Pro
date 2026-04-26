@@ -24,10 +24,19 @@ from pydantic import BaseModel
 from api.converters.resume import legacy_json_to_tiptap_doc
 from api.models.resume import Resume, ResumeSnapshot, SnapshotTrigger
 from api.services import resume_store, snapshot_store
+from api.services.resume_store import _validate_id as _validate_resume_id
 from services.resume_parser import is_scanned_pdf, parse_resume
 
 
 router = APIRouter()
+
+
+def _ensure_valid_id(value: str) -> None:
+    """Boundary check: 400 on invalid id (rather than the 500 a ValueError yields)."""
+    try:
+        _validate_resume_id(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid id")
 
 
 class CreateResumeRequest(BaseModel):
@@ -57,6 +66,7 @@ async def list_resumes() -> dict:
 @router.get("/{resume_id}")
 async def get_resume(resume_id: str) -> Resume:
     """Get one resume in full (meta + doc)."""
+    _ensure_valid_id(resume_id)
     r = resume_store.get(resume_id)
     if r is None:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -66,6 +76,7 @@ async def get_resume(resume_id: str) -> Resume:
 @router.put("/{resume_id}")
 async def upsert_resume(resume_id: str, payload: Resume) -> Resume:
     """Create or replace a resume. URL id always wins."""
+    _ensure_valid_id(resume_id)
     payload.id = resume_id
     payload.updated_at = max(payload.updated_at, _now_ms())
     resume_store.save(payload)
@@ -169,6 +180,7 @@ class SnapshotRequest(BaseModel):
 
 @router.post("/{resume_id}/snapshot")
 async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapshot:
+    _ensure_valid_id(resume_id)
     r = resume_store.get(resume_id)
     if r is None:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -189,6 +201,7 @@ async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapsh
 
 @router.get("/{resume_id}/snapshots")
 async def list_snapshots(resume_id: str) -> dict:
+    _ensure_valid_id(resume_id)
     snaps = snapshot_store.list_for_resume(resume_id)
     return {"snapshots": [s.model_dump(exclude_none=True) for s in snaps]}
 
@@ -199,6 +212,8 @@ class RestoreRequest(BaseModel):
 
 @router.post("/{resume_id}/restore")
 async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
+    _ensure_valid_id(resume_id)
+    _ensure_valid_id(body.snapshot_id)
     r = resume_store.get(resume_id)
     if r is None:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -232,6 +247,7 @@ class VariantRequest(BaseModel):
 
 @router.post("/{resume_id}/variant")
 async def create_variant(resume_id: str, body: VariantRequest) -> Resume:
+    _ensure_valid_id(resume_id)
     parent = resume_store.get(resume_id)
     if parent is None:
         raise HTTPException(status_code=404, detail="Parent resume not found")
@@ -267,6 +283,7 @@ class RewriteBulletRequest(BaseModel):
 
 @router.post("/{resume_id}/ai/rewrite-bullet")
 async def rewrite_bullet(resume_id: str, body: RewriteBulletRequest) -> dict:
+    _ensure_valid_id(resume_id)
     from api.services import ai_orchestrator
 
     results = ai_orchestrator.execute_tool_calls(

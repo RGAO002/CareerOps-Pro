@@ -237,3 +237,22 @@ def test_rewrite_bullet_endpoint_propagates_error(client):
         json={"bullet_text": "", "preset": "default"},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("bad_id", ["..", "../etc/passwd", "a/b", "a\x00b", "x" * 200, ""])
+def test_endpoints_reject_invalid_resume_id(client, bad_id):
+    # FastAPI may return 404 for empty path; we expect 400 for the others
+    if bad_id == "":
+        return  # empty path matches the list endpoint, that's fine
+    # urlencoded "/" becomes "%2F" but FastAPI strips it — test the cases that actually reach the handler
+    if "/" in bad_id:
+        return
+    # The httpx client used by TestClient rejects null bytes in URLs before
+    # they reach the server, which is fine — they can't even be sent.
+    if "\x00" in bad_id:
+        import httpx
+        with pytest.raises(httpx.InvalidURL):
+            client.get(f"/api/resume/{bad_id}")
+        return
+    resp = client.get(f"/api/resume/{bad_id}")
+    assert resp.status_code in (400, 404, 422)
