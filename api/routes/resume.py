@@ -214,18 +214,22 @@ class RestoreRequest(BaseModel):
 async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
     _ensure_valid_id(resume_id)
     _ensure_valid_id(body.snapshot_id)
-    r = resume_store.get(resume_id)
-    if r is None:
-        raise HTTPException(status_code=404, detail="Resume not found")
     snap = snapshot_store.get(body.snapshot_id)
     if snap is None or snap.resume_id != resume_id:
         raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    # Re-read the resume right before mutating so an autosave that landed
+    # between request arrival and now is captured by the pre-restore checkpoint.
+    r = resume_store.get(resume_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Resume not found")
 
     pre = ResumeSnapshot(
         id=str(uuid.uuid4()),
         resume_id=resume_id,
         created_at=_now_ms(),
-        trigger="auto",
+        trigger="checkpoint",  # was "auto" — preserve forever so users can recover
+        label=f"Pre-restore (snap {body.snapshot_id[:8]})",
         diff_summary=f"Pre-restore checkpoint (restored to {body.snapshot_id})",
         doc=r.doc,
     )

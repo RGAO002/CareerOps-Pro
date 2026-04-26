@@ -185,6 +185,7 @@ def test_restore_replaces_doc_and_creates_pre_restore_snapshot(client):
     snaps = client.get("/api/resume/r3/snapshots").json()["snapshots"]
     pre_restore = [s for s in snaps if s.get("diff_summary", "").startswith("Pre-restore")]
     assert len(pre_restore) == 1
+    assert pre_restore[0]["trigger"] == "checkpoint"
 
 
 def test_variant_forks_a_new_independent_copy(client):
