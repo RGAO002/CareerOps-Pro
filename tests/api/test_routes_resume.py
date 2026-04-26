@@ -302,6 +302,16 @@ def test_parse_rejects_non_pdf(client):
 
 
 # --- /pdf tests ---
+#
+# The /pdf endpoint awaits html_to_pdf_chrome (Playwright). We mock with an
+# async lambda factory so the route's `await` works correctly.
+
+
+def _async_return(value):
+    """Return a function that, when called, returns an awaitable yielding `value`."""
+    async def _fn(*_a, **_k):
+        return value
+    return _fn
 
 
 def test_pdf_endpoint_returns_pdf_bytes_with_attachment_header(client, monkeypatch):
@@ -309,7 +319,7 @@ def test_pdf_endpoint_returns_pdf_bytes_with_attachment_header(client, monkeypat
     _seed_resume("pdf1", "My Resume")
     from api.routes import resume as routes
 
-    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-fake-bytes")
+    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-fake-bytes"))
 
     resp = client.get("/api/resume/pdf1/pdf")
     assert resp.status_code == 200
@@ -327,7 +337,7 @@ def test_pdf_endpoint_404_for_unknown_resume(client):
 def test_pdf_endpoint_500_when_weasyprint_fails(client, monkeypatch):
     _seed_resume("pdf2", "Test")
     from api.routes import resume as routes
-    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: None)
+    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(None))
 
     resp = client.get("/api/resume/pdf2/pdf")
     assert resp.status_code == 500
@@ -337,7 +347,7 @@ def test_pdf_endpoint_sanitizes_filename(client, monkeypatch):
     """Title with shell-meta chars must not bleed into Content-Disposition."""
     _seed_resume("pdf3", 'Resume "evil"; rm -rf /')
     from api.routes import resume as routes
-    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-x")
+    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-x"))
 
     resp = client.get("/api/resume/pdf3/pdf")
     assert resp.status_code == 200
@@ -368,7 +378,7 @@ def test_pdf_endpoint_passes_doc_to_renderer(client, monkeypatch):
 
     from api.routes import resume as routes
     monkeypatch.setattr(routes, "tiptap_doc_to_html", fake_html)
-    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-x")
+    monkeypatch.setattr(routes, "html_to_pdf_chrome", _async_return(b"%PDF-x"))
 
     resp = client.get("/api/resume/pdf4/pdf")
     assert resp.status_code == 200
