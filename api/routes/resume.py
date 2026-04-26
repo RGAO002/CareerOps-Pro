@@ -1,67 +1,51 @@
-"""
-Resume API — read/list saved sessions for the Review page.
+# api/routes/resume.py
+"""Resume Editor v1 API.
 
-Also serves the review context file written by the Streamlit app
-so the Next.js Review page can pick up resume + job data.
+Endpoints:
+  GET    /                  list user's resumes (summary)
+  GET    /:id              full resume
+  PUT    /:id              update doc + meta
+  POST   /                 create blank resume
+  POST   /parse            upload PDF, parse, return new resume
+  POST   /:id/variant      fork variant
+  POST   /:id/snapshot     create explicit snapshot
+  GET    /:id/snapshots    list snapshots
+  POST   /:id/restore      restore from snapshot id
+  POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
-import json
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
+
+from api.models.resume import Resume
+from api.services import resume_store
+
 
 router = APIRouter()
 
-SESSIONS_DIR = Path(__file__).parent.parent.parent / "saved_sessions"
-REVIEW_CONTEXT_FILE = SESSIONS_DIR / "_review_context.json"
+
+@router.get("/")
+async def list_resumes() -> dict:
+    """List the current user's resumes (summary view, no doc)."""
+    resumes = resume_store.list_all()
+    return {
+        "resumes": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "parent_id": r.parent_id,
+                "is_base": r.is_base,
+                "target_company": r.target_company,
+                "target_role": r.target_role,
+                "updated_at": r.updated_at,
+            }
+            for r in resumes
+        ],
+    }
 
 
-@router.get("/sessions")
-async def list_sessions():
-    """List all saved resume sessions (id + metadata)."""
-    sessions = []
-    if not SESSIONS_DIR.exists():
-        return {"sessions": []}
-
-    for f in sorted(SESSIONS_DIR.glob("session_*.json"), reverse=True):
-        try:
-            data = json.loads(f.read_text())
-            sessions.append({
-                "id": f.stem,
-                "name": data.get("session_name", f.stem),
-                "has_resume": bool(data.get("resume_data")),
-                "has_job": bool(data.get("selected_job")),
-                "job_title": data.get("selected_job", {}).get("title", ""),
-                "company": data.get("selected_job", {}).get("company", ""),
-            })
-        except (json.JSONDecodeError, IOError):
-            continue
-
-    return {"sessions": sessions}
-
-
-@router.get("/sessions/{session_id}")
-async def get_session(session_id: str):
-    """Load a full session by ID."""
-    path = SESSIONS_DIR / f"{session_id}.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
-    try:
-        data = json.loads(path.read_text())
-        return data
-    except (json.JSONDecodeError, IOError) as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/review-context")
-async def get_review_context():
-    """Return the review context written by Streamlit's Debate button.
-
-    File: saved_sessions/_review_context.json
-    Contains: resume_data, job_data, section (optional)
-    """
-    if not REVIEW_CONTEXT_FILE.exists():
-        raise HTTPException(status_code=404, detail="No review context available. Click the Debate button in the Resume Editor first.")
-    try:
-        data = json.loads(REVIEW_CONTEXT_FILE.read_text())
-        return data
-    except (json.JSONDecodeError, IOError) as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/{resume_id}")
+async def get_resume(resume_id: str) -> Resume:
+    """Get one resume in full (meta + doc)."""
+    r = resume_store.get(resume_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    return r
