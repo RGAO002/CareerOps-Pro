@@ -383,30 +383,70 @@ function BulletField({ bulletId, content, mode }: Props) {
 
 **Measure mode 的数据流**（**不一样**）：
 - MeasurementLayer 是**长生命周期**组件，内容变化时必须立即反映在测量层（否则 layout 算高度时用的是旧内容）
-- **Hard rule**：measure mode 必须监听 `content` prop 变化，**主动 setContent**：
+- **Hard rule**：measure mode 必须监听 `content` prop 变化，**主动 setContent**
+- **Hard rule**：必须用 `useLayoutEffect`（不是 `useEffect`），保证 sync 在浏览器 paint 之前发生，让 ResizeObserver 测的是最新高度
+- **Hard rule**：**所有字段组件**都要做（PlainTextField / ContactLinesField / BulletField），不止 BulletField
 
 ```tsx
+// 通用 measure-mode prop sync hook，所有字段复用
+function useMeasureModeSync<T>(
+  mode: CanvasMode,
+  editor: Editor | null,
+  propValue: T,
+  toDoc: (v: T) => any,
+) {
+  useLayoutEffect(() => {
+    if (mode !== 'measure' || !editor) return;
+    // 转 doc shape 后 setContent；emitUpdate=false 防止反弹
+    editor.commands.setContent(toDoc(propValue), false);
+  }, [mode, editor, propValue, toDoc]);
+}
+
+// BulletField
 function BulletField({ bulletId, content, mode }: Props) {
   const editor = useEditor({
-    content,                                    // 初始化
+    extensions: [BulletDocument, Paragraph, Text, Bold, Italic, Link, ...],
+    content,
     editable: mode === 'edit',
     // ...
   });
 
-  // 仅 measure 模式：prop content 变化时主动 sync 到 editor
-  useEffect(() => {
-    if (mode !== 'measure') return;
-    if (!editor) return;
-    editor.commands.setContent(content, false);
-  }, [mode, editor, content]);
+  useMeasureModeSync(mode, editor, content, identity);  // bullet 已经是 doc
 
   // edit 模式：走 store.subscribe imperative 通道（external sources only）
   useEffect(() => {
     if (mode !== 'edit' || !editor) return;
     return store.subscribe(...);
   }, [mode, editor, bulletId]);
+}
 
-  // export 模式：什么都不做（stateless 渲染）
+// PlainTextField（也要 measure sync！）
+function PlainTextField({ fieldKey, value, mode }: Props) {
+  const initialDoc = useMemo(() => stringToSingleLineDoc(value), []);
+  const editor = useEditor({
+    extensions: [SingleLineDocument, Text, NoNewline, ...],
+    content: initialDoc,
+    editable: mode === 'edit',
+    // ...
+  });
+
+  useMeasureModeSync(mode, editor, value, stringToSingleLineDoc);  // ⬅️ 不要漏
+
+  // edit 模式：store.subscribe ...
+}
+
+// ContactLinesField 同理
+function ContactLinesField({ items, mode }: Props) {
+  const initialDoc = useMemo(() => contactItemsToDoc(items), []);
+  const editor = useEditor({
+    extensions: [SingleLineWithMarksDocument, Text, Link, NoNewline, ...],
+    content: initialDoc,
+    editable: mode === 'edit',
+  });
+
+  useMeasureModeSync(mode, editor, items, contactItemsToDoc);  // ⬅️ 同样不要漏
+
+  // edit 模式：store.subscribe ...
 }
 ```
 
@@ -414,6 +454,16 @@ function BulletField({ bulletId, content, mode }: Props) {
 - edit：用户输入是真相源，prop 反向 setContent 会损坏交互（cursor / IME / undo）
 - export：prop 在 /print 渲染期间不变，不需要 sync
 - measure：prop 在编辑过程中持续变化，必须每次都重新 setContent 才能测出准确高度
+
+**为什么 useLayoutEffect 不是 useEffect**：
+- `useEffect` 在浏览器 paint **之后**异步执行
+- ResizeObserver 在 layout 后立即 fire
+- 如果用 `useEffect`：浏览器先用旧 content 算 layout → ResizeObserver fire 旧高度 → repaginate 用错的高度 → 再 useEffect 把 content 更新 → 再下一轮 ResizeObserver fire 新高度 → 又一次 repaginate（多余 + 闪烁）
+- 用 `useLayoutEffect`：sync 在 paint 前发生 → 浏览器 layout 用新 content → ResizeObserver 直接读新高度 → 一次到位
+
+**测试 guard**（除已有的 3 条）：
+4. integration test 改 store 中某 bullet content → MeasurementLayer 内对应 BulletField 的 DOM 必须在下一帧前更新
+5. integration test 改 PlainTextField value → MeasurementLayer DOM 同样更新（防漏字段）
 
 **测试 guard**：
 1. unit test 渲染同一个 bullet 三次（edit / export / measure），剥掉编辑性 attr 后比较 outerHTML 必须完全相同
@@ -552,29 +602,51 @@ CSS 不要硬编码派生值，统一通过 CSS variable + calc() 从同一份 s
 | section.heading | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
 | entry.title | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
 | entry.meta | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
-| bullet.content | `ProseMirrorBulletDoc` | multi-line + marks | Document, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
+| bullet.content | `ProseMirrorBulletDoc` | single-paragraph + marks | **BulletDocument**, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
 
 ### 3.1.1 Single-line schema（**hard constraint**）
 
 TipTap 默认 Document `content: 'block+'`，不接 plain text。单行字段 schema 是 `string`，所以需要：
 
-**自定义 SingleLineDocument**（直接接 text，无 paragraph 包装）：
+**自定义三个 Document schema**（在 ProseMirror schema 层强制，不靠 transaction 后 normalize）：
 
 ```ts
 import { Document } from '@tiptap/extension-document';
 
+// 单行 plain text（name / heading / title / meta）
 export const SingleLineDocument = Document.extend({
   name: 'doc',
-  content: 'text*',  // ⬅️ 直接放 text node，不用 block
-  // 阻止任何 block-level 操作
+  content: 'text*',  // ⬅️ 直接放 text node，不允许 block
 });
 
-// For contact lines that need inline marks (link)
+// 单行 + inline marks（contact_lines 含 link）
 export const SingleLineWithMarksDocument = Document.extend({
   name: 'doc',
-  content: 'inline*',  // text + marks (no block)
+  content: 'inline*',  // text + marks，仍无 block
+});
+
+// Bullet：恰好 1 个 paragraph
+export const BulletDocument = Document.extend({
+  name: 'doc',
+  content: 'paragraph',  // ⬅️ 单数 = exactly 1 paragraph，schema 层禁止多 paragraph
 });
 ```
+
+**为什么要在 schema 层强制单 paragraph**：
+
+如果 bullet 用默认 `Document`（`content: 'block+'`），用户在 bullet 中按 Enter（在 AtomKeyboardNav 截到之前的瞬间）或粘贴多段时，ProseMirror 内部 doc 可能短暂含 2 个 paragraph。如果在那瞬间触发 onUpdate → store commit，持久化的 schema 就违反 1-tuple 约束。
+
+用 `BulletDocument` (`content: 'paragraph'`) 后：
+- ProseMirror schema validation 在 transaction 应用前就拒绝多 paragraph 的状态
+- Enter 键（即使 AtomKeyboardNav 没拦到）创建第 2 个 paragraph 的 transaction 直接失败
+- Paste 走 transformPasted（§ 4.8.1）拍平为单段 + 多余段插入新 BulletBlock
+- onUpdate 永远只看到 valid 单 paragraph
+- 持久化的 doc 永远满足 ProseMirrorBulletDoc 的 1-tuple 约束
+
+**Defense in depth**：
+1. **Schema 层**（BulletDocument `content: 'paragraph'`）—— 第一道
+2. **Paste 层**（transformPasted / transformPastedHTML）—— 第二道
+3. **store commit 层**（updateBullet action 校验 content.content.length === 1）—— 第三道兜底
 
 **String ↔ TipTap doc adapter**（边界处转换）：
 
@@ -603,7 +675,7 @@ export function singleLineDocToString(editor: Editor): string {
 }
 ```
 
-**PlainTextField 实现示意**：
+**PlainTextField 实现示意**（详细版本含 measure sync 见 § 3.3）：
 
 ```tsx
 function PlainTextField({ fieldKey, value, mode }: Props) {
@@ -627,7 +699,9 @@ function PlainTextField({ fieldKey, value, mode }: Props) {
       : undefined,
   });
 
-  // ... store.subscribe / focus register 同 BulletField，仅 edit mode
+  useMeasureModeSync(mode, editor, value, stringToSingleLineDoc);  // ⬅️ 见 § 3.3
+
+  // store.subscribe / focus register 仅 edit mode（同 BulletField）
   return <EditorContent editor={editor} />;
 }
 ```
@@ -1058,7 +1132,8 @@ V2 bullet schema 强制单 paragraph（`ProseMirrorBulletDoc.content` 是 1-tupl
 // BulletField TipTap 配置
 const editor = useEditor({
   extensions: [
-    Document, Paragraph, Text, Bold, Italic, Link,
+    BulletDocument,                         // ⬅️ 不是默认 Document
+    Paragraph, Text, Bold, Italic, Link,
     ...(mode === 'edit' ? BULLET_EXTENSIONS_EDIT_ONLY : []),
   ],
   editorProps: {
