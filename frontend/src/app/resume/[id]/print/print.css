@@ -50,13 +50,17 @@ body {
   display: none !important;
 }
 
-/* Print media — apply the same canvas-stripping rules in case someone
-   ⌘P-s the print page (Playwright uses page.pdf which doesn't trigger
-   @media print, so this is just defensive). */
+/* Print media. Chromium DOES enter @media print during page.pdf(), so the
+   rules below DO fire when we generate a PDF. The @page rule here MUST
+   match what chrome_pdf.py asks page.pdf() for, otherwise the CSS @page
+   wins and our per-page margin is silently zeroed. */
 @media print {
   @page {
     size: Letter;
-    margin: 0;
+    /* Per-page top/bottom whitespace; horizontal margin comes from the
+       canvas's own 0.9in horizontal padding so column width stays the
+       same as the editor view. Keep in sync with utils/chrome_pdf.py. */
+    margin: 0.75in 0;
   }
 
   /* The shared editor print CSS hides every non-input
