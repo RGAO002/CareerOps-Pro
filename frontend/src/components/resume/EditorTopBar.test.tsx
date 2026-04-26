@@ -31,8 +31,11 @@ const fakeResume: Resume = {
 };
 
 describe("EditorTopBar — Export PDF", () => {
-  let openSpy: ReturnType<typeof vi.spyOn>;
-  let printSpy: ReturnType<typeof vi.spyOn>;
+  // vi.spyOn return type is awkward to express precisely; use a loose any.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let openSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let printSpy: any;
 
   beforeEach(() => {
     // Stub window.open and window.print so we can assert what was called

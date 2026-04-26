@@ -47,11 +47,18 @@ export function EditorCanvas({ doc, onChange, onReady }: Props) {
   if (!editor) return null;
 
   return (
-    <div className="relative mx-auto w-fit">
-      <div ref={canvasRef} className="resume-canvas">
-        <EditorContent editor={editor} />
+    // Outer flex column so the AddSectionPopover sits below the page-card stack,
+    // not on top of it. Inner div is the positioned context for the canvas +
+    // page-card backgrounds + page indicators.
+    <div className="mx-auto flex w-fit flex-col">
+      <div className="relative">
+        {/* Page-card backgrounds (z-index: 0) sit BEHIND the canvas */}
+        <PageBreakOverlay getCanvas={() => canvasRef.current} />
+        {/* Canvas (z-index: 10 via .resume-canvas) renders on TOP of cards */}
+        <div ref={canvasRef} className="resume-canvas">
+          <EditorContent editor={editor} />
+        </div>
       </div>
-      <PageBreakOverlay getCanvas={() => canvasRef.current} />
       <AddSectionPopover editor={editor} />
     </div>
   );

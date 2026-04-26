@@ -7,12 +7,23 @@
   min-height: 11in;
   margin: 24px auto;
   padding: 0.75in 0.9in;
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* Background + shadow live on the per-page cards behind us
+     (PageBreakOverlay), not on the canvas itself. The canvas stays
+     transparent so the visible inter-page gaps show through. */
+  background: transparent;
+  position: relative;
+  z-index: 10;
   color: #374151;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Dedicated /print route: restore white background on the canvas
+   (no page-card overlay there — that's editor-view-only). */
+.resume-canvas--print {
+  background: white !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .resume-canvas a,
@@ -148,10 +159,14 @@
   }
 
   /* Hide overlays + chrome */
-  .page-break-overlay { display: none !important; }
+  .page-break-overlay,
+  .page-card-stack,
+  .page-indicators { display: none !important; }
   .resume-canvas [contenteditable="false"]:not(input) { display: none !important; }
 
-  /* Show value of input fields as plain text */
+  /* Show value of input fields as plain text. The width: 100% is critical:
+     a default <input> is ~150px wide which would wrap text to one character
+     per line when the surrounding canvas is forced full-width in print. */
   .resume-canvas input.resume-entry-title,
   .resume-canvas input.resume-entry-meta,
   .resume-canvas input.resume-section-heading {
@@ -159,6 +174,8 @@
     background: transparent !important;
     padding: 0 !important;
     color: inherit !important;
+    width: 100% !important;
+    display: block !important;
   }
 
   /* ProseMirror hacks — hide cursor & editing focus rings */
