@@ -108,6 +108,11 @@
 .resume-canvas .ProseMirror:focus { outline: none; }
 .resume-canvas .ProseMirror *:focus-within { outline: none; }
 
+/* ========== Page-break behavior (print + visual alignment) ========== */
+.resume-entry { break-inside: avoid; page-break-inside: avoid; }
+.resume-section-heading { break-after: avoid; page-break-after: avoid; }
+.resume-bullet { break-inside: avoid; page-break-inside: avoid; }
+
 /* ========== Print stylesheet (用户按 Export PDF → window.print()) ==========
    Target: "Save as PDF" from the browser print dialog should produce a clean
    resume PDF that matches the editor canvas. Everything except the canvas is
@@ -122,6 +127,7 @@
   body > * *:not(.resume-canvas):not(.resume-canvas *):not(.ProseMirror):not(.ProseMirror *) {
     visibility: hidden;
   }
+  body * { visibility: hidden; }
   .resume-canvas,
   .resume-canvas * {
     visibility: visible;
@@ -132,20 +138,35 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: 8.5in;
-    min-height: 11in;
-    margin: 0;
-    padding: 0.75in 0.9in;
+    width: 100% !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0.75in 0.9in !important;
     background: #fff !important;
     box-shadow: none !important;
     border: none !important;
   }
 
+  /* Hide overlays + chrome */
+  .page-break-overlay { display: none !important; }
+  .resume-canvas [contenteditable="false"]:not(input) { display: none !important; }
+
+  /* Show value of input fields as plain text */
+  .resume-canvas input.resume-entry-title,
+  .resume-canvas input.resume-entry-meta,
+  .resume-canvas input.resume-section-heading {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    color: inherit !important;
+  }
+
   /* ProseMirror hacks — hide cursor & editing focus rings */
   .ProseMirror {
     outline: none !important;
-    caret-color: transparent;
+    caret-color: transparent !important;
   }
+  .ProseMirror-focused { outline: none !important; }
   .ProseMirror-trailingBreak { display: none; }
 
   /* Make sure links print as colored (some browsers gray them) */
