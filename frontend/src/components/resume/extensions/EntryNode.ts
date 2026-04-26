@@ -1,11 +1,9 @@
 // frontend/src/components/resume/extensions/EntryNode.ts
-import { Node, mergeAttributes } from "@tiptap/core";
+import { mergeAttributes, Node } from "@tiptap/core";
+import { ReactNodeViewRenderer } from "@tiptap/react";
 
-/**
- * A single entry inside a section — e.g. a job, a degree, or a project.
- * Holds `title` and `meta` as attributes (rendered as two lines) and contains
- * one or more `bullet` children.
- */
+import { EntryNodeView } from "./nodeViews/EntryNodeView";
+
 export const EntryNode = Node.create({
   name: "entry",
   group: "block",
@@ -39,5 +37,9 @@ export const EntryNode = Node.create({
       ["div", { class: "resume-entry-meta" }, node.attrs.meta as string],
       ["ul", { class: "resume-entry-bullets" }, 0],
     ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(EntryNodeView);
   },
 });
