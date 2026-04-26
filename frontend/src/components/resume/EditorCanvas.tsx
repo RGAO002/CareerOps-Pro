@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import type { Editor } from "@tiptap/core";
 import { createResumeEditorExtensions } from "./extensions/createResumeEditor";
 import type { ResumeDoc } from "./types";
+import { AddSectionPopover } from "./AddSectionPopover";
 
 import "./resume-editor.css";
 
@@ -43,8 +44,11 @@ export function EditorCanvas({ doc, onChange, onReady }: Props) {
   if (!editor) return null;
 
   return (
-    <div className="resume-canvas">
-      <EditorContent editor={editor} />
-    </div>
+    <>
+      <div className="resume-canvas">
+        <EditorContent editor={editor} />
+      </div>
+      <AddSectionPopover editor={editor} />
+    </>
   );
 }
