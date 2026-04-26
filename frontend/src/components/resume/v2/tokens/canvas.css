@@ -9,6 +9,7 @@
   --page-margin-left: 0.9in;
   --atom-gap: 12px;
   --screen-gap: 16px;
+  --print-gap: 0px;
 
   --page-content-width:
     calc(var(--page-width) - var(--page-margin-left) - var(--page-margin-right));

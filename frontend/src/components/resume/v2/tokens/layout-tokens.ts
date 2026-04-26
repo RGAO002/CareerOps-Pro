@@ -26,9 +26,15 @@ export const PX_PER_INCH = 96;
 
 export function parseToPx(spec: string): number {
   const trimmed = spec.trim();
-  if (trimmed.endsWith('in')) return parseFloat(trimmed) * PX_PER_INCH;
-  if (trimmed.endsWith('px')) return parseFloat(trimmed);
-  if (trimmed.endsWith('cm')) return parseFloat(trimmed) * (PX_PER_INCH / 2.54);
   if (trimmed === '0') return 0;
-  throw new Error(`parseToPx: unknown unit in "${spec}"`);
+  // Strict: optional sign-less number (no negatives), required unit
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)(in|px|cm)$/);
+  if (!match) throw new Error(`parseToPx: unknown unit in "${spec}"`);
+  const value = parseFloat(match[1]);
+  if (!Number.isFinite(value)) throw new Error(`parseToPx: not finite in "${spec}"`);
+  const unit = match[2];
+  if (unit === 'in') return value * PX_PER_INCH;
+  if (unit === 'px') return value;
+  if (unit === 'cm') return value * (PX_PER_INCH / 2.54);
+  throw new Error(`parseToPx: unreachable for "${spec}"`);
 }

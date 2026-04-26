@@ -20,6 +20,17 @@ describe('parseToPx', () => {
   it('rejects unknown units', () => {
     expect(() => parseToPx('5em')).toThrow(/unknown unit/);
   });
+  it('rejects malformed numbers', () => {
+    expect(() => parseToPx('abcin')).toThrow(/unknown unit/);
+    expect(() => parseToPx('1.2.3in')).toThrow(/unknown unit/);
+    expect(() => parseToPx('  in')).toThrow(/unknown unit/);
+  });
+  it('rejects negative values', () => {
+    expect(() => parseToPx('-1in')).toThrow(/unknown unit/);
+  });
+  it('parses 0px (not just bare "0")', () => {
+    expect(parseToPx('0px')).toBe(0);
+  });
 });
 
 describe('PAGE_SPEC', () => {
