@@ -17,3 +17,7 @@ plotly
 fastapi
 uvicorn[standard]
 websockets
+
+# Testing
+pytest>=8.0
+httpx>=0.27
