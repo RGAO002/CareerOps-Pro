@@ -94,20 +94,15 @@ export function EditorTopBar({
           History
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            // Open the dedicated print view in a new tab. That route renders
-            // ONLY the resume canvas (no AppShell), so the print output isn't
-            // squeezed by the editor's sidebar / AI panel layout.
-            window.open(`/resume/${current.id}/print`, "_blank", "noopener");
-          }}
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/api/resume/${current.id}/pdf`}
+          download
           className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800"
-          title="Open print view in a new tab"
+          title="Download the resume as PDF"
         >
           <Download className="size-3.5" strokeWidth={2} />
           Export PDF
-        </button>
+        </a>
       </div>
 
       {showNewVariant && (

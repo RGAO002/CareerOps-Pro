@@ -301,6 +301,83 @@ def test_parse_rejects_non_pdf(client):
     assert resp.status_code == 400
 
 
+# --- /pdf tests ---
+
+
+def test_pdf_endpoint_returns_pdf_bytes_with_attachment_header(client, monkeypatch):
+    """GET /api/resume/:id/pdf streams a PDF download (Streamlit-style one-click)."""
+    _seed_resume("pdf1", "My Resume")
+    from api.routes import resume as routes
+
+    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-fake-bytes")
+
+    resp = client.get("/api/resume/pdf1/pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "My Resume.pdf" in resp.headers["content-disposition"]
+    assert resp.content == b"%PDF-fake-bytes"
+
+
+def test_pdf_endpoint_404_for_unknown_resume(client):
+    resp = client.get("/api/resume/nope/pdf")
+    assert resp.status_code == 404
+
+
+def test_pdf_endpoint_500_when_weasyprint_fails(client, monkeypatch):
+    _seed_resume("pdf2", "Test")
+    from api.routes import resume as routes
+    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: None)
+
+    resp = client.get("/api/resume/pdf2/pdf")
+    assert resp.status_code == 500
+
+
+def test_pdf_endpoint_sanitizes_filename(client, monkeypatch):
+    """Title with shell-meta chars must not bleed into Content-Disposition."""
+    _seed_resume("pdf3", 'Resume "evil"; rm -rf /')
+    from api.routes import resume as routes
+    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-x")
+
+    resp = client.get("/api/resume/pdf3/pdf")
+    assert resp.status_code == 200
+    cd = resp.headers["content-disposition"]
+    # Quotes and shell metas must be stripped
+    assert '"' not in cd.replace('filename="', "").replace('.pdf"', "")
+    assert ";" not in cd[len("attachment; filename=\""):]
+    assert "rm" not in cd or "_" in cd  # at minimum sanitized to safe chars
+
+
+def test_pdf_endpoint_passes_doc_to_renderer(client, monkeypatch):
+    """The endpoint must call the converter with the actual stored doc."""
+    _seed_resume("pdf4", "T")
+    # Patch the resume's doc to something specific
+    r = resume_store.get("pdf4")
+    r.doc = {"type": "doc", "content": [
+        {"type": "resumeHeader", "attrs": {"contacts": []},
+         "content": [{"type": "text", "text": "Captured Name"}]}
+    ]}
+    resume_store.save(r)
+
+    captured: dict = {}
+
+    def fake_html(doc, title="Resume"):
+        captured["doc"] = doc
+        captured["title"] = title
+        return "<html>fake</html>"
+
+    from api.routes import resume as routes
+    monkeypatch.setattr(routes, "tiptap_doc_to_html", fake_html)
+    monkeypatch.setattr(routes, "convert_html_to_pdf", lambda html: b"%PDF-x")
+
+    resp = client.get("/api/resume/pdf4/pdf")
+    assert resp.status_code == 200
+    # Verify the actual doc + title were passed in (not stale data)
+    assert captured["title"] == "T"
+    name_node = captured["doc"]["content"][0]
+    assert name_node["content"][0]["text"] == "Captured Name"
+
+
 def test_post_snapshot_creates_record(client):
     _seed_resume("r1", "T")
     resp = client.post("/api/resume/r1/snapshot", json={"trigger": "checkpoint", "label": "v1.0"})

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 const PAGE_HEIGHT_PX = 11 * 96; // 11 inch * 96 dpi = 1056 px
 export const PAGE_GAP_PX = 16; // visible gray gap between page cards (Google Docs style)
+const PAGE_AND_GAP = PAGE_HEIGHT_PX + PAGE_GAP_PX;
 
 interface Props {
   /** A ref-like getter that returns the canvas DOM element. */
@@ -12,35 +13,101 @@ interface Props {
 }
 
 /**
- * Renders the visual page-card stack BEHIND the editor canvas.
+ * Renders the visual page-card stack BEHIND the editor canvas AND repaginates
+ * top-level resume blocks so they don't visually straddle the inter-page gap.
  *
- * Each page is a separate white "card" with shadow, with PAGE_GAP_PX of the
- * neutral page-bg color visible between them — like Google Docs / Pages.
- * The editor canvas itself sits on TOP of these cards with a transparent
- * background, so editor content visually appears to "live inside" the cards.
+ * Repagination works by measuring each top-level resume block (header + sections)
+ * after the editor renders. If a block's bottom would cross a page boundary, we
+ * apply a `margin-top` push to bring its top down to the next page card's start.
+ * The browser then reflows the rest of the document below it. We re-measure
+ * subsequent blocks live (synchronous reflow on each getBoundingClientRect read)
+ * so cascading shifts work correctly.
  *
- * Known limitation: the canvas is one continuous TipTap document, so text
- * that lands right at a page boundary will visually cross the gap. The
- * `break-inside: avoid` CSS on .resume-entry / .resume-bullet keeps this
- * rare in practice. Real per-page rendering is a Phase 2 follow-up.
+ * Caveats:
+ *   - A single block taller than one page can't be split (it'll overflow). The
+ *     resume schema makes this rare — only a section with way too many bullets.
+ *   - The data attribute `data-pushed-by` is set on shifted blocks for debugging
+ *     and to make the repagination visible in DevTools.
  */
 export function PageBreakOverlay({ getCanvas }: Props) {
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
-    const update = () => {
-      const el = getCanvas();
-      if (!el) return;
-      const h = el.scrollHeight;
-      const pages = Math.max(1, Math.ceil(h / PAGE_HEIGHT_PX));
-      setTotalPages(pages);
+    const canvas = getCanvas();
+    if (!canvas) return;
+
+    let isUpdating = false;
+
+    const repaginate = () => {
+      // Re-entrancy guard: applying margins changes layout, which fires
+      // ResizeObserver again, which would re-call repaginate. Skip the
+      // recursive call and let the next user-driven mutation re-trigger.
+      if (isUpdating) return;
+      isUpdating = true;
+      try {
+        // The actual editable surface inside the canvas.
+        const prose = canvas.querySelector(".ProseMirror") as HTMLElement | null;
+        if (!prose) return;
+
+        const blocks = Array.from(prose.children) as HTMLElement[];
+
+        // Reset previous pushes — start from a clean slate every measurement.
+        for (const b of blocks) {
+          b.style.marginTop = "";
+          b.removeAttribute("data-pushed-by");
+        }
+
+        // Force layout once with margins reset, then iterate.
+        // Each getBoundingClientRect() inside the loop forces synchronous
+        // reflow so subsequent measurements reflect previous pushes.
+        const canvasRect = canvas.getBoundingClientRect();
+
+        for (const block of blocks) {
+          const rect = block.getBoundingClientRect();
+          const top = rect.top - canvasRect.top; // position within canvas
+          const height = rect.height;
+          if (height <= 0) continue;
+          // Which page does the TOP of this block sit on? (0-indexed)
+          const startPage = Math.floor(top / PAGE_AND_GAP);
+          // Bottom of that page's content area (before the gap).
+          const startPageEnd = startPage * PAGE_AND_GAP + PAGE_HEIGHT_PX;
+          const blockBottom = top + height;
+
+          if (blockBottom > startPageEnd && height <= PAGE_HEIGHT_PX) {
+            // This block would cross the page boundary AND it fits on a single page.
+            // Push it down so its top lands at the next page card's start.
+            const nextPageStart = (startPage + 1) * PAGE_AND_GAP;
+            const push = Math.max(0, Math.round(nextPageStart - top));
+            if (push > 0) {
+              block.style.marginTop = `${push}px`;
+              block.setAttribute("data-pushed-by", String(push));
+            }
+          }
+        }
+
+        // Total page count = ceil(total final height / page-stride).
+        // Use canvas scrollHeight which reflects content + canvas padding +
+        // any margin-top pushes we just applied.
+        const finalH = canvas.scrollHeight;
+        const pages = Math.max(1, Math.ceil(finalH / PAGE_AND_GAP));
+        setTotalPages((prev) => (prev === pages ? prev : pages));
+      } finally {
+        // Release guard on next frame so subsequent layout-driven RO callbacks
+        // (from our own changes) don't loop.
+        requestAnimationFrame(() => {
+          isUpdating = false;
+        });
+      }
     };
 
-    update();
-    const el = getCanvas();
-    if (!el) return;
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
+    repaginate();
+    const ro = new ResizeObserver(repaginate);
+    ro.observe(canvas);
+    // Also observe the .ProseMirror so we catch internal content changes that
+    // don't change the canvas size (e.g. small edits within a fixed-height block).
+    const prose = canvas.querySelector(".ProseMirror");
+    if (prose) ro.observe(prose);
+
     return () => ro.disconnect();
   }, [getCanvas]);
 
@@ -59,7 +126,7 @@ export function PageBreakOverlay({ getCanvas }: Props) {
             data-page-card={i + 1}
             style={{
               position: "absolute",
-              top: `${i * (PAGE_HEIGHT_PX + PAGE_GAP_PX)}px`,
+              top: `${i * PAGE_AND_GAP}px`,
               left: 0,
               right: 0,
               height: `${PAGE_HEIGHT_PX}px`,
@@ -81,7 +148,7 @@ export function PageBreakOverlay({ getCanvas }: Props) {
             key={i}
             style={{
               position: "absolute",
-              top: `${i * (PAGE_HEIGHT_PX + PAGE_GAP_PX) + 8}px`,
+              top: `${i * PAGE_AND_GAP + 8}px`,
               right: 8,
             }}
             className="rounded bg-neutral-100/90 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500 backdrop-blur-sm"

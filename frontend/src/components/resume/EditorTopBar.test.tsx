@@ -38,7 +38,9 @@ describe("EditorTopBar — Export PDF", () => {
   let printSpy: any;
 
   beforeEach(() => {
-    // Stub window.open and window.print so we can assert what was called
+    // We assert these were NOT called: the new Export PDF is an <a download>
+    // that hits a backend endpoint and triggers a native browser download.
+    // No window.open, no window.print.
     openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     printSpy = vi.spyOn(window, "print").mockImplementation(() => undefined);
   });
@@ -48,11 +50,14 @@ describe("EditorTopBar — Export PDF", () => {
     printSpy.mockRestore();
   });
 
-  it("Export PDF opens /resume/:id/print in a new tab (NOT inline window.print)", () => {
-    // REGRESSION: previously the Export button called window.print() inline
-    // which rendered through the AppShell layout and produced a 101-page
-    // broken output. The fix: open a dedicated /print route that has no
-    // AppShell, so layout doesn't squeeze the canvas.
+  it("Export PDF is a direct download link to /api/resume/:id/pdf", () => {
+    // REGRESSION over two earlier broken approaches:
+    //   1. Inline window.print() in the editor — squeezed by AppShell layout,
+    //      produced a 101-page broken output (each letter on its own line).
+    //   2. New-tab /print route — page rendered blank in some Next.js
+    //      versions AND was bad UX (user wanted Streamlit-style one-click).
+    // Current: <a href="/api/resume/:id/pdf" download> — backend WeasyPrint
+    // streams the PDF, browser downloads directly. Zero JS, zero preview.
     render(
       <EditorTopBar
         current={fakeResume}
@@ -63,15 +68,14 @@ describe("EditorTopBar — Export PDF", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Export PDF/i }));
+    const link = screen.getByTitle(/Download the resume as PDF/i);
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("download");
+    expect(link.getAttribute("href")).toMatch(/\/api\/resume\/abc123\/pdf$/);
 
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    expect(openSpy).toHaveBeenCalledWith(
-      "/resume/abc123/print",
-      "_blank",
-      expect.stringContaining("noopener"),
-    );
-    // Crucially: the button must NOT call window.print() inline anymore
+    // Must NOT use window.open or window.print
+    fireEvent.click(link);
+    expect(openSpy).not.toHaveBeenCalled();
     expect(printSpy).not.toHaveBeenCalled();
   });
 });
