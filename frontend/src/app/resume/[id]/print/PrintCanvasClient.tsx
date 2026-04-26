@@ -2,44 +2,30 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
+import { PageBreakOverlay } from "@/components/resume/PageBreakOverlay";
 import { createResumeEditorExtensions } from "@/components/resume/extensions/createResumeEditor";
-import { resumeApi, type Resume } from "@/lib/resumeApi";
+import type { Resume } from "@/lib/resumeApi";
 
 import "@/components/resume/resume-editor.css";
 import "./print.css";
 
-export function PrintCanvasClient({ id }: { id: string }) {
-  const [resume, setResume] = useState<Resume | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    resumeApi
-      .get(id)
-      .then((r) => !cancelled && setResume(r))
-      .catch((e) => !cancelled && setError((e as Error).message));
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  if (error) {
-    return <div style={{ padding: 24, fontFamily: "sans-serif" }}>Error: {error}</div>;
-  }
-  if (!resume) {
-    return <div style={{ padding: 24, fontFamily: "sans-serif" }}>Loading…</div>;
-  }
+export function PrintCanvasClient({ resume }: { resume: Resume }) {
   return <PrintCanvas resume={resume} />;
 }
 
 function PrintCanvas({ resume }: { resume: Resume }) {
+  const canvasRef = useRef<HTMLDivElement>(null);
   const editor = useEditor({
     ...createResumeEditorExtensions(
       resume.doc as Parameters<typeof createResumeEditorExtensions>[0],
     ),
     editable: false,
+    // Even though page.tsx is a Server Component, this child Client Component
+    // still SSRs in App Router. immediatelyRender: true throws on the server.
+    // The data-print-ready signal below ensures Playwright waits for the
+    // post-hydration render anyway.
     immediatelyRender: false,
   });
 
@@ -47,11 +33,32 @@ function PrintCanvas({ resume }: { resume: Resume }) {
   // rendered. Playwright waits for this attribute via wait_for_selector.
   useEffect(() => {
     if (!editor) return;
-    // Defer one frame so the DOM has actually painted
-    const id = requestAnimationFrame(() => {
-      document.body.setAttribute("data-print-ready", "true");
-    });
-    return () => cancelAnimationFrame(id);
+
+    let raf1 = 0;
+    let raf2 = 0;
+    let cancelled = false;
+
+    const markReady = async () => {
+      // Wait for layout + font metrics so Playwright doesn't print a
+      // half-painted canvas or a fallback-font layout.
+      await document.fonts.ready;
+      if (cancelled) return;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          if (!cancelled) {
+            document.body.setAttribute("data-print-ready", "true");
+          }
+        });
+      });
+    };
+
+    void markReady();
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [editor]);
 
   if (!editor) {
@@ -60,8 +67,11 @@ function PrintCanvas({ resume }: { resume: Resume }) {
 
   return (
     <div className="print-mode">
-      <div className="resume-canvas">
-        <EditorContent editor={editor} />
+      <div className="relative">
+        <PageBreakOverlay getCanvas={() => canvasRef.current} />
+        <div ref={canvasRef} className="resume-canvas">
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   );
