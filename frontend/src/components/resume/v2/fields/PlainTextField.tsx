@@ -1,0 +1,88 @@
+// frontend/src/components/resume/v2/fields/PlainTextField.tsx
+'use client';
+import { useEffect, useMemo, useRef } from 'react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { UndoRedo } from '@tiptap/extensions';
+import Text from '@tiptap/extension-text';
+import { SingleLineDocument } from '../extensions/SingleLineDocument';
+import { NoNewline } from '../extensions/NoNewline';
+import { stringToSingleLineDoc, singleLineDocToString } from './single-line-adapter';
+import { useMeasureModeSync } from './useMeasureModeSync';
+import { useResumeStore } from '../store/useResumeStore';
+import { atomFocusManager } from '../interaction/AtomFocusManager';
+import { makeOrigin } from '../store/source-of-truth';
+import type { CanvasMode, EditableField, EditorId } from '../types';
+
+declare module '@tiptap/core' {
+  interface EditorOptions {
+    editorId?: EditorId;
+  }
+}
+
+interface Props {
+  fieldKey: EditableField;
+  value: string;
+  mode: CanvasMode;
+  placeholder?: string;
+  className?: string;
+}
+
+let _editorIdCounter = 0;
+function nextEditorId(): EditorId {
+  _editorIdCounter += 1;
+  return `pt-${_editorIdCounter}`;
+}
+
+export function PlainTextField({ fieldKey, value, mode, placeholder, className }: Props) {
+  const editorIdRef = useRef<EditorId>(nextEditorId());
+  const initialDoc = useMemo(() => stringToSingleLineDoc(value), []);
+
+  const editor = useEditor({
+    extensions: [
+      SingleLineDocument,
+      Text,
+      NoNewline,
+      ...(mode === 'edit' ? [UndoRedo] : []),
+    ],
+    content: initialDoc,
+    editable: mode === 'edit',
+    immediatelyRender: false,
+    fieldKey,
+    editorId: editorIdRef.current,
+    onUpdate: mode === 'edit'
+      ? ({ editor }) => {
+          const next = singleLineDocToString(editor);
+          useResumeStore.getState().updateField(fieldKey, next, makeOrigin('tiptap', editorIdRef.current));
+        }
+      : undefined,
+  });
+
+  useMeasureModeSync(mode, editor, value, stringToSingleLineDoc);
+
+  // Edit mode: register with focus manager
+  useEffect(() => {
+    if (mode !== 'edit' || !editor) return;
+    atomFocusManager.register(fieldKey, editor);
+    return () => atomFocusManager.unregister(fieldKey);
+  }, [mode, editor, fieldKey]);
+
+  return (
+    <EditorContent
+      editor={editor}
+      className={className}
+      data-field-key={fieldKeyString(fieldKey)}
+      data-placeholder={placeholder}
+    />
+  );
+}
+
+function fieldKeyString(f: EditableField): string {
+  switch (f.kind) {
+    case 'header.name': return 'header.name';
+    case 'header.contact': return `header.contact:${f.index}`;
+    case 'section.heading': return `section.heading:${f.id}`;
+    case 'entry.title': return `entry.title:${f.id}`;
+    case 'entry.meta': return `entry.meta:${f.id}`;
+    case 'bullet.content': return `bullet.content:${f.id}`;
+  }
+}
