@@ -236,15 +236,24 @@ function paginate(
         });
         y += measuredHeights.get(atom.id)! + gap;
       }
-      pageIdx++; cursorY = 0;
       i += chain.length;
+      // ⬇️ 仅当后面还有 atom 时才推进到下一页（防尾部 phantom blank page）
+      if (i < atoms.length) {
+        pageIdx++; cursorY = 0;
+      }
     } else {
       // 翻页重试（不增 i）
       pageIdx++; cursorY = 0;
     }
   }
 
-  return { atomLayouts: result, pageCount: pageIdx + 1 };
+  // ⬇️ 用 atom 的真实 pageIndex 计算 pageCount，不是循环结束时的 pageIdx
+  // 这样防御任何分支留下的 phantom blank page
+  let maxPage = 0;
+  for (const layout of result.values()) {
+    if (layout.pageIndex > maxPage) maxPage = layout.pageIndex;
+  }
+  return { atomLayouts: result, pageCount: maxPage + 1 };
 }
 ```
 
@@ -254,7 +263,8 @@ function paginate(
 Phase 1: MEASUREMENT RENDER
   - Render <MeasurementLayer>（visibility: hidden, position: absolute, top: -10000px）
   - 所有 atoms 单列渲染，width = contentWidthPx
-  - **必须用和可见 atom 完全相同的 CSS、相同的 AtomRenderer 组件**
+  - **用同一个 AtomRenderer 组件，但 mode="measure"**
+  - mode="measure" 是必须的第三种 mode（见 § 2.3.1）
   - data-paginated="false"
 
 Phase 2: MEASURE
@@ -276,6 +286,66 @@ Phase 5: READY
 ```
 
 每次 repaginate 流程开头先 set "false"，结尾走 markPaginated() 才 set "true"。
+
+### 2.3.1 三种 mode（**hard constraint**）
+
+`AtomRenderer` 有三种 mode，**不是两种**：
+
+```ts
+type CanvasMode = 'edit' | 'export' | 'measure';
+```
+
+| mode | 用途 | TipTap editable | 副作用 |
+|------|------|----------------|--------|
+| `edit` | 编辑器主视图 | true | 全开 |
+| `export` | `/print` + PDF | false | 关 InteractionLayer，关 history，关 SlashCommand，关 BubbleMenu |
+| `measure` | MeasurementLayer 内 | false | **关全部副作用**：no store.subscribe / no atomFocusManager.register / no History / no SlashCommand / no MarkdownInputRules / no BubbleMenu / no onUpdate / no IME hooks |
+
+`measure` mode 必须保持的：
+- DOM 结构与 edit/export byte-identical（剥编辑性 attr）
+- 所有 CSS class 一致
+- TipTap 实例本身存在（这样 ProseMirror chrome `<p>` 包装等 DOM 细节一致），但所有写回 store / 注册 manager / 监听键盘的钩子都关闭
+
+```ts
+// AtomRenderer 的实现示意
+function BulletField({ bulletId, mode }: Props) {
+  const initialContent = useMemo(
+    () => store.getState().bullets[bulletId].content, [bulletId]
+  );
+
+  const editor = useEditor({
+    extensions: [
+      ...BULLET_EXTENSIONS_BASE,
+      // History / AtomKeyboardNav / SlashCommand / MarkdownInputRules
+      // 仅 mode === 'edit' 时加载
+      ...(mode === 'edit' ? BULLET_EXTENSIONS_EDIT_ONLY : []),
+    ],
+    content: initialContent,
+    editable: mode === 'edit',
+    immediatelyRender: false,
+    onUpdate: mode === 'edit'
+      ? ({ editor }) => store.getState().updateBullet(bulletId, editor.getJSON(), { ... })
+      : undefined,                              // ⬅️ measure / export 不写回
+  });
+
+  // store.subscribe 仅 mode === 'edit'
+  useEffect(() => {
+    if (mode !== 'edit' || !editor) return;
+    return store.subscribe(...);
+  }, [mode, editor, bulletId]);
+
+  // atomFocusManager.register 仅 mode === 'edit'
+  useEffect(() => {
+    if (mode !== 'edit' || !editor) return;
+    atomFocusManager.register({ kind: 'bullet.content', id: bulletId }, editor);
+    return () => atomFocusManager.unregister({ kind: 'bullet.content', id: bulletId });
+  }, [mode, editor, bulletId]);
+
+  return <EditorContent editor={editor} />;
+}
+```
+
+**测试 guard**：unit test 渲染同一个 bullet 三次（edit / export / measure），剥掉编辑性 attr 后比较 outerHTML 必须完全相同。MeasurementLayer 不应触发任何 store action。
 
 ### 2.4 重排版触发
 
@@ -307,33 +377,78 @@ ResizeObserver fire → `layoutEngine.requestRepaginate()` → 检查 compositio
 
 ```ts
 // frontend/src/components/resume/v2/tokens/layout-tokens.ts
-export const PAGE = {
+//
+// 唯一来源：CSS 字符串规格。**禁止**写 hardcoded *_PX 的 rounded int。
+// 任何 px 值通过 parseToPx() 在 normalizeTemplate() 时计算成 float。
+// 这样 layout 和 CSS 永远从同一个源出，保证 PDF 渲染没有 sub-pixel drift。
+
+export const PAGE_SPEC = {
   WIDTH: '8.5in',
   HEIGHT: '11in',
   MARGIN: { top: '0.75in', right: '0.9in', bottom: '0.75in', left: '0.9in' },
-  // 派生（编译时算）
-  WIDTH_PX: 816,
-  HEIGHT_PX: 1056,
-  CONTENT_WIDTH_PX: 643,   // 8.5 - 1.8
-  CONTENT_HEIGHT_PX: 912,  // 11 - 1.5
 } as const;
 
-export const ATOM = {
-  GAP_PX: 12,
+export const ATOM_SPEC = {
+  GAP: '12px',     // 注意是 string，不是 12 number
 } as const;
 
-export const SCREEN_GAP_PX = 16;  // 编辑模式 page 之间的灰色 gap
-export const PRINT_GAP_PX = 0;     // PDF 不能有
+export const SCREEN_GAP = '16px';  // 编辑模式 page 之间的灰色 gap
+export const PRINT_GAP = '0';      // PDF 不能有
 ```
 
-CSS 通过 CSS custom property 共享：
+```ts
+// frontend/src/components/resume/v2/layout/normalize-template.ts
+// 1in = 96 CSS px（CSS spec）
+const PX_PER_INCH = 96;
+
+function parseToPx(spec: string): number {
+  if (spec.endsWith('in')) return parseFloat(spec) * PX_PER_INCH;
+  if (spec.endsWith('px')) return parseFloat(spec);
+  if (spec.endsWith('cm')) return parseFloat(spec) * (PX_PER_INCH / 2.54);
+  throw new Error(`Unknown unit: ${spec}`);
+}
+
+// 输出 float px（不 round）
+// 8.5in → 816 (恰好整数)
+// 6.7in → 643.2 (float)
+// 11in - 0.75in - 0.75in = 9.5in → 912 (恰好整数)
+function normalizeTemplate(config: TemplateConfig): NormalizedTemplate {
+  const widthPx = parseToPx(config.page.width);   // float
+  const heightPx = parseToPx(config.page.height);
+  const margin = mapValues(config.page.margin, parseToPx);
+  return {
+    page: {
+      widthPx,
+      heightPx,
+      marginPx: margin,
+      contentWidthPx: widthPx - margin.left - margin.right,
+      contentHeightPx: heightPx - margin.top - margin.bottom,
+    },
+    atom: { gapPx: parseToPx(ATOM_SPEC.GAP) },
+    // ...
+  };
+}
+```
+
+CSS 不要硬编码派生值，统一通过 CSS variable + calc() 从同一份 string spec 派生：
 
 ```css
 :root {
-  --page-content-height-px: 912;
-  --atom-gap-px: 12;
+  --page-width: 8.5in;
+  --page-height: 11in;
+  --page-margin-top: 0.75in;
+  --page-margin-right: 0.9in;
+  --page-margin-bottom: 0.75in;
+  --page-margin-left: 0.9in;
+  --atom-gap: 12px;
+  --screen-gap: 16px;
+  /* 派生通过 calc，不预算 */
+  --page-content-width: calc(var(--page-width) - var(--page-margin-left) - var(--page-margin-right));
+  --page-content-height: calc(var(--page-height) - var(--page-margin-top) - var(--page-margin-bottom));
 }
 ```
+
+**Hard rule**：spec 文档、tokens 文件、CSS 文件中**禁止**出现 `643`、`912`、`816`、`1056` 这种"派生 px 整数"。所有派生值必须通过 `parseToPx()`（JS）或 `calc()`（CSS）从 string spec 计算。
 
 **禁止 atom 容器使用外部 margin**（用 page container 的 gap 代替）：
 
@@ -854,15 +969,20 @@ interface LayoutStrategy {
 ### 6.1 模式定义
 
 ```ts
-type CanvasMode = 'edit' | 'export';
+type CanvasMode = 'edit' | 'export' | 'measure';
 ```
 
-| | edit | export |
-|---|------|--------|
-| Store mounted | ✓ | ✗ |
-| TipTap editable | true | false |
-| InteractionLayer rendered | ✓ | ✗ |
-| 正文 DOM | 同 | 同 |
+| | edit | export | measure |
+|---|------|--------|---------|
+| Store mounted | ✓ | ✗ | ✗ |
+| TipTap editable | true | false | false |
+| InteractionLayer rendered | ✓ | ✗ | ✗ |
+| Store subscribe / focus register / IME hooks / onUpdate | ✓ | ✗ | ✗ |
+| Edit-only extensions（History/Slash/Markdown/Nav）| ✓ | ✗ | ✗ |
+| 正文 DOM | 同 | 同 | 同 |
+| 用途 | 编辑视图 | /print + PDF | MeasurementLayer 内 |
+
+详细行为见 § 2.3.1。
 
 ### 6.2 路由架构
 
@@ -886,11 +1006,21 @@ type CanvasMode = 'edit' | 'export';
 
 ### 6.3 双坐标系（screen vs print）
 
-```ts
-const SCREEN_GAP_PX = 16;
-const PRINT_GAP_PX = 0;
+Gap 值从 string spec parse（不直接写 number）：
 
-function getAtomAbsoluteCoord(atomLayout, mode, template) {
+```ts
+// frontend/src/components/resume/v2/layout/coords.ts
+import { parseToPx } from './normalize-template';
+import { SCREEN_GAP, PRINT_GAP } from '../tokens/layout-tokens';
+
+const SCREEN_GAP_PX = parseToPx(SCREEN_GAP);  // 16
+const PRINT_GAP_PX = parseToPx(PRINT_GAP);    // 0
+
+function getAtomAbsoluteCoord(
+  atomLayout: AtomLayout,
+  mode: CanvasMode,
+  template: NormalizedTemplate,
+) {
   const gap = mode === 'edit' ? SCREEN_GAP_PX : PRINT_GAP_PX;
   const pageStride = template.page.heightPx + gap;
   return {
@@ -966,28 +1096,67 @@ async def generate_pdf(resume_id: str) -> bytes:
         return pdf
 ```
 
-### 6.7 Flush pending save before export
+### 6.7 Flush pending save before export（client-side protocol）
+
+**关键事实**：dirty state + debounce 计时器都活在浏览器 store 里，**后端无法感知**客户端是否还有未保存。所以 flush **必须在客户端**完成、并**等到 ACK** 才能跳转 PDF endpoint。
 
 ```ts
+// store 维护 saveAck（每次 backend save 成功后 resolve）
+type FlushState = {
+  pending: boolean;             // debounce 是否在排队
+  inflightPromise: Promise<void> | null;  // 当前 in-flight POST
+  lastSavedVersion: number;     // 后端 ACK 的 schema version
+};
+
+flushSave: async () => {
+  const s = get();
+  // 1. 取消 debounce 计时器，立即触发一次 save
+  if (s.flush.pending) cancelDebounce();
+  // 2. 等当前 in-flight 完成
+  if (s.flush.inflightPromise) await s.flush.inflightPromise;
+  // 3. 如果在 await 期间又 dirty，递归再 flush
+  if (hasDirtyState()) {
+    forceSaveNow();
+    await get().flush.inflightPromise;
+  }
+  // 4. 验证 lastSavedVersion === currentDocVersion
+  if (get().flush.lastSavedVersion !== get().resumeDocVersion) {
+    throw new Error('Save did not converge — refusing to export stale state');
+  }
+}
+```
+
+```ts
+// 编辑器顶栏 Export 按钮
 async function handleExportClick() {
   setExporting(true);
   try {
     await useResumeStore.getState().flushSave();
+    // 至此后端已经持久化最新 resume；安全跳 PDF endpoint
     window.location.href = `/api/resume/${resumeId}/pdf`;
+  } catch (e) {
+    showToast(`Couldn't save before export: ${e.message}. Try again in a moment.`);
   } finally {
     setExporting(false);
   }
 }
 ```
 
+**Backend `/api/resume/:id/pdf` 不做 flush 检查** —— backend 没法访问客户端 store。它只读最近一次 saved 的 resume 然后调 Playwright。如果客户端逻辑上漏了 flush（bug），backend 拿到的就是旧 resume，导出旧版本（降级行为，至少不炸）。
+
+**Alternative（未来 v2.1+）**：PDF endpoint 改成 POST，body 带 resume snapshot 而不是 resume_id。这样客户端可以把当前 in-memory state 直接发过去，不依赖后端读文件。v2 不做这个，因为现有 GET endpoint 简单且 flush 协议已经够。
+
 ### 6.8 data-paginated 由 canvas 自己拥有
+
+**Hard rule**：每次 effect run 开头**无条件** set "false"。否则 layout 变化但 ready 仍为 true 时，旧的 "true" 会持续到 fonts/RAF 等待结束，Playwright 可能在等待窗口里抓到旧 layout。
 
 ```tsx
 useEffect(() => {
-  if (!ready) {
-    document.body.dataset.paginated = "false";
-    return;
-  }
+  // ⬅️ 无条件先设 false（不管 ready 状态）
+  document.body.dataset.paginated = "false";
+
+  if (!ready) return;
+
   let cancelled = false;
   (async () => {
     await document.fonts.ready;
@@ -997,7 +1166,7 @@ useEffect(() => {
     document.body.dataset.paginated = "true";
   })();
   return () => { cancelled = true; };
-}, [ready, layout]);
+}, [ready, layout]);  // layout 变化也触发（即使 ready 一直是 true）
 ```
 
 ### 6.9 一致性的物理保证
@@ -1129,7 +1298,8 @@ async def get_resume(resume_id: str):
 ### 7.4 一次性迁移脚本
 
 ```python
-# backend/services/migration_v1_to_v2.py
+# api/services/migration_v1_to_v2.py
+# (作为 module 调用：python -m api.services.migration_v1_to_v2)
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dry-run', action='store_true', default=True)
@@ -1160,8 +1330,8 @@ def main():
 
 执行：
 ```bash
-python -m backend.services.migration_v1_to_v2 --dry-run
-python -m backend.services.migration_v1_to_v2 --apply
+python -m api.services.migration_v1_to_v2 --dry-run
+python -m api.services.migration_v1_to_v2 --apply
 # 验证 resumes_v2/ → 切后端读路径（独立 commit）→ v2 完工 1 周后清理 resumes/
 ```
 
@@ -1174,18 +1344,63 @@ python -m backend.services.migration_v1_to_v2 --apply
 
 ### 7.6 实施前 Inventory（task 0）
 
-```bash
-ls frontend/src/app/resume/[id]/page.tsx
-ls frontend/src/app/resume/[id]/print/page.tsx
-ls frontend/src/app/resume/[id]/print/PrintCanvasClient.tsx
-find backend/ -name "*.py" | xargs grep -l "resume\|pdf" | head
-ls saved_sessions/resumes/
+**项目实际目录结构（已验证 2026-04-26）**：
 
-# AI 工具盘点
-grep -rn "tool_call\|orchestrator\|ai_rewrite\|rewriteBullet" backend/ frontend/
+```
+CareerOps-Pro/
+├── api/                        # FastAPI 入口
+│   ├── main.py
+│   ├── routes/                 # ⬅️ resume.py 在这里
+│   │   ├── resume.py
+│   │   ├── humanize.py
+│   │   ├── review.py
+│   │   └── walkthrough.py
+│   ├── services/               # ⬅️ AI orchestrator + tools 在这里
+│   │   ├── ai_orchestrator.py
+│   │   ├── ai_tools.py
+│   │   ├── resume_store.py     # 现有 resume CRUD
+│   │   └── snapshot_store.py
+│   ├── models/
+│   └── converters/
+├── services/                   # 顶级 services（不在 api/ 下）
+│   ├── resume_editor.py
+│   ├── resume_parser.py
+│   ├── resume_analyzer.py
+│   └── ...
+├── utils/
+│   ├── chrome_pdf.py           # ⬅️ Playwright PDF 入口
+│   ├── pdf_utils.py
+│   └── session_manager.py
+├── saved_sessions/
+│   └── resumes/                # ⬅️ 当前 resume JSON 文件
+└── frontend/src/
+    ├── app/resume/[id]/
+    │   ├── page.tsx            # ⬅️ 编辑器路由入口
+    │   └── print/
+    │       ├── page.tsx
+    │       └── PrintCanvasClient.tsx
+    └── components/resume/      # ⬅️ v1 编辑器代码
 ```
 
-任何 spec 引用的现有路径在 task 0 都要先 verify。AI 工具入口要逐一决策（adapter / 隐藏入口）。
+**Task 0 verify 命令**：
+
+```bash
+# 必须存在
+ls /Users/fred/Desktop/CareerOps-Pro/api/routes/resume.py
+ls /Users/fred/Desktop/CareerOps-Pro/api/services/resume_store.py
+ls /Users/fred/Desktop/CareerOps-Pro/api/services/ai_orchestrator.py
+ls /Users/fred/Desktop/CareerOps-Pro/api/services/ai_tools.py
+ls /Users/fred/Desktop/CareerOps-Pro/utils/chrome_pdf.py
+ls /Users/fred/Desktop/CareerOps-Pro/frontend/src/app/resume/[id]/page.tsx
+ls /Users/fred/Desktop/CareerOps-Pro/frontend/src/app/resume/[id]/print/page.tsx
+ls /Users/fred/Desktop/CareerOps-Pro/saved_sessions/resumes/
+
+# AI 工具盘点（决策 adapter vs 隐藏入口）
+grep -rn "tool_call\|tool_calls\|ai_orchestrator\|rewrite_bullet\|aiRewrite\|rewriteBullet" \
+  api/ services/ frontend/src/
+```
+
+如果任何路径与上面不符，task 0 要先修正 spec / plan，不能盲目按 spec 写代码。
 
 ---
 
@@ -1347,9 +1562,21 @@ type EntryBlock = {
 
 type BulletBlock = {
   id: BlockId;
-  content: ProseMirrorInline[];   // TipTap 直接吃
+  content: ProseMirrorDoc;         // 完整 TipTap doc，setContent 直接吃
   tags?: string[];                 // roadmap 用
   evidence_refs?: string[];        // roadmap 用
+};
+
+// TipTap bullet 用 Document + Paragraph + Text + marks 配置
+// → bullet content 必须是 doc-shaped，不是裸 inline 数组
+type ProseMirrorDoc = {
+  type: 'doc';
+  content: ProseMirrorParagraph[];  // 通常 1 个 paragraph，shift+enter 时多个
+};
+
+type ProseMirrorParagraph = {
+  type: 'paragraph';
+  content?: ProseMirrorInline[];
 };
 
 type ProseMirrorInline = {
