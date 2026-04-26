@@ -41,6 +41,9 @@ app.include_router(walkthrough_router, prefix="/api/walkthrough", tags=["walkthr
 app.include_router(humanize_router, prefix="/api/humanize", tags=["humanize"])
 
 
+from api.services import ai_tools
+ai_tools.register_all()
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}

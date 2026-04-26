@@ -211,3 +211,29 @@ def test_variant_forks_a_new_independent_copy(client):
     resume_store.save(variant)
     base = resume_store.get("base1")
     assert len(base.doc["content"]) == 1
+
+
+def test_rewrite_bullet_endpoint(client, monkeypatch):
+    _seed_resume("r1", "T")
+    from api.services import ai_tools
+    monkeypatch.setattr(ai_tools, "_call_llm", lambda prompt, text: "Rewritten: " + text)
+    ai_tools.register_all()
+
+    resp = client.post(
+        "/api/resume/r1/ai/rewrite-bullet",
+        json={"bullet_text": "Built APIs", "preset": "default"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["rewritten"].startswith("Rewritten:")
+
+
+def test_rewrite_bullet_endpoint_propagates_error(client):
+    _seed_resume("r2", "T")
+    from api.services import ai_tools
+    ai_tools.register_all()
+
+    resp = client.post(
+        "/api/resume/r2/ai/rewrite-bullet",
+        json={"bullet_text": "", "preset": "default"},
+    )
+    assert resp.status_code == 422

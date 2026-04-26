@@ -254,3 +254,33 @@ async def create_variant(resume_id: str, body: VariantRequest) -> Resume:
     )
     resume_store.save(variant)
     return variant
+
+
+from api.models.resume import ToolCall
+
+
+class RewriteBulletRequest(BaseModel):
+    bullet_text: str
+    preset: str = "default"
+    custom_instructions: Optional[str] = None  # use Optional for Python 3.9 compat
+
+
+@router.post("/{resume_id}/ai/rewrite-bullet")
+async def rewrite_bullet(resume_id: str, body: RewriteBulletRequest) -> dict:
+    from api.services import ai_orchestrator
+
+    results = ai_orchestrator.execute_tool_calls(
+        resume_id=resume_id,
+        calls=[ToolCall(
+            name="rewrite_bullet",
+            arguments={
+                "bullet_text": body.bullet_text,
+                "preset": body.preset,
+                "custom_instructions": body.custom_instructions,
+            },
+        )],
+    )
+    res = results[0]
+    if not res.success:
+        raise HTTPException(status_code=422, detail=res.error or "rewrite failed")
+    return res.data or {}
