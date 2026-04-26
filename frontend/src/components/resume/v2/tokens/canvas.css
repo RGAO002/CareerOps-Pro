@@ -1,0 +1,27 @@
+/* frontend/src/components/resume/v2/tokens/canvas.css */
+
+:root {
+  --page-width: 8.5in;
+  --page-height: 11in;
+  --page-margin-top: 0.75in;
+  --page-margin-right: 0.9in;
+  --page-margin-bottom: 0.75in;
+  --page-margin-left: 0.9in;
+  --atom-gap: 12px;
+  --screen-gap: 16px;
+
+  --page-content-width:
+    calc(var(--page-width) - var(--page-margin-left) - var(--page-margin-right));
+  --page-content-height:
+    calc(var(--page-height) - var(--page-margin-top) - var(--page-margin-bottom));
+}
+
+[data-canvas-root] {
+  position: relative;
+  width: var(--page-width);
+  font-family: var(--font-resume), Inter, sans-serif;
+}
+
+[data-atom-content] {
+  margin: 0 !important;        /* hard rule — § 2.5 */
+}
