@@ -65,20 +65,26 @@ export function AIRewriteBulletPopover({ resumeId, editor }: Props) {
     setLoading(false);
   }
 
-  function accept() {
+  async function accept() {
     if (!suggestion || !req || !editor) return;
+    // Snapshot the pre-edit state FIRST so this AI rewrite is undoable even if
+    // the edit succeeds and a later network blip drops the snapshot post-call.
+    try {
+      await resumeApi.createSnapshot(resumeId, {
+        trigger: "ai_edit",
+        diff_summary: `Pre-AI-rewrite checkpoint (preset: ${preset})`,
+      });
+    } catch {
+      // If snapshot fails, abort rather than apply an irreversible edit
+      setError("Couldn't create safety snapshot — try again");
+      return;
+    }
     editor
       .chain()
       .focus()
       .deleteRange({ from: req.from + 1, to: req.to - 1 })
       .insertContentAt(req.from + 1, [{ type: "text", text: suggestion }])
       .run();
-    resumeApi
-      .createSnapshot(resumeId, {
-        trigger: "ai_edit",
-        diff_summary: `Rewrote bullet via ${preset}`,
-      })
-      .catch(() => {/* silent */});
     close();
   }
 
