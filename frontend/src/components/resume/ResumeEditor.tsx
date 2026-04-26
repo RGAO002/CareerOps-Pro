@@ -62,6 +62,8 @@ export function ResumeEditor({ id }: { id: string }) {
 
   // Debounced PUT on doc changes
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSnapshotDocRef = useRef<string>("");
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleChange = (newDoc: Resume["doc"]) => {
     setDoc(newDoc);
     setSaveStatus("saving");
@@ -74,6 +76,22 @@ export function ResumeEditor({ id }: { id: string }) {
         .then(() => markSaved())
         .catch(() => setSaveStatus("error"));
     }, AUTOSAVE_DEBOUNCE_MS);
+
+    // Schedule auto-snapshot 30s after last change, only if doc actually differs
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      const docStr = JSON.stringify(newDoc);
+      if (docStr !== lastSnapshotDocRef.current) {
+        resumeApi
+          .createSnapshot(id, { trigger: "auto" })
+          .then(() => {
+            lastSnapshotDocRef.current = docStr;
+          })
+          .catch(() => {
+            /* silent — snapshots are best-effort */
+          });
+      }
+    }, 30_000);
   };
 
   // Page context for AI panel
