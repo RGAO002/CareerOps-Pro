@@ -175,3 +175,17 @@
     text-decoration: underline !important;
   }
 }
+
+/* ========== Empty state placeholders ========== */
+.resume-canvas input::placeholder {
+  color: #cbd5e1;
+  font-style: italic;
+}
+.resume-bullet:empty::before,
+.resume-bullet > .ProseMirror-trailingBreak:only-child::after {
+  content: "Type a bullet…";
+  color: #cbd5e1;
+  font-style: italic;
+  position: absolute;
+  pointer-events: none;
+}
