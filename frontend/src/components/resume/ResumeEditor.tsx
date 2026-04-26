@@ -2,6 +2,7 @@
 "use client";
 
 import type { Editor } from "@tiptap/core";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { usePageContext } from "@/hooks/usePageContext";
@@ -10,6 +11,7 @@ import { useResumeEditorStore } from "@/stores/resumeEditor";
 
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorTopBar } from "./EditorTopBar";
+import { ImportBanner } from "./ImportBanner";
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
 
@@ -26,6 +28,17 @@ export function ResumeEditor({ id }: { id: string }) {
 
   const [editor, setEditor] = useState<Editor | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [showBanner, setShowBanner] = useState(searchParams.get("just_imported") === "1");
+
+  function dismissBanner() {
+    setShowBanner(false);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("just_imported");
+    router.replace(`/resume/${id}${params.toString() ? "?" + params.toString() : ""}`);
+  }
 
   // Load current + list of all
   useEffect(() => {
@@ -102,6 +115,7 @@ export function ResumeEditor({ id }: { id: string }) {
         lastSavedAt={lastSavedAt}
         editor={editor}
       />
+      {showBanner && <ImportBanner onDismiss={dismissBanner} />}
       <EditorCanvas doc={current.doc} onChange={handleChange} onReady={setEditor} />
     </div>
   );
