@@ -1,0 +1,107 @@
+// frontend/src/components/resume/v2/store/actions/structural.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { useResumeStore } from '../useResumeStore';
+import { makeOrigin, _resetTransactionCounter } from '../source-of-truth';
+import { moveSection } from './moveSection';
+import { moveEntry } from './moveEntry';
+import { moveBullet } from './moveBullet';
+import { insertBullet, insertEntry, insertSection } from './insertBlock';
+import { deleteBullet, deleteEntry, deleteSection } from './deleteBlock';
+import { duplicateBullet, duplicateEntry, duplicateSection } from './duplicateBlock';
+import type { ResumeDoc } from '../../types';
+
+const RESUME: ResumeDoc = {
+  schema_version: 2, id: 'r', title: 't', template_id: 'minimal-single-column',
+  header: { id: 'h', name: 'A', contact_lines: [] },
+  sections: [
+    { id: 's1', role: 'experience', heading: 'Exp', entries: [
+      { id: 'e1', title: 'E1', meta: 'M', bullets: [
+        { id: 'b1', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
+      ] },
+    ] },
+    { id: 's2', role: 'skills', heading: 'Skills', entries: [] },
+  ],
+  metadata: { created_at: '', updated_at: '', target_company: null, target_role: null, parent_id: null },
+};
+
+beforeEach(() => {
+  useResumeStore.setState({ resume: structuredClone(RESUME), bulletMeta: {} });
+  _resetTransactionCounter();
+});
+
+describe('move actions', () => {
+  it('moveSection reorders', () => {
+    moveSection('s1', null, makeOrigin('drag-reorder'));
+    const ids = useResumeStore.getState().resume!.sections.map(s => s.id);
+    expect(ids).toEqual(['s2', 's1']);
+  });
+  it('moveEntry across sections', () => {
+    moveEntry('e1', 's2', 0, makeOrigin('drag-reorder'));
+    expect(useResumeStore.getState().resume!.sections[0].entries).toHaveLength(0);
+    expect(useResumeStore.getState().resume!.sections[1].entries[0].id).toBe('e1');
+  });
+  it('moveBullet within entry preserves order semantics', () => {
+    insertBullet('e1', 1, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
+    const r = useResumeStore.getState().resume!;
+    const newBulletId = r.sections[0].entries[0].bullets[1].id;
+    moveBullet(newBulletId, 'e1', 0, makeOrigin('drag-reorder'));
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].id).toBe(newBulletId);
+  });
+});
+
+describe('insert actions', () => {
+  it('insertSection adds at end when beforeId=null', () => {
+    insertSection('education', null, makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections.map(s => s.role))
+      .toEqual(['experience', 'skills', 'education']);
+  });
+  it('insertEntry assigns a new uuid', () => {
+    const id = insertEntry('s1', 0, makeOrigin('tiptap'));
+    expect(id).toBeTruthy();
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].id).toBe(id);
+  });
+  it('insertBullet at index', () => {
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets).toHaveLength(2);
+  });
+});
+
+describe('delete actions', () => {
+  it('deleteSection removes by id', () => {
+    deleteSection('s1', makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections.map(s => s.id)).toEqual(['s2']);
+  });
+  it('deleteEntry removes by id', () => {
+    deleteEntry('e1', makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections[0].entries).toEqual([]);
+  });
+  it('deleteBullet removes by id', () => {
+    deleteBullet('b1', makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets).toEqual([]);
+  });
+});
+
+describe('duplicate actions reassign all ids', () => {
+  it('duplicateBullet new id, content equal', () => {
+    const newId = duplicateBullet('b1', makeOrigin('tiptap'))!;
+    expect(newId).not.toBe('b1');
+    const bullets = useResumeStore.getState().resume!.sections[0].entries[0].bullets;
+    expect(bullets).toHaveLength(2);
+    expect(bullets[1].id).toBe(newId);
+  });
+  it('duplicateEntry recursively reassigns bullet ids', () => {
+    const newEntryId = duplicateEntry('e1', makeOrigin('tiptap'))!;
+    const entries = useResumeStore.getState().resume!.sections[0].entries;
+    expect(entries).toHaveLength(2);
+    expect(entries[1].id).toBe(newEntryId);
+    expect(entries[1].bullets[0].id).not.toBe('b1');
+  });
+  it('duplicateSection recursively reassigns entry + bullet ids', () => {
+    const newSectionId = duplicateSection('s1', makeOrigin('tiptap'))!;
+    const sections = useResumeStore.getState().resume!.sections;
+    expect(sections).toHaveLength(3);
+    expect(sections[1].id).toBe(newSectionId);
+    expect(sections[1].entries[0].id).not.toBe('e1');
+    expect(sections[1].entries[0].bullets[0].id).not.toBe('b1');
+  });
+});
