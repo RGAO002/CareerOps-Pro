@@ -2,7 +2,8 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect } from "react";
+import Script from "next/script";
+import { useEffect, useState } from "react";
 
 import { createResumeEditorExtensions } from "@/components/resume/extensions/createResumeEditor";
 import type { Resume } from "@/lib/resumeApi";
@@ -10,71 +11,108 @@ import type { Resume } from "@/lib/resumeApi";
 import "@/components/resume/resume-editor.css";
 import "./print.css";
 
+declare global {
+  interface Window {
+    PagedPolyfill?: {
+      preview: (
+        content?: HTMLElement | string,
+        stylesheets?: string[],
+        renderTo?: HTMLElement,
+      ) => Promise<unknown>;
+    };
+    PagedConfig?: {
+      auto: boolean;
+      content?: HTMLElement | string;
+      before?: () => void;
+      after?: (flow: { total: number }) => void;
+    };
+  }
+}
+
 export function PrintCanvasClient({ resume }: { resume: Resume }) {
   return <PrintCanvas resume={resume} />;
 }
 
+/**
+ * Headless Chromium loads this via Playwright. We render the resume via
+ * TipTap (editable=false) into the body, then load Paged.js polyfill from
+ * /public/paged.polyfill.js. The polyfill rewrites body content into
+ * <div class="pagedjs_page"> page cards. Playwright waits for the
+ * polyfill's "after" hook to fire, then page.pdf() captures the
+ * paginated DOM.
+ *
+ * Why script-tag (not npm import): pagedjs's npm ESM source crashes
+ * inside Turbopack with `TypeError: contains.call is not a function`
+ * (vendored es5-ext polyfill ships unbundled). The pre-built UMD polyfill
+ * loaded via <script> sidesteps the bundler entirely and Just Works.
+ */
 function PrintCanvas({ resume }: { resume: Resume }) {
   const editor = useEditor({
     ...createResumeEditorExtensions(
       resume.doc as Parameters<typeof createResumeEditorExtensions>[0],
     ),
     editable: false,
-    // Even though page.tsx is a Server Component, this child Client Component
-    // still SSRs in App Router. immediatelyRender: true throws on the server.
-    // The data-print-ready signal below ensures Playwright waits for the
-    // post-hydration render anyway.
     immediatelyRender: false,
   });
 
-  // Signal to Playwright (or any waiting tool) that the canvas is fully
-  // rendered. Playwright waits for this attribute via wait_for_selector.
+  const [editorReady, setEditorReady] = useState(false);
+
   useEffect(() => {
     if (!editor) return;
-
-    let raf1 = 0;
-    let raf2 = 0;
-    let cancelled = false;
-
-    const markReady = async () => {
-      // Wait for layout + font metrics so Playwright doesn't print a
-      // half-painted canvas or a fallback-font layout.
-      await document.fonts.ready;
-      if (cancelled) return;
-      raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          if (!cancelled) {
-            document.body.setAttribute("data-print-ready", "true");
-          }
-        });
-      });
-    };
-
-    void markReady();
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
+    setEditorReady(true);
   }, [editor]);
 
-  if (!editor) {
-    return <div style={{ padding: 24, fontFamily: "sans-serif" }}>Preparing…</div>;
-  }
+  // Configure Paged.js BEFORE the script loads (the polyfill checks for
+  // window.PagedConfig at startup). auto: false means it won't run on
+  // DOMContentLoaded — we trigger it manually after TipTap is ready.
+  useEffect(() => {
+    window.PagedConfig = {
+      auto: false,
+      after: (flow) => {
+        const total = flow?.total ?? 0;
+        document.body.setAttribute("data-paged-pages", String(total));
+        document.body.setAttribute("data-paged-ready", "true");
+      },
+    };
+  }, []);
 
-  // No PageBreakOverlay here. The overlay is editor-only chrome (visual
-  // page cards + JS push using a 1072px stride that includes the visible
-  // gap). Chromium's PDF print uses a 1056px stride with no gap, so the
-  // overlay's pushes would be off by 16px per page → empty trailing PDF
-  // page. For PDF, we let Chromium paginate natively, using
-  // `break-inside: avoid` CSS rules in resume-editor.css to keep entries
-  // and bullets from splitting across pages.
+  // Once both the editor has rendered AND Paged.js polyfill is loaded,
+  // trigger pagination. We extract the editor's HTML and feed it to
+  // Paged.js as a fresh fragment — NOT as the .resume-canvas element
+  // itself. The .resume-canvas has sizing constraints (8.5in width,
+  // padding, min-height) that confuse Paged.js's flow algorithm; using
+  // a bare fragment lets Paged.js apply @page sizing cleanly.
+  const [polyfillLoaded, setPolyfillLoaded] = useState(false);
+  useEffect(() => {
+    if (!editorReady || !polyfillLoaded || !editor) return;
+    if (!window.PagedPolyfill) return;
+
+    // Build a fragment that's just the editor's nested content (header +
+    // sections), wrapped in a class hook for the print CSS to style.
+    const fragment = document.createElement("div");
+    fragment.className = "paged-source";
+    fragment.innerHTML = editor.getHTML();
+
+    // Hide the source TipTap canvas so users (or Chromium's PDF) only
+    // see the paginated copy.
+    const sourceWrapper = document.querySelector(".print-mode") as HTMLElement | null;
+    if (sourceWrapper) sourceWrapper.style.display = "none";
+
+    void window.PagedPolyfill.preview(fragment, [], document.body);
+  }, [editorReady, polyfillLoaded, editor]);
+
   return (
-    <div className="print-mode">
-      <div className="resume-canvas">
-        <EditorContent editor={editor} />
+    <>
+      <Script
+        src="/paged.polyfill.js"
+        strategy="afterInteractive"
+        onLoad={() => setPolyfillLoaded(true)}
+      />
+      <div className="print-mode">
+        <div className="resume-canvas">
+          {editor && <EditorContent editor={editor} />}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

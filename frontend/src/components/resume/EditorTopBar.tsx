@@ -2,7 +2,7 @@
 "use client";
 
 import type { Editor } from "@tiptap/core";
-import { Download, History as HistoryIcon } from "lucide-react";
+import { Download, Eye, History as HistoryIcon } from "lucide-react";
 import { useState } from "react";
 
 import { resumeApi } from "@/lib/resumeApi";
@@ -10,6 +10,7 @@ import type { Resume, ResumeSummary } from "@/lib/resumeApi";
 
 import { FormatToolbar } from "./FormatToolbar";
 import { NewVariantModal } from "./NewVariantModal";
+import { PreviewPDFModal } from "./PreviewPDFModal";
 import { ResumeDropdown } from "./ResumeDropdown";
 import { SaveBadge } from "./SaveBadge";
 
@@ -31,6 +32,7 @@ export function EditorTopBar({
   onOpenHistory,
 }: Props) {
   const [showNewVariant, setShowNewVariant] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const tailoringLabel =
     current.target_company && current.target_role
@@ -94,6 +96,16 @@ export function EditorTopBar({
           History
         </button>
 
+        <button
+          type="button"
+          onClick={() => setShowPreview(true)}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100"
+          title="Preview paginated PDF"
+        >
+          <Eye className="size-3.5" strokeWidth={2} />
+          Preview
+        </button>
+
         <a
           href={`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/api/resume/${current.id}/pdf`}
           download
@@ -111,6 +123,10 @@ export function EditorTopBar({
           parentTitle={current.title}
           onClose={() => setShowNewVariant(false)}
         />
+      )}
+
+      {showPreview && (
+        <PreviewPDFModal resumeId={current.id} onClose={() => setShowPreview(false)} />
       )}
     </>
   );

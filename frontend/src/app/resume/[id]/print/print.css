@@ -1,82 +1,190 @@
 /* frontend/src/app/resume/[id]/print/print.css
-   Stylesheet for the dedicated /resume/[id]/print route. Strips the
-   editor's interactive chrome so the canvas can be printed cleanly. */
+   Stylesheet for /resume/[id]/print. Paged.js polyfill paginates the
+   body content into multiple .pagedjs_page cards, applying the @page
+   rule below for size + margins + break behavior. */
 
 html,
 body {
   margin: 0;
   padding: 0;
-  background: white;
+  background: #f3f4f6; /* neutral page-bg around the page cards */
 }
 
-/* Inherit the editor's base resume-canvas styles, just strip the on-screen
-   chrome (margin, transparency, z-index, fake page-card stack, etc.).
+/* Top-level @page rule. Paged.js reads this to decide page size and
+   per-page margins. Each pagedjs_page card gets these dimensions, and
+   each page's printable content area is the page minus the margin. */
+@page {
+  size: Letter;
+  margin: 0.75in 0.9in;
+}
 
-   Critically: zero out the canvas's vertical padding. The editor canvas has
-   0.75in top/bottom padding ONCE (only at the very top/bottom of the whole
-   document), but for PDF we want EVERY page to have a top/bottom margin.
-   We achieve that via Chromium's per-page margin in chrome_pdf.py
-   (page.pdf margin: top/bottom = 0.75in). Keep horizontal padding so
-   the content stays at the same column width as the editor view. */
+/* The .resume-canvas wrapper is what TipTap renders into. Paged.js
+   takes its CONTENTS and flows them across multiple page cards. The
+   canvas itself is just a container — no padding/background of its own
+   (those would compete with @page's per-page inset). */
 .print-mode .resume-canvas {
   margin: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  background: white !important;
+  padding: 0 !important;
+  background: transparent !important;
   position: static !important;
   z-index: auto !important;
   box-shadow: none !important;
   min-height: 0 !important;
 }
 
-/* Hide editor-only chrome that the regular EditorCanvas adds — page-card
-   stack, page indicators, hover affordance buttons, drag handles. None of
-   these belong in the rendered/printed output. */
+/* Each Paged.js page card — Google-Docs-style with shadow + gap between. */
+.pagedjs_page {
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  margin: 0 auto 16px auto !important;
+}
+.pagedjs_pages {
+  padding: 24px 0;
+}
+
+/* Apply resume styles to the content Paged.js paginated. The resume CSS
+   is scoped to .resume-canvas; we mirror those selectors against the
+   .paged-source class that wraps the editor HTML fragment we hand to
+   Paged.js. Each .pagedjs_page contains pieces of .paged-source's
+   content after pagination, so we target them too. */
+.pagedjs_page .resume-name,
+.paged-source .resume-name {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+.pagedjs_page .resume-header,
+.paged-source .resume-header {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.pagedjs_page .resume-contact-line,
+.paged-source .resume-contact-line {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+.pagedjs_page .resume-section,
+.paged-source .resume-section {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  margin-top: 1.1rem;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.pagedjs_page .resume-section-heading,
+.paged-source .resume-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.pagedjs_page .resume-entry,
+.paged-source .resume-entry {
+  margin-bottom: 0.85rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.pagedjs_page .resume-entry-title,
+.paged-source .resume-entry-title {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.pagedjs_page .resume-entry-meta,
+.paged-source .resume-entry-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+}
+.pagedjs_page .resume-entry-bullets,
+.paged-source .resume-entry-bullets {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.pagedjs_page .resume-bullet,
+.paged-source .resume-bullet {
+  position: relative;
+  padding-left: 1rem;
+  margin-bottom: 0.25rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.pagedjs_page .resume-bullet::before,
+.paged-source .resume-bullet::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+.pagedjs_page strong, .paged-source strong { color: #111827; font-weight: 600; }
+.pagedjs_page em, .paged-source em { font-style: italic; }
+.pagedjs_page a, .paged-source a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
+
+/* Hide editor-only chrome inside the rendered content. */
 .print-mode .page-card-stack,
 .print-mode .page-indicators,
 .print-mode .group\/affordance > div[contenteditable="false"]:not(input) {
   display: none !important;
 }
 
-/* Hide placeholder text in inputs so empty fields don't show "Date · Location"
-   in the printed output. (For the editor view itself, we apply the same rule
-   only when the input isn't focused — see resume-editor.css.) */
-.print-mode .resume-canvas input::placeholder {
+/* Hide placeholders in print/preview. */
+.print-mode .resume-canvas input::placeholder,
+.pagedjs_page input::placeholder {
   color: transparent !important;
 }
-/* Empty entry-meta inputs collapse entirely so they don't reserve a line. */
 .print-mode .resume-canvas input.resume-entry-meta:placeholder-shown,
-.print-mode .resume-canvas input.resume-entry-title:placeholder-shown {
+.print-mode .resume-canvas input.resume-entry-title:placeholder-shown,
+.pagedjs_page input.resume-entry-meta:placeholder-shown,
+.pagedjs_page input.resume-entry-title:placeholder-shown {
   display: none !important;
 }
 
-/* Print media. Chromium DOES enter @media print during page.pdf(), so the
-   rules below DO fire when we generate a PDF. The @page rule here MUST
-   match what chrome_pdf.py asks page.pdf() for, otherwise the CSS @page
-   wins and our per-page margin is silently zeroed. */
+/* CRITICAL: resume-editor.css's @media print block hides EVERYTHING in
+   body except .resume-canvas (it's the legacy "print just the canvas"
+   approach). On the Paged.js path, the visible content lives in
+   .pagedjs_page cards, NOT .resume-canvas — so that hide rule blanks
+   the entire PDF. Re-show the paged content with higher specificity. */
 @media print {
   @page {
     size: Letter;
-    /* Per-page top/bottom whitespace; horizontal margin comes from the
-       canvas's own 0.9in horizontal padding so column width stays the
-       same as the editor view. Keep in sync with utils/chrome_pdf.py. */
-    margin: 0.75in 0;
+    margin: 0;  /* Paged.js's per-page @page above already insets content */
   }
 
-  /* The shared editor print CSS hides every non-input
-     [contenteditable="false"] node. In this read-only TipTap route, the real
-     .ProseMirror document root is also contenteditable=false, so that rule
-     blanks the exported PDF. Re-show the document, then keep editor chrome
-     hidden with the narrower affordance selectors above. */
-  .print-mode .resume-canvas [contenteditable="false"] {
-    display: revert !important;
+  body *, .pagedjs_page, .pagedjs_page * {
+    visibility: visible !important;
   }
-
-  .print-mode .resume-canvas .ProseMirror {
-    display: block !important;
-  }
-
-  .print-mode .group\/affordance > div[contenteditable="false"]:not(input) {
-    display: none !important;
+  /* Hide the source TipTap canvas — we already display:none'd its wrapper
+     from JS but be defensive. */
+  .print-mode > .resume-canvas, .print-mode > .resume-canvas * {
+    visibility: hidden !important;
   }
 }
