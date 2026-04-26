@@ -105,34 +105,192 @@ def test_post_creates_blank_resume(client):
     assert resume_store.get(body["id"]) is not None
 
 
-def test_parse_pdf_creates_resume(client, monkeypatch):
-    """Mock the parser so the test doesn't need a real LLM."""
+# --- /parse tests ---
+#
+# IMPORTANT: services.resume_parser.parse_resume and parse_resume_from_image
+# both return WRAPPED responses: {"success": bool, "data": {...}, "error": str}.
+# Earlier versions of these tests mocked them to return the data dict directly,
+# which masked a real unwrap bug in /parse. Always mock with the wrapped shape.
+
+_FAKE_LEGACY = {
+    "name": "Test User",
+    "contact": ["test@example.com"],
+    "experience": [
+        {"company": "Acme", "role": "Eng", "date": "2024", "bullets": ["Built X"]}
+    ],
+}
+
+
+def _post_pdf(client, filename="test.pdf"):
+    return client.post(
+        "/api/resume/parse",
+        files={"file": (filename, io.BytesIO(b"%PDF-1.4\n..."), "application/pdf")},
+    )
+
+
+def test_parse_default_uses_vision(client, monkeypatch):
+    """By default /parse should call parse_resume_from_image (vision), not text parser.
+
+    Default is intentional — text extraction from fancy resume PDFs (Canva,
+    multi-column templates) is unreliable. See comment in api/routes/resume.py.
+    """
     from api.routes import resume as routes
 
-    def fake_parse(text: str, model_choice: str, api_key: str) -> dict:
-        return {
-            "name": "Test User",
-            "contact": ["test@example.com"],
-            "experience": [
-                {"company": "Acme", "role": "Eng", "date": "2024", "bullets": ["Built X"]}
-            ],
-        }
+    text_calls: list = []
+    vision_calls: list = []
 
-    monkeypatch.setattr(routes, "parse_resume", fake_parse)
     monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "Some PDF text")
     monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
-
-    fake_pdf = b"%PDF-1.4\n...not really a pdf..."
-    resp = client.post(
-        "/api/resume/parse",
-        files={"file": ("test.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+    monkeypatch.setattr(
+        routes, "parse_resume",
+        lambda *a, **k: text_calls.append(a) or {"success": True, "data": _FAKE_LEGACY},
     )
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: vision_calls.append(a) or {"success": True, "data": _FAKE_LEGACY},
+    )
+    monkeypatch.delenv("CAREEROPS_PARSE_MODE", raising=False)
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 200
+    assert len(vision_calls) == 1, "vision should be called by default"
+    assert len(text_calls) == 0, "text parser should NOT be called when vision succeeds"
+
+
+def test_parse_unwraps_wrapped_response_correctly(client, monkeypatch):
+    """The route must unwrap parser's {"success", "data"} wrapper and feed `data` to converter.
+
+    Regression test: an earlier bug treated the wrapper itself as the legacy data,
+    producing an empty resume (no sections, fallback title from filename).
+    """
+    from api.routes import resume as routes
+
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "x")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: {"success": True, "data": _FAKE_LEGACY},
+    )
+
+    resp = _post_pdf(client)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["title"]
+
+    # Title comes from legacy.name, NOT from filename
+    assert body["title"] == "Test User"
+
+    # Doc must include the parsed Experience section, NOT just an empty header
+    headings = [n["attrs"]["heading"] for n in body["doc"]["content"]
+                if n["type"] == "resumeSection"]
+    assert "Experience" in headings, f"missing Experience section; got headings {headings}"
+
+    # Header should carry the parsed name
     header = body["doc"]["content"][0]
     assert header["type"] == "resumeHeader"
     assert any(c.get("text") == "Test User" for c in header.get("content", []))
+
+
+def test_parse_mode_text_env_var_skips_vision(client, monkeypatch):
+    """CAREEROPS_PARSE_MODE=text forces the text parser (cheap path)."""
+    from api.routes import resume as routes
+
+    text_calls: list = []
+    vision_calls: list = []
+
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "Some PDF text")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
+    monkeypatch.setattr(
+        routes, "parse_resume",
+        lambda *a, **k: text_calls.append(a) or {"success": True, "data": _FAKE_LEGACY},
+    )
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: vision_calls.append(a) or {"success": True, "data": _FAKE_LEGACY},
+    )
+    monkeypatch.setenv("CAREEROPS_PARSE_MODE", "text")
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 200
+    assert len(text_calls) == 1
+    assert len(vision_calls) == 0
+
+
+def test_parse_vision_failure_falls_back_to_text(client, monkeypatch):
+    """If vision returns {"success": False, ...} but text is available + not scanned,
+    /parse must retry with the text parser (not 500)."""
+    from api.routes import resume as routes
+
+    text_calls: list = []
+
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "Some real text")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: {"success": False, "error": "vision flop"},
+    )
+    monkeypatch.setattr(
+        routes, "parse_resume",
+        lambda *a, **k: text_calls.append(a) or {"success": True, "data": _FAKE_LEGACY},
+    )
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 200, f"expected fallback success, got {resp.status_code}: {resp.text}"
+    assert len(text_calls) == 1, "text parser should be called as fallback"
+    assert resp.json()["title"] == "Test User"
+
+
+def test_parse_no_text_uses_vision(client, monkeypatch):
+    """Scanned-style PDF (no extractable text) must go to vision, not 422."""
+    from api.routes import resume as routes
+
+    vision_called = []
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "")  # empty == scanned-ish
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: True)
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: vision_called.append(a) or {"success": True, "data": _FAKE_LEGACY},
+    )
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 200
+    assert vision_called, "vision must be called for scanned PDFs (no longer 422)"
+
+
+def test_parse_failure_propagates_500(client, monkeypatch):
+    """Both paths failing → 500 with descriptive error."""
+    from api.routes import resume as routes
+
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: True)
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: {"success": False, "error": "out of credits"},
+    )
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 500
+    assert "out of credits" in resp.text
+
+
+def test_parse_empty_data_rejected(client, monkeypatch):
+    """Parser returned success but no data → 500, not silently empty resume."""
+    from api.routes import resume as routes
+
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "x")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
+    monkeypatch.setattr(
+        routes, "parse_resume_from_image",
+        lambda *a, **k: {"success": True, "data": {}},
+    )
+    # Disable text fallback path by making parse_resume also return empty
+    monkeypatch.setattr(
+        routes, "parse_resume",
+        lambda *a, **k: {"success": True, "data": {}},
+    )
+
+    resp = _post_pdf(client)
+    assert resp.status_code == 500
+    assert "no data" in resp.text.lower()
 
 
 def test_parse_rejects_non_pdf(client):
