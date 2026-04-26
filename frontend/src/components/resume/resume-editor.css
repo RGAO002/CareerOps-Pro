@@ -14,9 +14,32 @@
   position: relative;
   z-index: 10;
   color: #374151;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Use the Next-loaded Inter font (--font-resume) so editor + PDF use
+     the SAME font and pagination matches. Fallbacks only if the variable
+     isn't defined (e.g. /print route or detached preview). */
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Normalize <input> elements (used by EntryNodeView/SectionNodeView for
+   editable single-line fields) so they have the same height/metrics as
+   the equivalent <div> the PDF renderer uses. Without this, inputs have
+   browser-default styling that creates micro-height-differences which
+   compound into different page breaks between editor and PDF. */
+.resume-canvas input {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Dedicated /print route: restore white background on the canvas

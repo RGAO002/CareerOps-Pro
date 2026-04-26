@@ -28,9 +28,13 @@ async def html_to_pdf_chrome(html: str) -> Optional[bytes]:
             browser = await p.chromium.launch()
             try:
                 page = await browser.new_page()
-                # `set_content` waits for the load event by default. networkidle
-                # would wait too long if there are no external requests.
-                await page.set_content(html, wait_until="load")
+                # networkidle waits for the Inter font from Google Fonts to
+                # download — without it Chromium falls back to a different
+                # font and pagination drifts vs the editor preview.
+                await page.set_content(html, wait_until="networkidle")
+                # Belt-and-suspenders: explicitly wait for the document.fonts
+                # API to confirm all declared @font-face faces are loaded.
+                await page.evaluate("document.fonts.ready")
                 pdf = await page.pdf(
                     format="Letter",
                     print_background=True,

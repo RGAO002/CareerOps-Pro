@@ -12,6 +12,21 @@ def test_returns_full_html_doc():
     assert "resume-canvas" in out
 
 
+def test_loads_inter_font_to_match_editor_metrics():
+    """Editor uses Inter (loaded via Next font loader). PDF MUST load the
+    same Inter so text metrics match — otherwise pagination drifts.
+
+    Regression: an earlier version had `font-family: Inter, ...` but didn't
+    actually load Inter. Chromium fell back to a different sans-serif than
+    the editor's browser, causing different line widths and page breaks.
+    """
+    out = tiptap_doc_to_html({"type": "doc", "content": []})
+    assert "fonts.googleapis.com/css2?family=Inter" in out, \
+        "PDF HTML must @import Inter so its text metrics match the editor's"
+    # And declare it as the primary font
+    assert "font-family: 'Inter'" in out or 'font-family: "Inter"' in out
+
+
 def test_title_lands_in_head():
     out = tiptap_doc_to_html({"type": "doc", "content": []}, title="Alex Resume")
     assert "<title>Alex Resume</title>" in out

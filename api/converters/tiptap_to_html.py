@@ -16,16 +16,18 @@ from html import escape
 from typing import Any
 
 
-# CSS mirrors resume-editor.css, with the EDITOR-ONLY chrome stripped
-# (no .resume-canvas shadow, no z-index, no NodeView affordances). Embedded
-# inline so the PDF is a fully self-contained HTML doc.
+# CSS mirrors resume-editor.css. Critically, we load the SAME Inter font that
+# the editor uses via Next.js's font loader, so the PDF's text metrics match
+# what the editor measures for pagination.
 _CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @page { size: Letter; margin: 0; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background: white;
   color: #374151;
   font-size: 14px;
