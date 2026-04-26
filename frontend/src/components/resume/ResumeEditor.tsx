@@ -9,6 +9,7 @@ import { usePageContext } from "@/hooks/usePageContext";
 import { resumeApi, type Resume } from "@/lib/resumeApi";
 import { useResumeEditorStore } from "@/stores/resumeEditor";
 
+import { AIRewriteBulletPopover } from "./AIRewriteBulletPopover";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorTopBar } from "./EditorTopBar";
 import { HistoryPanel } from "./HistoryPanel";
@@ -147,6 +148,7 @@ export function ResumeEditor({ id }: { id: string }) {
           }}
         />
       )}
+      <AIRewriteBulletPopover resumeId={id} editor={editor} />
     </div>
   );
 }
