@@ -2,11 +2,12 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Editor } from "@tiptap/core";
 import { createResumeEditorExtensions } from "./extensions/createResumeEditor";
 import type { ResumeDoc } from "./types";
 import { AddSectionPopover } from "./AddSectionPopover";
+import { PageBreakOverlay } from "./PageBreakOverlay";
 
 import "./resume-editor.css";
 
@@ -19,6 +20,8 @@ interface Props {
 }
 
 export function EditorCanvas({ doc, onChange, onReady }: Props) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+
   const editor = useEditor({
     ...createResumeEditorExtensions(doc),
     immediatelyRender: false, // avoid SSR hydration mismatch
@@ -44,11 +47,12 @@ export function EditorCanvas({ doc, onChange, onReady }: Props) {
   if (!editor) return null;
 
   return (
-    <>
-      <div className="resume-canvas">
+    <div className="relative mx-auto w-fit">
+      <div ref={canvasRef} className="resume-canvas">
         <EditorContent editor={editor} />
       </div>
+      <PageBreakOverlay getCanvas={() => canvasRef.current} />
       <AddSectionPopover editor={editor} />
-    </>
+    </div>
   );
 }
