@@ -19,7 +19,7 @@ beforeEach(() => {
 
 describe('flushSave', () => {
   it('debounces multiple updates into one save', async () => {
-    const backend = vi.fn(async () => {});
+    const backend = vi.fn<(doc: ResumeDoc) => Promise<void>>(async () => {});
     setSaveBackend(backend);
     const unsub = startAutoSave();
     useResumeStore.getState().hydrate(RESUME);
@@ -34,7 +34,7 @@ describe('flushSave', () => {
   });
 
   it('flushSave forces immediate save and awaits ACK', async () => {
-    const backend = vi.fn(async () => {});
+    const backend = vi.fn<(doc: ResumeDoc) => Promise<void>>(async () => {});
     setSaveBackend(backend);
     const unsub = startAutoSave();
     useResumeStore.getState().hydrate(RESUME);

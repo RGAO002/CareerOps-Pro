@@ -19,6 +19,6 @@ export function useMeasureModeSync<T>(
 ): void {
   useLayoutEffect(() => {
     if (mode !== 'measure' || !editor) return;
-    editor.commands.setContent(toDoc(propValue), false);
+    editor.commands.setContent(toDoc(propValue), { emitUpdate: false });
   }, [mode, editor, propValue, toDoc]);
 }
