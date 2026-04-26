@@ -1,23 +1,34 @@
 // frontend/src/stores/resumeEditor.ts
 import { create } from "zustand";
-import type { ResumeDoc, ResumeMeta } from "@/components/resume/types";
 
-type SaveStatus = "idle" | "saving" | "saved" | "error";
+import type { Resume, ResumeSummary } from "@/lib/resumeApi";
+
+type SaveStatus = "idle" | "saving" | "saved" | "error" | "offline";
 
 interface ResumeEditorStore {
-  meta: ResumeMeta | null;
-  doc: ResumeDoc | null;
+  current: Resume | null;
+  available: ResumeSummary[];
   saveStatus: SaveStatus;
-  setAll: (meta: ResumeMeta, doc: ResumeDoc) => void;
-  setDoc: (doc: ResumeDoc) => void;
+  lastSavedAt: number | null;
+  setCurrent: (r: Resume) => void;
+  setAvailable: (s: ResumeSummary[]) => void;
+  setDoc: (doc: Resume["doc"]) => void;
+  setMeta: (patch: Partial<Resume>) => void;
   setSaveStatus: (s: SaveStatus) => void;
+  markSaved: () => void;
 }
 
 export const useResumeEditorStore = create<ResumeEditorStore>((set) => ({
-  meta: null,
-  doc: null,
+  current: null,
+  available: [],
   saveStatus: "idle",
-  setAll: (meta, doc) => set({ meta, doc, saveStatus: "idle" }),
-  setDoc: (doc) => set({ doc }),
-  setSaveStatus: (s) => set({ saveStatus: s }),
+  lastSavedAt: null,
+  setCurrent: (r) => set({ current: r, saveStatus: "saved", lastSavedAt: r.updated_at }),
+  setAvailable: (s) => set({ available: s }),
+  setDoc: (doc) =>
+    set((s) => (s.current ? { current: { ...s.current, doc } } : {})),
+  setMeta: (patch) =>
+    set((s) => (s.current ? { current: { ...s.current, ...patch } } : {})),
+  setSaveStatus: (saveStatus) => set({ saveStatus }),
+  markSaved: () => set({ saveStatus: "saved", lastSavedAt: Date.now() }),
 }));
