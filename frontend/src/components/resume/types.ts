@@ -22,13 +22,10 @@ export interface ResumeMeta {
 
 /**
  * TipTap ProseMirror JSON doc — loosely typed because the exact shape
- * is enforced by the schema at runtime, not the type system.
+ * is enforced by the schema at runtime, not the type system. The shape is
+ * compatible with the API client's `Resume["doc"]` (which uses `unknown[]`).
  */
 export interface ResumeDoc {
   type: "doc";
-  content: Array<{
-    type: string;
-    attrs?: Record<string, unknown>;
-    content?: unknown[];
-  }>;
+  content: unknown[];
 }
