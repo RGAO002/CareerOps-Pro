@@ -10,9 +10,18 @@ body {
 }
 
 /* Inherit the editor's base resume-canvas styles, just strip the on-screen
-   chrome (margin, transparency, z-index, fake page-card stack, etc.). */
+   chrome (margin, transparency, z-index, fake page-card stack, etc.).
+
+   Critically: zero out the canvas's vertical padding. The editor canvas has
+   0.75in top/bottom padding ONCE (only at the very top/bottom of the whole
+   document), but for PDF we want EVERY page to have a top/bottom margin.
+   We achieve that via Chromium's per-page margin in chrome_pdf.py
+   (page.pdf margin: top/bottom = 0.75in). Keep horizontal padding so
+   the content stays at the same column width as the editor view. */
 .print-mode .resume-canvas {
   margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
   background: white !important;
   position: static !important;
   z-index: auto !important;
@@ -48,5 +57,22 @@ body {
   @page {
     size: Letter;
     margin: 0;
+  }
+
+  /* The shared editor print CSS hides every non-input
+     [contenteditable="false"] node. In this read-only TipTap route, the real
+     .ProseMirror document root is also contenteditable=false, so that rule
+     blanks the exported PDF. Re-show the document, then keep editor chrome
+     hidden with the narrower affordance selectors above. */
+  .print-mode .resume-canvas [contenteditable="false"] {
+    display: revert !important;
+  }
+
+  .print-mode .resume-canvas .ProseMirror {
+    display: block !important;
+  }
+
+  .print-mode .group\/affordance > div[contenteditable="false"]:not(input) {
+    display: none !important;
   }
 }

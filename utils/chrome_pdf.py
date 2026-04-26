@@ -40,11 +40,18 @@ async def url_to_pdf_chrome(url: str) -> Optional[bytes]:
                     # page might just not have set the flag.
                     await page.wait_for_timeout(500)
                 await page.evaluate("document.fonts.ready")
+                # Per-page margin via Chromium (NOT canvas padding). The
+                # print stylesheet zeros the canvas's vertical padding so
+                # this is the SINGLE source of vertical margin — every PDF
+                # page gets the same 0.75in top + 0.75in bottom whitespace
+                # (Google Docs style). Horizontal margin still comes from
+                # the canvas's own 0.9in horizontal padding so the content
+                # column width matches the editor view exactly.
                 pdf = await page.pdf(
                     format="Letter",
                     print_background=True,
-                    margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
-                    prefer_css_page_size=True,
+                    margin={"top": "0.75in", "bottom": "0.75in", "left": "0", "right": "0"},
+                    prefer_css_page_size=False,
                 )
                 return pdf
             finally:
