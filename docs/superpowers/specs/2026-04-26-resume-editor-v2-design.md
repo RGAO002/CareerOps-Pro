@@ -373,11 +373,47 @@ function BulletField({ bulletId, content, mode }: Props) {
 - 初次 mount：从 prop（一开始 prop = store 当前值）
 - 后续：用户键入 → TipTap 内部 state 立即变；onUpdate → store update → React selector subscribe → AtomRenderer 重渲染 → 新 prop 进 BulletField，**但 BulletField 不重设 editor.content**（content 只用于 useEditor 初始化）
 - 外部源更新走 § 3.3 的 store.subscribe imperative 通道（`editor.commands.setContent(content, false)`）
+- **Hard rule**：edit mode 不允许从 prop 反向 setContent（会破坏 IME / undo / cursor）
 
-**Export / measure mode 的数据流**：
+**Export mode 的数据流**：
 - 初次 mount：从 prop
 - 没有 onUpdate / store.subscribe / focus register
-- 完全 stateless
+- /print route 是 stateless 单次渲染，prop 不会变（一次 fetch 后渲染完即结束）
+- 不需要 prop sync
+
+**Measure mode 的数据流**（**不一样**）：
+- MeasurementLayer 是**长生命周期**组件，内容变化时必须立即反映在测量层（否则 layout 算高度时用的是旧内容）
+- **Hard rule**：measure mode 必须监听 `content` prop 变化，**主动 setContent**：
+
+```tsx
+function BulletField({ bulletId, content, mode }: Props) {
+  const editor = useEditor({
+    content,                                    // 初始化
+    editable: mode === 'edit',
+    // ...
+  });
+
+  // 仅 measure 模式：prop content 变化时主动 sync 到 editor
+  useEffect(() => {
+    if (mode !== 'measure') return;
+    if (!editor) return;
+    editor.commands.setContent(content, false);
+  }, [mode, editor, content]);
+
+  // edit 模式：走 store.subscribe imperative 通道（external sources only）
+  useEffect(() => {
+    if (mode !== 'edit' || !editor) return;
+    return store.subscribe(...);
+  }, [mode, editor, bulletId]);
+
+  // export 模式：什么都不做（stateless 渲染）
+}
+```
+
+**为什么三种 mode 的 sync 规则不同：**
+- edit：用户输入是真相源，prop 反向 setContent 会损坏交互（cursor / IME / undo）
+- export：prop 在 /print 渲染期间不变，不需要 sync
+- measure：prop 在编辑过程中持续变化，必须每次都重新 setContent 才能测出准确高度
 
 **测试 guard**：
 1. unit test 渲染同一个 bullet 三次（edit / export / measure），剥掉编辑性 attr 后比较 outerHTML 必须完全相同
@@ -516,7 +552,7 @@ CSS 不要硬编码派生值，统一通过 CSS variable + calc() 从同一份 s
 | section.heading | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
 | entry.title | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
 | entry.meta | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
-| bullet.content | `ProseMirrorDoc` | multi-line + marks | Document, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
+| bullet.content | `ProseMirrorBulletDoc` | multi-line + marks | Document, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
 
 ### 3.1.1 Single-line schema（**hard constraint**）
 
@@ -545,8 +581,15 @@ export const SingleLineWithMarksDocument = Document.extend({
 ```ts
 // frontend/src/components/resume/v2/fields/single-line-adapter.ts
 
-// string → TipTap doc JSON（用于 useEditor content prop）
-export function stringToSingleLineDoc(s: string): ProseMirrorDoc {
+// SingleLineDoc 是 SingleLineDocument-extended 的 doc shape
+// content 是 text node 数组（不是 paragraph 数组），与 BulletDoc 不同
+type SingleLineDoc = {
+  type: 'doc';
+  content: ProseMirrorInline[];  // text nodes with optional marks
+};
+
+// string → SingleLine TipTap doc JSON（用于 useEditor content prop）
+export function stringToSingleLineDoc(s: string): SingleLineDoc {
   if (!s) return { type: 'doc', content: [] };
   return {
     type: 'doc',
@@ -1006,6 +1049,67 @@ function copyBlocks(blocks: SelectableBlock[]) {
   navigator.clipboard.write([item]);
 }
 ```
+
+### 4.8.1 Bullet paste normalization（hard rule）
+
+V2 bullet schema 强制单 paragraph（`ProseMirrorBulletDoc.content` 是 1-tuple）。但用户从外部（Word / Google Docs / 网页）粘贴时常带多 paragraph、`<br>`、嵌套列表等。必须 normalize：
+
+```ts
+// BulletField TipTap 配置
+const editor = useEditor({
+  extensions: [
+    Document, Paragraph, Text, Bold, Italic, Link,
+    ...(mode === 'edit' ? BULLET_EXTENSIONS_EDIT_ONLY : []),
+  ],
+  editorProps: {
+    transformPastedHTML(html) {
+      return normalizeMultiParagraphPaste(html, currentBulletId);
+    },
+    transformPasted(slice) {
+      // ProseMirror Slice 层兜底：把 hardBreak / 多 paragraph 转单段
+      return collapseToSingleParagraph(slice);
+    },
+  },
+  // ...
+});
+```
+
+**Normalize 规则**：
+1. **粘贴单 paragraph**（含 inline marks）→ 直接进当前 bullet
+2. **粘贴 N 个 paragraph**（N > 1） → 第一个进当前 bullet 末尾；剩余 N-1 个 paragraph 各创建一个新 BulletBlock 插入在当前 bullet 之后
+3. **粘贴含 `<br>` 的单 paragraph** → 把 `<br>` 当作 paragraph 分隔，按规则 2 处理
+4. **粘贴含嵌套 list / heading / blockquote** → 全部 flatten 成 plain paragraph，再按规则 2
+
+实现：
+```ts
+function collapseToSingleParagraph(slice: Slice): Slice {
+  // 用 ProseMirror Schema 重建：把所有 block 内的 inline 内容串接
+  // 多 paragraph 之间用空格（不用 hardBreak，schema 不允许）
+  // ...
+}
+
+function normalizeMultiParagraphPaste(html: string, currentBulletId: BulletId) {
+  const paragraphs = parseHtmlToParagraphArray(html);
+  if (paragraphs.length <= 1) return html;
+  // 把 paragraphs[1..] 转成 store insertBullet 调用
+  for (let i = 1; i < paragraphs.length; i++) {
+    store.getState().insertBullet(
+      currentEntryId(currentBulletId),
+      indexOf(currentBulletId) + i,
+      stringToBulletDoc(paragraphs[i].text),
+      { type: 'paste' }
+    );
+  }
+  return paragraphHtml(paragraphs[0]);  // 只让 TipTap 看第一段
+}
+```
+
+**Migration 同样 normalize**：v1→v2 迁移脚本里如果遇到 v1 bullet 含多个 paragraph，按规则 2 拆成多个 v2 BulletBlock。
+
+**测试 guard**：
+1. unit test 多种粘贴 case（plain text / HTML / Word HTML / multi-paragraph / `<br>`）→ 期望 store 状态
+2. unit test bullet schema 校验：所有 BulletBlock.content.content.length === 1
+3. integration test：粘贴多段 → 多个 bullets 出现 + repaginate 触发
 
 ### 4.9 Cross-atom text selection（best-effort copy only）
 
@@ -1567,6 +1671,8 @@ Unit (80%)         — Vitest pure，算法 / schema / store actions
 | normalizeTemplate() | 各种单位 → px 正确 |
 | infer_role() | 各种 heading 文本 → role |
 | migrate_v1_to_v2 | sample v1 → 期望 v2 |
+| paste normalization (single → multi paragraph) | 多种 HTML / plain text 输入 → 期望 store 多 bullet 结果 |
+| BulletBlock schema 校验 | 所有 content.content.length === 1 |
 | Store actions | move/insert/delete → 期望 schema |
 | Source-of-truth tracking | 不同 origin → listener 触发与否 |
 | Undo stack | structural 进栈 / 文本不进栈 |
@@ -1706,21 +1812,30 @@ type EntryBlock = {
 
 type BulletBlock = {
   id: BlockId;
-  content: ProseMirrorDoc;         // 完整 TipTap doc，setContent 直接吃
+  content: ProseMirrorBulletDoc;   // 严格单 paragraph (见下)
   tags?: string[];                 // roadmap 用
   evidence_refs?: string[];        // roadmap 用
 };
 
-// TipTap bullet 用 Document + Paragraph + Text + marks 配置
-// → bullet content 必须是 doc-shaped，不是裸 inline 数组
-type ProseMirrorDoc = {
+// v2 bullet 是**严格单 paragraph**：
+// - Shift+Enter 推 v2.1（不实现 hard break）
+// - bullet 之间用真正的多个 BulletBlock 表达，不在一个 bullet 内多段
+// - 多段 paste 必须 normalize（见下方）
+type ProseMirrorBulletDoc = {
   type: 'doc';
-  content: ProseMirrorParagraph[];  // 通常 1 个 paragraph，shift+enter 时多个
+  content: [ProseMirrorParagraph];  // ⬅️ tuple 强制 exactly 1 个
 };
 
 type ProseMirrorParagraph = {
   type: 'paragraph';
-  content?: ProseMirrorInline[];
+  content?: ProseMirrorInline[];   // 仅 text + marks，无 hardBreak
+};
+
+// SingleLineDoc 用于单行字段（PlainTextField / ContactLinesField）
+// 与 BulletDoc 不同：content 是 text/inline node 数组，无 paragraph wrapper
+type SingleLineDoc = {
+  type: 'doc';
+  content: ProseMirrorInline[];
 };
 
 type ProseMirrorInline = {
