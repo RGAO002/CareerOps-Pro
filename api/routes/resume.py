@@ -13,13 +13,16 @@ Endpoints:
   POST   /:id/restore      restore from snapshot id
   POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
+import os
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from api.converters.resume import legacy_json_to_tiptap_doc
 from api.models.resume import Resume
 from api.services import resume_store
+from services.resume_parser import is_scanned_pdf, parse_resume
 
 
 router = APIRouter()
@@ -95,5 +98,61 @@ async def create_blank_resume(body: CreateResumeRequest) -> Resume:
         ],
     }
     r = Resume(id=rid, title=body.title, created_at=now, updated_at=now, doc=blank_doc)
+    resume_store.save(r)
+    return r
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Extract text from PDF bytes via pypdf. Returns empty string on failure."""
+    import io
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        chunks = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            chunks.append(text)
+        return "\n".join(chunks)
+    except Exception:
+        return ""
+
+
+@router.post("/parse")
+async def parse_pdf(file: UploadFile = File(...)) -> Resume:
+    """Upload a PDF, parse it, persist as a new Resume."""
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="PDF too large (max 10 MB)")
+
+    text = _extract_pdf_text(pdf_bytes)
+    model_choice = os.environ.get("CAREEROPS_MODEL", "gpt-4o-mini")
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+
+    if not text or is_scanned_pdf(text):
+        raise HTTPException(
+            status_code=422,
+            detail="Scanned PDFs not yet supported in v1 — please use a text-based PDF",
+        )
+
+    try:
+        legacy = parse_resume(text, model_choice, api_key)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Parse failed: {exc}") from exc
+
+    if not isinstance(legacy, dict):
+        raise HTTPException(status_code=500, detail="Parser returned invalid shape")
+
+    doc = legacy_json_to_tiptap_doc(legacy)
+    rid = str(uuid.uuid4())
+    now = _now_ms()
+    title = (legacy.get("name") or file.filename or "Imported resume").strip()
+    if title.lower().endswith(".pdf"):
+        title = title[:-4]
+
+    r = Resume(id=rid, title=title or "Imported resume", created_at=now, updated_at=now, doc=doc)
     resume_store.save(r)
     return r

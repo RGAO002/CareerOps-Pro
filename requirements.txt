@@ -17,6 +17,7 @@ plotly
 fastapi
 uvicorn[standard]
 websockets
+python-multipart>=0.0.9
 
 # Testing
 pytest>=8.0

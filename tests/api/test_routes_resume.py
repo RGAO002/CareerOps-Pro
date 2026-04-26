@@ -1,5 +1,6 @@
 # tests/api/test_routes_resume.py
 """Integration tests for /api/resume routes."""
+import io
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,41 @@ def test_post_creates_blank_resume(client):
     assert body["id"]
     assert body["doc"]["type"] == "doc"
     assert resume_store.get(body["id"]) is not None
+
+
+def test_parse_pdf_creates_resume(client, monkeypatch):
+    """Mock the parser so the test doesn't need a real LLM."""
+    from api.routes import resume as routes
+
+    def fake_parse(text: str, model_choice: str, api_key: str) -> dict:
+        return {
+            "name": "Test User",
+            "contact": ["test@example.com"],
+            "experience": [
+                {"company": "Acme", "role": "Eng", "date": "2024", "bullets": ["Built X"]}
+            ],
+        }
+
+    monkeypatch.setattr(routes, "parse_resume", fake_parse)
+    monkeypatch.setattr(routes, "_extract_pdf_text", lambda b: "Some PDF text")
+    monkeypatch.setattr(routes, "is_scanned_pdf", lambda t: False)
+
+    fake_pdf = b"%PDF-1.4\n...not really a pdf..."
+    resp = client.post(
+        "/api/resume/parse",
+        files={"file": ("test.pdf", io.BytesIO(fake_pdf), "application/pdf")},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"]
+    header = body["doc"]["content"][0]
+    assert header["type"] == "resumeHeader"
+    assert any(c.get("text") == "Test User" for c in header.get("content", []))
+
+
+def test_parse_rejects_non_pdf(client):
+    resp = client.post(
+        "/api/resume/parse",
+        files={"file": ("test.txt", io.BytesIO(b"not a pdf"), "text/plain")},
+    )
+    assert resp.status_code == 400
