@@ -5,6 +5,7 @@ import type { Editor } from "@tiptap/core";
 import { Download, History as HistoryIcon } from "lucide-react";
 import { useState } from "react";
 
+import { resumeApi } from "@/lib/resumeApi";
 import type { Resume, ResumeSummary } from "@/lib/resumeApi";
 
 import { FormatToolbar } from "./FormatToolbar";
@@ -63,6 +64,25 @@ export function EditorTopBar({
         </div>
 
         <SaveBadge status={saveStatus} lastSavedAt={lastSavedAt} />
+
+        <button
+          type="button"
+          onClick={async () => {
+            const label = window.prompt("Checkpoint label (optional):") ?? undefined;
+            try {
+              await resumeApi.createSnapshot(current.id, {
+                trigger: "checkpoint",
+                label: label?.trim() || undefined,
+              });
+            } catch {
+              /* ignore */
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100"
+          title="Save a labeled checkpoint"
+        >
+          ✓ Checkpoint
+        </button>
 
         <button
           type="button"
