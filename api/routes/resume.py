@@ -13,6 +13,7 @@ Endpoints:
   POST   /:id/restore      restore from snapshot id
   POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
+import copy
 import os
 import uuid
 from typing import Optional
@@ -220,3 +221,36 @@ async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
     resume_store.save(r)
     snapshot_store.enforce_retention(resume_id)
     return r
+
+
+class VariantRequest(BaseModel):
+    title: str
+    target_company: Optional[str] = None
+    target_company_domain: Optional[str] = None
+    target_role: Optional[str] = None
+
+
+@router.post("/{resume_id}/variant")
+async def create_variant(resume_id: str, body: VariantRequest) -> Resume:
+    parent = resume_store.get(resume_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Parent resume not found")
+
+    new_id = str(uuid.uuid4())
+    now = _now_ms()
+    variant = Resume(
+        id=new_id,
+        user_id=parent.user_id,
+        parent_id=parent.id,
+        is_base=False,
+        title=body.title,
+        schema_version=parent.schema_version,
+        created_at=now,
+        updated_at=now,
+        target_company=body.target_company,
+        target_company_domain=body.target_company_domain,
+        target_role=body.target_role,
+        doc=copy.deepcopy(parent.doc),
+    )
+    resume_store.save(variant)
+    return variant

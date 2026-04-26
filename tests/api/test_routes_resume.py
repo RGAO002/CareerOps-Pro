@@ -185,3 +185,29 @@ def test_restore_replaces_doc_and_creates_pre_restore_snapshot(client):
     snaps = client.get("/api/resume/r3/snapshots").json()["snapshots"]
     pre_restore = [s for s in snaps if s.get("diff_summary", "").startswith("Pre-restore")]
     assert len(pre_restore) == 1
+
+
+def test_variant_forks_a_new_independent_copy(client):
+    _seed_resume("base1", "Base")
+    r = resume_store.get("base1")
+    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "Base name"}]}]}
+    resume_store.save(r)
+
+    resp = client.post("/api/resume/base1/variant", json={
+        "title": "Stripe Backend",
+        "target_company": "Stripe",
+        "target_role": "Backend SWE",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] != "base1"
+    assert body["title"] == "Stripe Backend"
+    assert body["parent_id"] == "base1"
+    assert body["is_base"] is False
+    assert body["target_company"] == "Stripe"
+
+    variant = resume_store.get(body["id"])
+    variant.doc = {"type": "doc", "content": []}
+    resume_store.save(variant)
+    base = resume_store.get("base1")
+    assert len(base.doc["content"]) == 1
