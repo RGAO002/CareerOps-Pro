@@ -49,3 +49,17 @@ async def get_resume(resume_id: str) -> Resume:
     if r is None:
         raise HTTPException(status_code=404, detail="Resume not found")
     return r
+
+
+@router.put("/{resume_id}")
+async def upsert_resume(resume_id: str, payload: Resume) -> Resume:
+    """Create or replace a resume. URL id always wins."""
+    payload.id = resume_id
+    payload.updated_at = max(payload.updated_at, _now_ms())
+    resume_store.save(payload)
+    return payload
+
+
+def _now_ms() -> int:
+    import time
+    return int(time.time() * 1000)

@@ -59,3 +59,36 @@ def test_get_one_returns_full_resume(client):
 def test_get_missing_returns_404(client):
     resp = client.get("/api/resume/nope")
     assert resp.status_code == 404
+
+
+def test_put_creates_or_replaces_resume(client):
+    payload = {
+        "id": "new1",
+        "title": "Brand new",
+        "created_at": 1000,
+        "updated_at": 1000,
+        "doc": {"type": "doc", "content": []},
+    }
+    resp = client.put("/api/resume/new1", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "new1"
+
+    got = client.get("/api/resume/new1")
+    assert got.status_code == 200
+    assert got.json()["title"] == "Brand new"
+
+
+def test_put_with_mismatched_id_uses_url_id(client):
+    """URL :id wins if body id differs (defensive)."""
+    payload = {
+        "id": "bodyid",
+        "title": "T",
+        "created_at": 1,
+        "updated_at": 1,
+        "doc": {"type": "doc", "content": []},
+    }
+    resp = client.put("/api/resume/urlid", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "urlid"
+    assert resume_store.get("urlid") is not None
+    assert resume_store.get("bodyid") is None
