@@ -25,7 +25,7 @@ from api.converters.resume import legacy_json_to_tiptap_doc
 from api.models.resume import Resume, ResumeSnapshot, SnapshotTrigger
 from api.services import resume_store, snapshot_store
 from api.services.resume_store import _validate_id as _validate_resume_id
-from services.resume_parser import is_scanned_pdf, parse_resume
+from services.resume_parser import is_scanned_pdf, parse_resume, parse_resume_from_image
 
 
 router = APIRouter()
@@ -142,22 +142,35 @@ async def parse_pdf(file: UploadFile = File(...)) -> Resume:
         raise HTTPException(status_code=413, detail="PDF too large (max 10 MB)")
 
     text = _extract_pdf_text(pdf_bytes)
-    model_choice = os.environ.get("CAREEROPS_MODEL", "gpt-4o-mini")
+    text_model = os.environ.get("CAREEROPS_MODEL", "gpt-4o-mini")
+    vision_model = os.environ.get("CAREEROPS_VISION_MODEL", "gpt-4o")
     api_key = os.environ.get("OPENAI_API_KEY", "")
 
-    if not text or is_scanned_pdf(text):
-        raise HTTPException(
-            status_code=422,
-            detail="Scanned PDFs not yet supported in v1 — please use a text-based PDF",
-        )
+    # Default to vision: text extraction from fancy resume PDFs (Canva,
+    # two-column templates) is unreliable. Vision sees the rendered layout
+    # and produces much more accurate structured output.
+    # Set CAREEROPS_PARSE_MODE=text to force the cheaper text-only path.
+    parse_mode = os.environ.get("CAREEROPS_PARSE_MODE", "vision").lower()
+    use_vision = parse_mode == "vision" or (not text) or is_scanned_pdf(text)
 
     try:
-        legacy = parse_resume(text, model_choice, api_key)
+        if use_vision:
+            result = parse_resume_from_image(pdf_bytes, api_key, vision_model)
+            # Fall back to text if vision failed AND we have text
+            if not result.get("success") and text and not is_scanned_pdf(text):
+                result = parse_resume(text, text_model, api_key)
+        else:
+            result = parse_resume(text, text_model, api_key)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Parse failed: {exc}") from exc
 
-    if not isinstance(legacy, dict):
-        raise HTTPException(status_code=500, detail="Parser returned invalid shape")
+    if not isinstance(result, dict) or not result.get("success"):
+        err = (result or {}).get("error", "unknown") if isinstance(result, dict) else "invalid shape"
+        raise HTTPException(status_code=500, detail=f"Parse failed: {err}")
+
+    legacy = result.get("data") or {}
+    if not isinstance(legacy, dict) or not legacy:
+        raise HTTPException(status_code=500, detail="Parser returned no data")
 
     doc = legacy_json_to_tiptap_doc(legacy)
     rid = str(uuid.uuid4())
