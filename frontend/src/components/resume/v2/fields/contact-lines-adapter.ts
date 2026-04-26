@@ -29,7 +29,7 @@ export function contactItemsToDoc(items: ContactItem[]): SingleLineDoc {
 export function docToContactItems(editor: Editor): ContactItem[] {
   const doc = editor.getJSON();
   const items: ContactItem[] = [];
-  const nodes = (doc.content as ProseMirrorInline[]) ?? [];
+  const nodes = (doc.content as unknown as ProseMirrorInline[]) ?? [];
 
   // Concatenate all text nodes preserving link mark per-segment, then split on SEPARATOR
   type Segment = { text: string; href?: string };
