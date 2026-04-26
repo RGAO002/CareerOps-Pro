@@ -11,6 +11,7 @@ import { useResumeEditorStore } from "@/stores/resumeEditor";
 
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorTopBar } from "./EditorTopBar";
+import { HistoryPanel } from "./HistoryPanel";
 import { ImportBanner } from "./ImportBanner";
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -28,6 +29,7 @@ export function ResumeEditor({ id }: { id: string }) {
 
   const [editor, setEditor] = useState<Editor | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -114,9 +116,19 @@ export function ResumeEditor({ id }: { id: string }) {
         saveStatus={saveStatus}
         lastSavedAt={lastSavedAt}
         editor={editor}
+        onOpenHistory={() => setShowHistory(true)}
       />
       {showBanner && <ImportBanner onDismiss={dismissBanner} />}
       <EditorCanvas doc={current.doc} onChange={handleChange} onReady={setEditor} />
+      {showHistory && (
+        <HistoryPanel
+          resumeId={id}
+          onClose={() => setShowHistory(false)}
+          onRestored={() => {
+            resumeApi.get(id).then(setCurrent);
+          }}
+        />
+      )}
     </div>
   );
 }
