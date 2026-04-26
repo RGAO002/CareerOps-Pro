@@ -32,7 +32,9 @@ def legacy_json_to_tiptap_doc(legacy: dict[str, Any]) -> dict[str, Any]:
     summary = (legacy.get("summary") or "").strip()
     if summary:
         content.append(_section("Summary", [
-            _entry(title="Summary", meta="", bullets=[summary]),
+            # title="" not "Summary" — section heading is already "SUMMARY",
+            # repeating the word as an entry title is just visual duplication.
+            _entry(title="", meta="", bullets=[summary]),
         ]))
 
     skills = legacy.get("skills") or {}

@@ -49,6 +49,10 @@ export function PageBreakOverlay({ getCanvas }: Props) {
         const prose = canvas.querySelector(".ProseMirror") as HTMLElement | null;
         if (!prose) return;
 
+        const canvasStyle = window.getComputedStyle(canvas);
+        const pagePaddingTop = parseFloat(canvasStyle.paddingTop || "0") || 0;
+        const pagePaddingBottom = parseFloat(canvasStyle.paddingBottom || "0") || 0;
+
         const blocks = Array.from(prose.children) as HTMLElement[];
 
         // Reset previous pushes — start from a clean slate every measurement.
@@ -67,16 +71,24 @@ export function PageBreakOverlay({ getCanvas }: Props) {
           const top = rect.top - canvasRect.top; // position within canvas
           const height = rect.height;
           if (height <= 0) continue;
-          // Which page does the TOP of this block sit on? (0-indexed)
-          const startPage = Math.floor(top / PAGE_AND_GAP);
-          // Bottom of that page's content area (before the gap).
-          const startPageEnd = startPage * PAGE_AND_GAP + PAGE_HEIGHT_PX;
+
+          // Which page's CONTENT AREA does this block start on? (0-indexed)
+          // We treat the canvas's top/bottom padding as the per-page body
+          // inset so blocks repaginate into the next page's text box, not
+          // flush against the page edge.
+          const startPage = Math.floor(
+            Math.max(0, top - pagePaddingTop) / PAGE_AND_GAP,
+          );
+          // Bottom of that page's content area (before bottom padding).
+          const startPageEnd =
+            startPage * PAGE_AND_GAP + PAGE_HEIGHT_PX - pagePaddingBottom;
           const blockBottom = top + height;
 
           if (blockBottom > startPageEnd && height <= PAGE_HEIGHT_PX) {
             // This block would cross the page boundary AND it fits on a single page.
-            // Push it down so its top lands at the next page card's start.
-            const nextPageStart = (startPage + 1) * PAGE_AND_GAP;
+            // Push it down so its top lands at the next page's CONTENT start,
+            // matching Google Docs / printed document body inset.
+            const nextPageStart = (startPage + 1) * PAGE_AND_GAP + pagePaddingTop;
             const push = Math.max(0, Math.round(nextPageStart - top));
             if (push > 0) {
               block.style.marginTop = `${push}px`;
@@ -85,11 +97,20 @@ export function PageBreakOverlay({ getCanvas }: Props) {
           }
         }
 
-        // Total page count = ceil(total final height / page-stride).
-        // Use canvas scrollHeight which reflects content + canvas padding +
-        // any margin-top pushes we just applied.
-        const finalH = canvas.scrollHeight;
-        const pages = Math.max(1, Math.ceil(finalH / PAGE_AND_GAP));
+        // Total page count based on where the LAST block ends (not raw
+        // scrollHeight, which includes trailing canvas padding that can
+        // overshoot into a phantom empty page).
+        let lastBlockBottomFromCanvas = 0;
+        for (const block of blocks) {
+          const r = block.getBoundingClientRect();
+          const bottom = r.bottom - canvasRect.top;
+          if (bottom > lastBlockBottomFromCanvas) lastBlockBottomFromCanvas = bottom;
+        }
+        const lastPage = Math.max(
+          0,
+          Math.floor(Math.max(0, lastBlockBottomFromCanvas - 1) / PAGE_AND_GAP),
+        );
+        const pages = Math.max(1, lastPage + 1);
         setTotalPages((prev) => (prev === pages ? prev : pages));
       } finally {
         // Release guard on next frame so subsequent layout-driven RO callbacks

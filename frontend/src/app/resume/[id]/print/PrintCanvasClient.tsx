@@ -2,9 +2,8 @@
 "use client";
 
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
-import { PageBreakOverlay } from "@/components/resume/PageBreakOverlay";
 import { createResumeEditorExtensions } from "@/components/resume/extensions/createResumeEditor";
 import type { Resume } from "@/lib/resumeApi";
 
@@ -16,7 +15,6 @@ export function PrintCanvasClient({ resume }: { resume: Resume }) {
 }
 
 function PrintCanvas({ resume }: { resume: Resume }) {
-  const canvasRef = useRef<HTMLDivElement>(null);
   const editor = useEditor({
     ...createResumeEditorExtensions(
       resume.doc as Parameters<typeof createResumeEditorExtensions>[0],
@@ -65,13 +63,17 @@ function PrintCanvas({ resume }: { resume: Resume }) {
     return <div style={{ padding: 24, fontFamily: "sans-serif" }}>Preparing…</div>;
   }
 
+  // No PageBreakOverlay here. The overlay is editor-only chrome (visual
+  // page cards + JS push using a 1072px stride that includes the visible
+  // gap). Chromium's PDF print uses a 1056px stride with no gap, so the
+  // overlay's pushes would be off by 16px per page → empty trailing PDF
+  // page. For PDF, we let Chromium paginate natively, using
+  // `break-inside: avoid` CSS rules in resume-editor.css to keep entries
+  // and bullets from splitting across pages.
   return (
     <div className="print-mode">
-      <div className="relative">
-        <PageBreakOverlay getCanvas={() => canvasRef.current} />
-        <div ref={canvasRef} className="resume-canvas">
-          <EditorContent editor={editor} />
-        </div>
+      <div className="resume-canvas">
+        <EditorContent editor={editor} />
       </div>
     </div>
   );
