@@ -15,13 +15,14 @@ Endpoints:
 """
 import os
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from api.converters.resume import legacy_json_to_tiptap_doc
-from api.models.resume import Resume
-from api.services import resume_store
+from api.models.resume import Resume, ResumeSnapshot, SnapshotTrigger
+from api.services import resume_store, snapshot_store
 from services.resume_parser import is_scanned_pdf, parse_resume
 
 
@@ -155,4 +156,67 @@ async def parse_pdf(file: UploadFile = File(...)) -> Resume:
 
     r = Resume(id=rid, title=title or "Imported resume", created_at=now, updated_at=now, doc=doc)
     resume_store.save(r)
+    return r
+
+
+class SnapshotRequest(BaseModel):
+    trigger: SnapshotTrigger = "manual_save"
+    label: Optional[str] = None
+    diff_summary: Optional[str] = None
+    ai_message_id: Optional[str] = None
+
+
+@router.post("/{resume_id}/snapshot")
+async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapshot:
+    r = resume_store.get(resume_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    snap = ResumeSnapshot(
+        id=str(uuid.uuid4()),
+        resume_id=resume_id,
+        created_at=_now_ms(),
+        trigger=body.trigger,
+        label=body.label,
+        diff_summary=body.diff_summary,
+        ai_message_id=body.ai_message_id,
+        doc=r.doc,
+    )
+    snapshot_store.save(snap)
+    snapshot_store.enforce_retention(resume_id)
+    return snap
+
+
+@router.get("/{resume_id}/snapshots")
+async def list_snapshots(resume_id: str) -> dict:
+    snaps = snapshot_store.list_for_resume(resume_id)
+    return {"snapshots": [s.model_dump(exclude_none=True) for s in snaps]}
+
+
+class RestoreRequest(BaseModel):
+    snapshot_id: str
+
+
+@router.post("/{resume_id}/restore")
+async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
+    r = resume_store.get(resume_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    snap = snapshot_store.get(body.snapshot_id)
+    if snap is None or snap.resume_id != resume_id:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    pre = ResumeSnapshot(
+        id=str(uuid.uuid4()),
+        resume_id=resume_id,
+        created_at=_now_ms(),
+        trigger="auto",
+        diff_summary=f"Pre-restore checkpoint (restored to {body.snapshot_id})",
+        doc=r.doc,
+    )
+    snapshot_store.save(pre)
+
+    r.doc = snap.doc
+    r.updated_at = _now_ms()
+    resume_store.save(r)
+    snapshot_store.enforce_retention(resume_id)
     return r

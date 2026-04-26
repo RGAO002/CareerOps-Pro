@@ -141,3 +141,47 @@ def test_parse_rejects_non_pdf(client):
         files={"file": ("test.txt", io.BytesIO(b"not a pdf"), "text/plain")},
     )
     assert resp.status_code == 400
+
+
+def test_post_snapshot_creates_record(client):
+    _seed_resume("r1", "T")
+    resp = client.post("/api/resume/r1/snapshot", json={"trigger": "checkpoint", "label": "v1.0"})
+    assert resp.status_code == 200
+    snap = resp.json()
+    assert snap["resume_id"] == "r1"
+    assert snap["trigger"] == "checkpoint"
+    assert snap["label"] == "v1.0"
+
+
+def test_get_snapshots_lists_newest_first(client):
+    _seed_resume("r2", "T")
+    client.post("/api/resume/r2/snapshot", json={"trigger": "auto"})
+    client.post("/api/resume/r2/snapshot", json={"trigger": "checkpoint", "label": "L"})
+
+    resp = client.get("/api/resume/r2/snapshots")
+    assert resp.status_code == 200
+    snaps = resp.json()["snapshots"]
+    assert len(snaps) == 2
+    assert snaps[0]["created_at"] >= snaps[1]["created_at"]
+
+
+def test_restore_replaces_doc_and_creates_pre_restore_snapshot(client):
+    _seed_resume("r3", "T")
+    r = resume_store.get("r3")
+    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "v1"}]}]}
+    resume_store.save(r)
+    snap_resp = client.post("/api/resume/r3/snapshot", json={"trigger": "checkpoint", "label": "before"})
+    snap_id = snap_resp.json()["id"]
+
+    r = resume_store.get("r3")
+    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "v2"}]}]}
+    resume_store.save(r)
+
+    restore_resp = client.post(f"/api/resume/r3/restore", json={"snapshot_id": snap_id})
+    assert restore_resp.status_code == 200
+    restored = resume_store.get("r3")
+    assert restored.doc["content"][0]["content"][0]["text"] == "v1"
+
+    snaps = client.get("/api/resume/r3/snapshots").json()["snapshots"]
+    pre_restore = [s for s in snaps if s.get("diff_summary", "").startswith("Pre-restore")]
+    assert len(pre_restore) == 1
