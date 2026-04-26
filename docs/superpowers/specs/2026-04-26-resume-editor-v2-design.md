@@ -306,32 +306,56 @@ type CanvasMode = 'edit' | 'export' | 'measure';
 - 所有 CSS class 一致
 - TipTap 实例本身存在（这样 ProseMirror chrome `<p>` 包装等 DOM 细节一致），但所有写回 store / 注册 manager / 监听键盘的钩子都关闭
 
-```ts
-// AtomRenderer 的实现示意
-function BulletField({ bulletId, mode }: Props) {
-  const initialContent = useMemo(
-    () => store.getState().bullets[bulletId].content, [bulletId]
-  );
+**Hard rule：content 必须通过 props 传递，不通过 store singleton 读**。
 
+理由：export / measure mode 根本不挂 store。如果字段组件直接 `store.getState().bullets[id]`，那 `/print`（无 store）和 MeasurementLayer（不应依赖 store）都会炸。
+
+```tsx
+// AtomRenderer 把 BulletBlock 作为 prop 传给 BulletField
+function EntryAtomRenderer({ entry, mode, ...positionProps }: Props) {
+  return (
+    <div data-block-id={entry.id} ...>
+      <PlainTextField
+        fieldKey={{ kind: 'entry.title', id: entry.id }}
+        value={entry.title}
+        mode={mode}
+      />
+      <PlainTextField
+        fieldKey={{ kind: 'entry.meta', id: entry.id }}
+        value={entry.meta}
+        mode={mode}
+      />
+      {entry.bullets.map(b => (
+        <BulletField
+          key={b.id}
+          bulletId={b.id}
+          content={b.content}                  // ⬅️ 从 prop 传，不查 store
+          mode={mode}
+        />
+      ))}
+    </div>
+  );
+}
+
+function BulletField({ bulletId, content, mode }: Props) {
+  // initial content 只用 prop，不读 store
   const editor = useEditor({
     extensions: [
       ...BULLET_EXTENSIONS_BASE,
-      // History / AtomKeyboardNav / SlashCommand / MarkdownInputRules
-      // 仅 mode === 'edit' 时加载
       ...(mode === 'edit' ? BULLET_EXTENSIONS_EDIT_ONLY : []),
     ],
-    content: initialContent,
+    content,                                    // ⬅️ from prop
     editable: mode === 'edit',
     immediatelyRender: false,
     onUpdate: mode === 'edit'
       ? ({ editor }) => store.getState().updateBullet(bulletId, editor.getJSON(), { ... })
-      : undefined,                              // ⬅️ measure / export 不写回
+      : undefined,
   });
 
   // store.subscribe 仅 mode === 'edit'
   useEffect(() => {
     if (mode !== 'edit' || !editor) return;
-    return store.subscribe(...);
+    return store.subscribe(...);  // 处理外部源 setContent (per § 3.3)
   }, [mode, editor, bulletId]);
 
   // atomFocusManager.register 仅 mode === 'edit'
@@ -345,7 +369,20 @@ function BulletField({ bulletId, mode }: Props) {
 }
 ```
 
-**测试 guard**：unit test 渲染同一个 bullet 三次（edit / export / measure），剥掉编辑性 attr 后比较 outerHTML 必须完全相同。MeasurementLayer 不应触发任何 store action。
+**Edit mode 的数据流**：
+- 初次 mount：从 prop（一开始 prop = store 当前值）
+- 后续：用户键入 → TipTap 内部 state 立即变；onUpdate → store update → React selector subscribe → AtomRenderer 重渲染 → 新 prop 进 BulletField，**但 BulletField 不重设 editor.content**（content 只用于 useEditor 初始化）
+- 外部源更新走 § 3.3 的 store.subscribe imperative 通道（`editor.commands.setContent(content, false)`）
+
+**Export / measure mode 的数据流**：
+- 初次 mount：从 prop
+- 没有 onUpdate / store.subscribe / focus register
+- 完全 stateless
+
+**测试 guard**：
+1. unit test 渲染同一个 bullet 三次（edit / export / measure），剥掉编辑性 attr 后比较 outerHTML 必须完全相同
+2. MeasurementLayer 渲染过程中 `store.getState` 调用次数必须 === 0
+3. `/print` 路由 mount 不依赖 ResumeStore
 
 ### 2.4 重排版触发
 
@@ -408,10 +445,9 @@ function parseToPx(spec: string): number {
   throw new Error(`Unknown unit: ${spec}`);
 }
 
-// 输出 float px（不 round）
-// 8.5in → 816 (恰好整数)
-// 6.7in → 643.2 (float)
-// 11in - 0.75in - 0.75in = 9.5in → 912 (恰好整数)
+// 输出 float px（不 round）— 同一份 string spec 两个 consumer：
+// JS layout engine 用 parseToPx() 算 float
+// CSS 用 calc() 算 float
 function normalizeTemplate(config: TemplateConfig): NormalizedTemplate {
   const widthPx = parseToPx(config.page.width);   // float
   const heightPx = parseToPx(config.page.height);
@@ -448,7 +484,9 @@ CSS 不要硬编码派生值，统一通过 CSS variable + calc() 从同一份 s
 }
 ```
 
-**Hard rule**：spec 文档、tokens 文件、CSS 文件中**禁止**出现 `643`、`912`、`816`、`1056` 这种"派生 px 整数"。所有派生值必须通过 `parseToPx()`（JS）或 `calc()`（CSS）从 string spec 计算。
+**Hard rule（implementation-only）**：v2 实现文件中（`frontend/src/components/resume/v2/**/*.{ts,tsx,css}`）**禁止**出现派生 px 整数 literal（如 page width 转 px、content height 转 px 这种从 string spec 应该计算出来的值）。所有派生值必须通过 `parseToPx()`（JS）或 `calc()`（CSS）从 string spec 计算。
+
+> 此规则**不**约束 spec 文档自身（spec 可以在散文 / 注释 / 例子里写具体数字解释）。Lint guard 应只 grep 实施目录，不 grep `docs/`。
 
 **禁止 atom 容器使用外部 margin**（用 page container 的 gap 代替）：
 
@@ -471,21 +509,117 @@ CSS 不要硬编码派生值，统一通过 CSS variable + calc() 从同一份 s
 
 ### 3.1 TipTap 配置矩阵
 
-| 字段 | TipTap 类型 | 扩展（base） | 扩展（edit-only） |
-|------|-----------|------------|-----------------|
-| header.name | single-line plain | Document, Text, NoNewline | History |
-| header.contact_lines[] | single-line + link | Document, Text, Link, NoNewline | History |
-| section.heading | single-line plain | Document, Text, NoNewline | History |
-| entry.title | single-line plain | Document, Text, NoNewline | History |
-| entry.meta | single-line plain | Document, Text, NoNewline | History |
-| bullet.content | multi-line + marks | Document, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
+| 字段 | Schema 存储 | TipTap 类型 | 扩展（base） | 扩展（edit-only） |
+|------|----------|-----------|------------|-----------------|
+| header.name | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
+| header.contact_lines[] | `ContactItem[]` | single-line + link | SingleLineWithMarksDocument, Text, Link, NoNewline | History |
+| section.heading | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
+| entry.title | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
+| entry.meta | `string` | single-line plain | SingleLineDocument, Text, NoNewline | History |
+| bullet.content | `ProseMirrorDoc` | multi-line + marks | Document, Paragraph, Text, Bold, Italic, Link | History, AtomKeyboardNav, SlashCommand, MarkdownInputRules |
 
-**Why TipTap for single-line（不用 `<input>`）**：
+### 3.1.1 Single-line schema（**hard constraint**）
+
+TipTap 默认 Document `content: 'block+'`，不接 plain text。单行字段 schema 是 `string`，所以需要：
+
+**自定义 SingleLineDocument**（直接接 text，无 paragraph 包装）：
+
+```ts
+import { Document } from '@tiptap/extension-document';
+
+export const SingleLineDocument = Document.extend({
+  name: 'doc',
+  content: 'text*',  // ⬅️ 直接放 text node，不用 block
+  // 阻止任何 block-level 操作
+});
+
+// For contact lines that need inline marks (link)
+export const SingleLineWithMarksDocument = Document.extend({
+  name: 'doc',
+  content: 'inline*',  // text + marks (no block)
+});
+```
+
+**String ↔ TipTap doc adapter**（边界处转换）：
+
+```ts
+// frontend/src/components/resume/v2/fields/single-line-adapter.ts
+
+// string → TipTap doc JSON（用于 useEditor content prop）
+export function stringToSingleLineDoc(s: string): ProseMirrorDoc {
+  if (!s) return { type: 'doc', content: [] };
+  return {
+    type: 'doc',
+    content: [{ type: 'text', text: s }],
+  };
+}
+
+// TipTap doc → string（用于 onUpdate 写回 store）
+export function singleLineDocToString(editor: Editor): string {
+  return editor.getText();  // TipTap 内置，跨 marks 拼接 text
+}
+```
+
+**PlainTextField 实现示意**：
+
+```tsx
+function PlainTextField({ fieldKey, value, mode }: Props) {
+  const initialDoc = useMemo(() => stringToSingleLineDoc(value), []);
+
+  const editor = useEditor({
+    extensions: [
+      SingleLineDocument,
+      Text,
+      NoNewline,
+      ...(mode === 'edit' ? [History] : []),
+    ],
+    content: initialDoc,                       // ⬅️ doc-shaped
+    editable: mode === 'edit',
+    immediatelyRender: false,
+    onUpdate: mode === 'edit'
+      ? ({ editor }) => {
+          const next = singleLineDocToString(editor);
+          store.getState().updateField(fieldKey, next, { ... });
+        }
+      : undefined,
+  });
+
+  // ... store.subscribe / focus register 同 BulletField，仅 edit mode
+  return <EditorContent editor={editor} />;
+}
+```
+
+**ContactLinesField** 类似但支持 inline link mark；写回时转回 `ContactItem[]`（`text` 段成 `{ type: 'text', value }`，带 `link` mark 的段成 `{ type: 'link', label, url }`）。Adapter 在 `contact-lines-adapter.ts` 单独写。
+
+### 3.1.2 NoNewline 扩展
+
+单行字段拦截 Enter，触发 `focusNextAtomField()`：
+
+```ts
+import { Extension } from '@tiptap/core';
+
+export const NoNewline = Extension.create({
+  name: 'noNewline',
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        atomFocusManager.focusNext(this.editor.options.fieldKey);
+        return true;  // 阻止默认 newline
+      },
+      'Shift-Enter': () => {
+        atomFocusManager.focusNext(this.editor.options.fieldKey);
+        return true;
+      },
+    };
+  },
+});
+```
+
+### 3.1.3 Why TipTap for single-line（不用 `<input>`）
+
 - 中文 IME composition 处理一致
-- 全字段统一架构
-- 未来加 inline mark 不用换底层
-
-`NoNewline` 是 v2 自定义扩展：单行字段拦截 Enter 触发 `focusNextField()`。
+- 全字段统一架构（store.subscribe / focus manager / 测试 guard 同一套）
+- 未来加 inline mark（如让 entry.title 支持公司名加粗）只是改 schema，不换底层
 
 ### 3.2 实例数（你那份简历）
 
@@ -601,7 +735,6 @@ class LayoutEngine {
 | 按键 | 上下文 | 行为 |
 |------|------|------|
 | Enter | bullet 内 | `insertBulletAfter`（不再插入换行）|
-| Shift+Enter | bullet 内 | `insertHardBreak`（真要换行用这个）|
 | Cmd+Enter | bullet 内 | 同 Enter |
 | Backspace | bullet 开头 | `mergeWithPreviousBullet` |
 | ArrowUp | bullet 文档开头 | `focusPreviousAtomField` |
@@ -609,6 +742,13 @@ class LayoutEngine {
 | Enter | 单行字段（title/meta/heading/name）| `focusNextAtomField` |
 | ArrowUp/Down | 单行字段（任何位置）| `focusPreviousAtomField` / `focusNextAtomField` |
 | ArrowLeft 开头 / ArrowRight 末尾 | 单行字段 | `focusPreviousAtomField` / `focusNextAtomField` |
+
+**Shift+Enter 在 v2 不实现**（推 v2.1）：
+- bullet 内 Shift+Enter 通常用于 hard break（`<br>` 等价物），需要 HardBreak extension + ProseMirrorParagraph schema 支持 `{type:'hardBreak'}` 子节点
+- v2 schema 的 `ProseMirrorParagraph.content` 只允许 `ProseMirrorInline[]`，不含 hardBreak
+- 简历 bullet 几乎不需要硬换行（多段经历应该是分开的 bullet）
+- v2 实现：bullet 内 Shift+Enter 走 ProseMirror 默认（被 NoNewline 不拦的话会插入新 paragraph，破坏单 paragraph 假设）→ **加扩展显式拦截 Shift+Enter，no-op**
+- 单行字段的 Shift+Enter 已在 NoNewline 里拦截 = `focusNextAtomField`
 
 **视觉行检测**（多行 bullet 中间按 ArrowDown 是否真在最后一行）**推迟到 v2.1**。v2 多行 bullet 中间按 ArrowDown 让 ProseMirror 默认处理（不跳 atom）。
 
@@ -997,8 +1137,12 @@ type CanvasMode = 'edit' | 'export' | 'measure';
   → <ResumeDocumentCanvas mode="export" />
   → 不挂 store
 
+EditorTopBar Export 按钮 (client)
+  → await store.flushSave()             # 见 § 6.7
+  → window.location.href = /api/resume/[id]/pdf
+
 /api/resume/[id]/pdf               (Backend → Playwright)
-  → flush pending save check
+  → read last-saved resume JSON         # 客户端已在导航前 flush
   → page.goto('/resume/[id]/print')
   → page.wait_for_selector('body[data-paginated="true"]')
   → page.pdf(margin=0, prefer_css_page_size=True)
