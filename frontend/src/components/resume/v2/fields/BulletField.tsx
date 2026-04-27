@@ -14,6 +14,7 @@ import { AtomKeyboardNav } from '../extensions/AtomKeyboardNav';
 import { SlashCommand } from '../extensions/SlashCommand';
 import { MarkdownInputRules } from '../extensions/MarkdownInputRules';
 import { showSlashMenu, hideSlashMenu } from '../interaction/SlashMenu';
+import { BubbleMenu } from '../interaction/BubbleMenu';
 import { useMeasureModeSync } from './useMeasureModeSync';
 import {
   makeTransformPastedHTML,
@@ -152,10 +153,13 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
   }, [mode, editor, bulletId]);
 
   return (
-    <EditorContent
-      editor={editor}
-      className="resume-bullet"
-      data-field-key={`bullet.content:${bulletId}`}
-    />
+    <>
+      <EditorContent
+        editor={editor}
+        className="resume-bullet"
+        data-field-key={`bullet.content:${bulletId}`}
+      />
+      {mode === 'edit' && <BubbleMenu editor={editor} />}
+    </>
   );
 }
