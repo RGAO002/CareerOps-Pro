@@ -6,7 +6,11 @@ import { UndoRedo } from '@tiptap/extensions';
 import Text from '@tiptap/extension-text';
 import Bold from '@tiptap/extension-bold';
 import Italic from '@tiptap/extension-italic';
+import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
+import Highlight from '@tiptap/extension-highlight';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { NoNewline } from '../extensions/NoNewline';
 import { stringToSingleLineDoc, singleLineDocToString } from './single-line-adapter';
@@ -44,8 +48,12 @@ export function PlainTextField({ fieldKey, value, mode, placeholder, className }
     extensions: [
       SingleLineDocument,
       Text,
+      TextStyle,           // required by Color
       Bold,
       Italic,
+      Underline,
+      Color,
+      Highlight.configure({ multicolor: true }),
       Link.configure({ openOnClick: false }),
       NoNewline,
       ...(mode === 'edit' ? [UndoRedo] : []),

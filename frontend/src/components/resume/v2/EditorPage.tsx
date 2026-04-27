@@ -6,6 +6,8 @@ import { EditorTopBar } from './EditorTopBar';
 import { useResumeStore } from './store/useResumeStore';
 import { setSaveBackend, defaultBackendSave, startAutoSave } from './store/flush-save';
 import { installKeyboardRouter } from './interaction/keyboard-router';
+import { atomFocusManager } from './interaction/AtomFocusManager';
+import { selectionManager } from './interaction/SelectionManager';
 import { getTemplate } from './templates/registry';
 import type { ResumeDoc } from './types';
 
@@ -24,12 +26,23 @@ export function EditorPage({ initialResume }: Props) {
     setSaveBackend(defaultBackendSave);
     const stopSave = startAutoSave();
     const stopKbd = installKeyboardRouter();
+
+    // Clear block selection whenever the user clicks into a TipTap field —
+    // otherwise an old block selection (e.g. from clicking ⋮⋮) persists and
+    // a Backspace inside a focused heading would route to deleteSelectedBlocks
+    // and obliterate the section.
+    const stopFocusClear = atomFocusManager.subscribe(() => {
+      if (atomFocusManager.currentEditor()) {
+        selectionManager.notifyTipTapFocus();
+      }
+    });
+
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       setHideInteraction(params.get('hideInteractionLayer') === '1');
     }
     setHydrated(true);
-    return () => { stopSave(); stopKbd(); };
+    return () => { stopSave(); stopKbd(); stopFocusClear(); };
   }, [initialResume]);
 
   if (!hydrated || !resume) {

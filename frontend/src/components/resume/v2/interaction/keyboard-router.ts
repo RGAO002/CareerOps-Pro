@@ -40,8 +40,12 @@ export function installKeyboardRouter(): () => void {
       return;
     }
 
-    // Block selection ops
-    if (selectionManager.hasBlockSelection()) {
+    // Block selection ops — but ONLY if no TipTap field is focused. Otherwise
+    // a Backspace inside an editable field would route through deleteSelectedBlocks
+    // and obliterate the section/entry/bullet the user is typing in (the
+    // selection might still be set from an earlier ⋮⋮ click that wasn't cleared).
+    const tiptapFocused = !!atomFocusManager.currentEditor();
+    if (!tiptapFocused && selectionManager.hasBlockSelection()) {
       if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
         deleteSelectedBlocks();
