@@ -232,8 +232,19 @@ function Palette({
   return (
     <div
       data-toolbar-popover
-      className="absolute left-0 top-full z-50 mt-1 grid grid-cols-3 gap-1 rounded-md border border-neutral-200 bg-white p-2 shadow-md"
+      className="rounded-md border border-neutral-200 bg-white shadow-md"
       onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 'calc(100% + 4px)',
+        zIndex: 50,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 24px)',
+        gap: 4,
+        padding: 8,
+        width: 'max-content',
+      }}
     >
       {palette.map(({ label, value }) => (
         <button
@@ -241,13 +252,21 @@ function Palette({
           type="button"
           title={label}
           onClick={() => apply(value)}
-          className="flex size-6 items-center justify-center rounded-md border border-neutral-200 hover:scale-110 transition-transform"
           style={{
+            width: 24,
+            height: 24,
+            borderRadius: 6,
+            border: '1px solid #e5e7eb',
+            cursor: 'pointer',
+            padding: 0,
             background: value ?? 'white',
             backgroundImage: value === null
               ? 'linear-gradient(45deg, transparent 45%, #dc2626 45%, #dc2626 55%, transparent 55%)'
               : undefined,
+            transition: 'transform 0.1s',
           }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.1)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
         />
       ))}
     </div>
