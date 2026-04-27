@@ -316,6 +316,32 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
+  it('Backspace on empty entry.title (empty meta + single empty bullet) DOES delete entry', () => {
+    // Repro of the user-reported "stuck row": title empty, meta empty, only a
+    // visually-blank bullet remains. bulletsAllEmpty must be true so the
+    // entry is collapsed.
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [
+          { id: 'e0', title: 'Prev', meta: '', bullets: [{ id: 'b0', text: 'something' }] },
+          { id: 'e1', title: '', meta: '', bullets: [{ id: 'b1', text: '' }] },
+        ]}],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
+
+    expect(fireKey(editor, 'Backspace')).toBe(true);
+    expect(deleteEntryMock).toHaveBeenCalledTimes(1);
+    const delCall = deleteEntryMock.mock.calls[0] as unknown as [string, unknown];
+    expect(delCall[0]).toBe('e1');
+    expect(focusFieldEnd).toHaveBeenCalledWith({
+      kind: 'bullet.content', id: 'b0',
+    });
+    editor.destroy();
+  });
+
   it('Backspace on empty entry.title (entry has non-empty bullets) does NOT delete; just focuses prev end', () => {
     useResumeStore.setState({
       resume: buildResume({

@@ -136,3 +136,35 @@
   text-decoration-color: rgba(37, 99, 235, 0.4);
   text-underline-offset: 3px;
 }
+
+/* ── Placeholder text for empty single-line + bullet fields ───────────────
+   Without these rules, an empty entry.title / entry.meta / contact line /
+   section heading / bullet renders as a completely blank rectangle — users
+   can't tell what the row is or whether Backspace did anything. We render
+   the placeholder via ::before on the empty <p> that TipTap leaves behind
+   inside .ProseMirror. Constrained to [data-mode="edit"] so PDFs/print
+   exports stay clean. attr() can't read attributes from an ancestor in
+   most browsers, so we hardcode the text per class instead of trying to
+   pipe data-placeholder through. */
+
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror p:first-child:empty::before {
+  pointer-events: none;
+  font-style: italic;
+  color: #9ca3af;          /* neutral-400 */
+  opacity: 0.7;
+  /* Make sure the placeholder doesn't push real content around. */
+  height: 0;
+  display: inline-block;
+}
+
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror p:first-child:empty::before { content: "Your name"; }
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror p:first-child:empty::before { content: "email | phone | location"; }
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before { content: "Section heading"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before { content: "Title (e.g. Software Engineer @ Acme)"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror p:first-child:empty::before { content: "Date · Location"; }
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror p:first-child:empty::before { content: "Empty bullet — type, or Backspace to remove"; }

@@ -120,5 +120,11 @@ export function ContactLinesField({ index, items, align, mode }: Props) {
     return () => atomFocusManager.unregister({ kind: 'header.contact', index });
   }, [mode, editor, index]);
 
-  return <EditorContent editor={editor} className="resume-contact-line" />;
+  return (
+    <EditorContent
+      editor={editor}
+      className="resume-contact-line"
+      data-placeholder="email | phone | location"
+    />
+  );
 }
