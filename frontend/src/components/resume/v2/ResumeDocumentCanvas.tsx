@@ -21,9 +21,10 @@ interface Props {
   resume: ResumeDoc;
   template: TemplateConfig;
   mode: CanvasMode;
+  hideInteractionLayer?: boolean;
 }
 
-export function ResumeDocumentCanvas({ resume, template, mode }: Props) {
+export function ResumeDocumentCanvas({ resume, template, mode, hideInteractionLayer = false }: Props) {
   const norm = useMemo(() => normalizeTemplate(template), [template]);
   const atoms = useMemo<LayoutAtom[]>(() => projectAtoms(resume), [resume]);
 
@@ -118,7 +119,7 @@ export function ResumeDocumentCanvas({ resume, template, mode }: Props) {
         template={norm}
         registry={registryRef.current}
       />
-      {mode === 'edit' && (
+      {mode === 'edit' && !hideInteractionLayer && (
         <InteractionLayer atoms={atoms} layouts={layout.atomLayouts} template={norm} />
       )}
     </div>

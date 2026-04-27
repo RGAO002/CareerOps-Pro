@@ -14,6 +14,7 @@ interface Props {
 
 export function EditorPage({ initialResume }: Props) {
   const [hydrated, setHydrated] = useState(false);
+  const [hideInteraction, setHideInteraction] = useState(false);
   const resume = useResumeStore(s => s.resume);
 
   useEffect(() => {
@@ -21,6 +22,12 @@ export function EditorPage({ initialResume }: Props) {
     setSaveBackend(defaultBackendSave);
     const stopSave = startAutoSave();
     const stopKbd = installKeyboardRouter();
+    // Detect ?hideInteractionLayer=1 URL query (used by e2e tests).
+    // Read from window.location to avoid Next's useSearchParams Suspense requirement.
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      setHideInteraction(params.get('hideInteractionLayer') === '1');
+    }
     setHydrated(true);
     return () => { stopSave(); stopKbd(); };
   }, [initialResume]);
@@ -32,7 +39,12 @@ export function EditorPage({ initialResume }: Props) {
     <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
       <EditorTopBar resumeId={resume.id} pageCount={1} />
       <div style={{ padding: '24px 0' }}>
-        <ResumeDocumentCanvas resume={resume} template={template} mode="edit" />
+        <ResumeDocumentCanvas
+          resume={resume}
+          template={template}
+          mode="edit"
+          hideInteractionLayer={hideInteraction}
+        />
       </div>
     </div>
   );
