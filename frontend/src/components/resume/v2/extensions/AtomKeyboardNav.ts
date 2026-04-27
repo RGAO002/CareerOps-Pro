@@ -3,7 +3,6 @@ import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 import type { Node as PMNode } from 'prosemirror-model';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
-import { forceShowTitle } from '../interaction/title-visibility';
 import { insertBullet } from '../store/actions/insertBlock';
 import { deleteBullet } from '../store/actions/deleteBlock';
 import { setBulletKind } from '../store/actions/setBulletKind';

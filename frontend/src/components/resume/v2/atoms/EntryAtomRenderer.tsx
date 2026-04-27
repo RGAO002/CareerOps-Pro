@@ -4,26 +4,14 @@ import { useEffect, useState } from 'react';
 import { PlainTextField } from '../fields/PlainTextField';
 import { BulletField } from '../fields/BulletField';
 import { BulletInteractionOverlay } from './BulletInteractionOverlay';
+import { EntryRowInteractionOverlay } from './EntryRowInteractionOverlay';
 import { getHoverState, subscribeHover } from '../interaction/hover-state';
 import {
   getDragPreview,
   subscribeDragPreview,
   type DragPreview,
 } from '../interaction/drag-preview-state';
-import { atomFocusManager } from '../interaction/AtomFocusManager';
-import {
-  isMetaForced,
-  subscribeMetaVisibility,
-  unforceShowMeta,
-} from '../interaction/meta-visibility';
-import {
-  isTitleForced,
-  subscribeTitleVisibility,
-  unforceShowTitle,
-} from '../interaction/title-visibility';
 import { useResumeStore } from '../store/useResumeStore';
-import { setEntryHiddenField } from '../store/actions/setEntryHiddenField';
-import { makeOrigin } from '../store/source-of-truth';
 import type { Align } from '../fields/single-line-adapter';
 import type { BlockId, CanvasMode, EntryBlock } from '../types';
 
@@ -36,12 +24,14 @@ const BULLET_SHIFT_GAP = 6;
 
 export function EntryAtomRenderer({ entry, mode }: Props) {
   // Bullet hover via global Y-coord matcher (InteractionLayer publishes).
-  // The overlay sits in the gutter at left:-28 with pointerEvents:'none'
-  // until hovered → we can't rely on the <li>'s own onMouseEnter alone
-  // (cursor moving from text into gutter passes through to underlying
-  // canvas, and the <li> mouseleave fires before the overlay can grab focus).
-  const [hoveredBulletId, setHoveredBulletId] = useState<BlockId | null>(getHoverState().bulletId);
-  useEffect(() => subscribeHover(s => setHoveredBulletId(s.bulletId)), []);
+  // Same publisher also tracks `atomFieldKey` for the title/meta row handles.
+  const initial = getHoverState();
+  const [hoveredBulletId, setHoveredBulletId] = useState<BlockId | null>(initial.bulletId);
+  const [hoveredFieldKey, setHoveredFieldKey] = useState<string | null>(initial.atomFieldKey);
+  useEffect(() => subscribeHover((s) => {
+    setHoveredBulletId(s.bulletId);
+    setHoveredFieldKey(s.atomFieldKey);
+  }), []);
 
   // Bullet drag preview: shift sibling bullets to make room (Notion-style).
   const [preview, setPreview] = useState<DragPreview>(getDragPreview());
@@ -80,107 +70,70 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     s => s.resume?.alignments?.[`entry.meta:${entry.id}`],
   ) as Align | undefined;
 
-  // Visibility model for entry.title / entry.meta:
-  //  - DEFAULT: render — even when empty — so the placeholder ("Title (e.g. …)")
-  //    acts as template guidance. Users see what could go there.
-  //  - HIDE: only when the user has explicitly hidden the row by pressing
-  //    Backspace at the start of an empty title/meta. That hide is persisted
-  //    on EntryBlock.hiddenFields so it survives reload.
-  //  - REVEAL: Tab from the previous field force-shows a hidden row via the
-  //    title-/meta-visibility pub/sub (covers the brief window between
-  //    forceShowX() and the new editor receiving focus). Focus inside also
-  //    keeps it shown.
-  //  - AUTO-UNHIDE on edit: if a hidden field gets non-empty content and the
-  //    user blurs, we clear hiddenFields automatically so the persisted state
-  //    matches what's now visible.
-  //  - On blur with empty + hidden, we drop the transient force-show flag and
-  //    leave hiddenFields alone — the row returns to hidden on the next render.
-  const titleHidden = entry.hiddenFields?.includes('title') ?? false;
-  const metaHidden = entry.hiddenFields?.includes('meta') ?? false;
+  // Unified row model:
+  //  - EDIT: always render entry.title and entry.meta. Empty rows show a
+  //    placeholder (template guidance) and a hover-revealed ⋮⋮ drag handle,
+  //    so the user sees what could go there and can rearrange the entry from
+  //    any row.
+  //  - EXPORT: skip rendering empty title / meta. An empty row in the PDF is
+  //    pure padding and would break visual rhythm.
+  //
+  // Caveat: editor preview height ≠ PDF height when these rows are empty
+  // (edit shows the placeholder line, export omits the row entirely).
+  // Acceptable trade — accurate on-page editing of guidance > exact preview.
+  const titleEmpty = (entry.title?.trim().length ?? 0) === 0;
+  const metaEmpty = (entry.meta?.trim().length ?? 0) === 0;
+  const renderTitle = mode === 'edit' || !titleEmpty;
+  const renderMeta = mode === 'edit' || !metaEmpty;
 
-  const [metaForced, setMetaForced] = useState<boolean>(() => isMetaForced(entry.id));
-  useEffect(() => {
-    return subscribeMetaVisibility((id, forced) => {
-      if (id === entry.id) setMetaForced(forced);
-    });
-  }, [entry.id]);
-
-  const [metaFocused, setMetaFocused] = useState(false);
-  useEffect(() => {
-    return atomFocusManager.subscribe(() => {
-      const el = document.activeElement as HTMLElement | null;
-      const inMeta = !!el?.closest?.(`[data-field-key="entry.meta:${entry.id}"]`);
-      setMetaFocused(inMeta);
-    });
-  }, [entry.id]);
-
-  const showMeta = !metaHidden || metaForced || metaFocused;
-
-  // Title mirrors meta. CAVEAT: the entry's drag handle (⋮⋮) is currently
-  // anchored to the title row. When the title is hidden, the handle floats
-  // over whatever the next visible row is (meta or first bullet). Phase 2
-  // will re-anchor the handle to the entry as a whole.
-  const [titleForced, setTitleForced] = useState<boolean>(() => isTitleForced(entry.id));
-  useEffect(() => {
-    return subscribeTitleVisibility((id, forced) => {
-      if (id === entry.id) setTitleForced(forced);
-    });
-  }, [entry.id]);
-
-  const [titleFocused, setTitleFocused] = useState(false);
-  useEffect(() => {
-    return atomFocusManager.subscribe(() => {
-      const el = document.activeElement as HTMLElement | null;
-      const inTitle = !!el?.closest?.(`[data-field-key="entry.title:${entry.id}"]`);
-      setTitleFocused(inTitle);
-    });
-  }, [entry.id]);
-
-  const showTitle = !titleHidden || titleForced || titleFocused;
+  const titleRowKey = `entry.title:${entry.id}`;
+  const metaRowKey = `entry.meta:${entry.id}`;
 
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
-      {showTitle && (
-        <PlainTextField
-          fieldKey={{ kind: 'entry.title', id: entry.id }}
-          value={entry.title}
-          align={titleAlign}
-          mode={mode}
-          className="resume-entry-title"
-          placeholder="Title (e.g. Software Engineer @ Acme)"
-          onBlur={(ed) => {
-            // When the row blurs:
-            //  - non-empty: ensure hiddenFields no longer contains 'title'.
-            //    A user who started typing into a previously-hidden row clearly
-            //    wants it shown — auto-unhide so reload stays consistent.
-            //  - empty + force-shown: drop the transient force-show so the
-            //    row returns to its hidden state (or stays visible if not
-            //    hidden at all).
-            const empty = ed.state.doc.textContent.trim() === '';
-            if (!empty) {
-              setEntryHiddenField(entry.id, 'title', false, makeOrigin('tiptap'));
-            }
-            unforceShowTitle(entry.id);
-          }}
-        />
+      {renderTitle && (
+        <div
+          style={{ position: 'relative' }}
+          data-row-field-key={mode === 'edit' ? titleRowKey : undefined}
+        >
+          {mode === 'edit' && (
+            <EntryRowInteractionOverlay
+              entryId={entry.id}
+              field="title"
+              hovered={hoveredFieldKey === titleRowKey}
+            />
+          )}
+          <PlainTextField
+            fieldKey={{ kind: 'entry.title', id: entry.id }}
+            value={entry.title}
+            align={titleAlign}
+            mode={mode}
+            className="resume-entry-title"
+            placeholder="Title (e.g. Software Engineer @ Acme)"
+          />
+        </div>
       )}
-      {showMeta && (
-        <PlainTextField
-          fieldKey={{ kind: 'entry.meta', id: entry.id }}
-          value={entry.meta}
-          align={metaAlign}
-          mode={mode}
-          className="resume-entry-meta"
-          placeholder="Date · Location"
-          onBlur={(ed) => {
-            // Same auto-unhide / drop-force logic as title above.
-            const empty = ed.state.doc.textContent.trim() === '';
-            if (!empty) {
-              setEntryHiddenField(entry.id, 'meta', false, makeOrigin('tiptap'));
-            }
-            unforceShowMeta(entry.id);
-          }}
-        />
+      {renderMeta && (
+        <div
+          style={{ position: 'relative' }}
+          data-row-field-key={mode === 'edit' ? metaRowKey : undefined}
+        >
+          {mode === 'edit' && (
+            <EntryRowInteractionOverlay
+              entryId={entry.id}
+              field="meta"
+              hovered={hoveredFieldKey === metaRowKey}
+            />
+          )}
+          <PlainTextField
+            fieldKey={{ kind: 'entry.meta', id: entry.id }}
+            value={entry.meta}
+            align={metaAlign}
+            mode={mode}
+            className="resume-entry-meta"
+            placeholder="Date · Location"
+          />
+        </div>
       )}
       <ul className="resume-entry-bullets">
         {entry.bullets.map((b, idx) => {

@@ -90,11 +90,23 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
           break;
         }
       }
-      setHoverState({ atomId: atomHit, bulletId: bulletHit });
+      // Field-row hover (entry.title / entry.meta): scan rendered single-line
+      // editor wrappers tagged with data-row-field-key for Y-band match. Same
+      // cheap approach as bullets so the row-level ⋮⋮ handle behaves identically.
+      let atomFieldKey: string | null = null;
+      const rowEls = document.querySelectorAll('[data-row-field-key]');
+      for (const el of Array.from(rowEls)) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) {
+          atomFieldKey = (el as HTMLElement).getAttribute('data-row-field-key');
+          break;
+        }
+      }
+      setHoverState({ atomId: atomHit, bulletId: bulletHit, atomFieldKey });
     };
     const onLeaveRoot = () => {
       setHoveredAtomId(null);
-      setHoverState({ atomId: null, bulletId: null });
+      setHoverState({ atomId: null, bulletId: null, atomFieldKey: null });
     };
     root.addEventListener('mousemove', onMove);
     root.addEventListener('mouseleave', onLeaveRoot);

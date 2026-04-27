@@ -33,16 +33,6 @@ export type EntryBlock = {
   title: string;
   meta: string;
   bullets: BulletBlock[];
-  /**
-   * Fields the user has explicitly hidden via Backspace on an empty single-line
-   * row. Default: undefined (≡ no hidden fields, all fields render with their
-   * placeholder when empty). Persisted to backend so the hide survives reload.
-   * Hidden fields can be brought back via Tab from the previous field, which
-   * temporarily force-shows them via the meta-/title-visibility pub/sub. Edits
-   * that leave the field non-empty automatically clear the flag (see
-   * EntryAtomRenderer onBlur).
-   */
-  hiddenFields?: Array<'title' | 'meta'>;
 };
 
 export type BulletBlock = {
