@@ -1,9 +1,10 @@
 // frontend/src/components/resume/v2/atoms/EntryAtomRenderer.tsx
 'use client';
+import { useState } from 'react';
 import { PlainTextField } from '../fields/PlainTextField';
 import { BulletField } from '../fields/BulletField';
 import { BulletInteractionOverlay } from './BulletInteractionOverlay';
-import type { CanvasMode, EntryBlock } from '../types';
+import type { BlockId, CanvasMode, EntryBlock } from '../types';
 
 interface Props {
   entry: EntryBlock;
@@ -11,6 +12,10 @@ interface Props {
 }
 
 export function EntryAtomRenderer({ entry, mode }: Props) {
+  // Track which bullet's <li> is currently hovered. The overlay sits in the
+  // left gutter (left:-28) so its own mouse events alone can't tell us when
+  // the user is over the actual bullet text — we need to listen on <li>.
+  const [hoveredBulletId, setHoveredBulletId] = useState<BlockId | null>(null);
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
       <PlainTextField
@@ -34,9 +39,15 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
             className="resume-bullet"
             data-block-id={b.id}
             style={{ position: 'relative' }}
+            onMouseEnter={() => setHoveredBulletId(b.id)}
+            onMouseLeave={() => setHoveredBulletId(prev => (prev === b.id ? null : prev))}
           >
             {mode === 'edit' && (
-              <BulletInteractionOverlay bulletId={b.id} entryId={entry.id} />
+              <BulletInteractionOverlay
+                bulletId={b.id}
+                entryId={entry.id}
+                hovered={hoveredBulletId === b.id}
+              />
             )}
             <BulletField bulletId={b.id} entryId={entry.id} content={b.content} mode={mode} />
           </li>

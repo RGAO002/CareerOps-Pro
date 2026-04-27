@@ -28,35 +28,12 @@ function selectableForAtom(atom: LayoutAtom): SelectableBlock | null {
   return section ? { kind: 'entry', id: atom.sourceBlockId, sectionId: section.id } : null;
 }
 
-/** Document-order block id list (sections, entries, bullets) — used as the
- *  range for shift-click selection extension. */
-function allBlockIdsInDocOrder(): BlockId[] {
-  const r = useResumeStore.getState().resume;
-  if (!r) return [];
-  const ids: BlockId[] = [];
-  for (const s of r.sections) {
-    ids.push(s.id);
-    for (const e of s.entries) {
-      ids.push(e.id);
-      for (const b of e.bullets) ids.push(b.id);
-    }
-  }
-  return ids;
-}
-
-function handleSelectClick(e: React.MouseEvent, blockId: BlockId): void {
-  if (e.shiftKey) {
-    selectionManager.extendBlockSelection(blockId, allBlockIdsInDocOrder());
-  } else if (e.metaKey || e.ctrlKey) {
-    selectionManager.toggleBlock(blockId);
-  } else {
-    selectionManager.selectSingleBlock(blockId);
-  }
-}
-
 export function InteractionLayer({ atoms, layouts, template }: Props) {
   const [dropPayload, setDropPayload] = useState<DropIndicatorPayload>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<BlockId>>(new Set());
+  // Track the atom whose content the user is hovering — used to fade in the
+  // ⋮⋮ drag handle and + / × buttons only for that row.
+  const [hoveredAtomId, setHoveredAtomId] = useState<AtomId | null>(null);
   // Tick to force re-render of selection outlines when layouts shift (e.g.
   // typing causes atoms to grow / pagination to recompute).
   const [, setOutlineTick] = useState(0);
@@ -73,6 +50,28 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     setOutlineTick(t => t + 1);
   }, [layouts]);
 
+  // Document-level event delegation: figure out which atom the cursor is over
+  // by walking up from the event target to the nearest [data-atom-id].
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.querySelector('[data-canvas-root]');
+    if (!root) return;
+    const onOver = (e: Event) => {
+      const tgt = e.target as HTMLElement | null;
+      if (!tgt || typeof tgt.closest !== 'function') return;
+      const atomEl = tgt.closest('[data-atom-id]') as HTMLElement | null;
+      const id = (atomEl?.getAttribute('data-atom-id') as AtomId | null) ?? null;
+      setHoveredAtomId(id);
+    };
+    const onLeaveRoot = () => setHoveredAtomId(null);
+    root.addEventListener('mouseover', onOver);
+    root.addEventListener('mouseleave', onLeaveRoot);
+    return () => {
+      root.removeEventListener('mouseover', onOver);
+      root.removeEventListener('mouseleave', onLeaveRoot);
+    };
+  }, []);
+
   return (
     <div
       className="interaction-layer"
@@ -85,34 +84,23 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         const block = selectableForAtom(atom);
         if (!block) return null;
         const coord = getAtomAbsoluteCoord(layout, 'edit', template);
+        const isHovered = hoveredAtomId === atom.id;
         return (
           <div
             key={atom.id}
-            style={{ position: 'absolute', top: coord.top, left: coord.left - 28, pointerEvents: 'auto' }}
+            onMouseEnter={() => setHoveredAtomId(atom.id)}
+            onMouseLeave={() => setHoveredAtomId(prev => (prev === atom.id ? null : prev))}
+            style={{
+              position: 'absolute',
+              top: coord.top,
+              left: coord.left - 28,
+              opacity: isHovered ? 1 : 0,
+              transition: 'opacity 0.15s',
+              pointerEvents: isHovered ? 'auto' : 'none',
+            }}
           >
             <DragHandle block={block} onDropIndicator={setDropPayload} />
             <HoverAffordance block={block} style={{ marginTop: 4 }} />
-            <button
-              type="button"
-              onClick={(e) => handleSelectClick(e, block.id)}
-              style={{
-                position: 'absolute',
-                left: -28,
-                top: 4,
-                width: 24,
-                height: 24,
-                border: 0,
-                background: 'transparent',
-                cursor: 'pointer',
-                opacity: 0.4,
-                fontSize: 14,
-                lineHeight: '24px',
-                color: selectedBlocks.has(block.id) ? '#3b82f6' : '#999',
-                padding: 0,
-              }}
-              title="Select block (shift-click to extend, cmd-click to toggle)"
-              aria-label="Select block"
-            >●</button>
           </div>
         );
       })}
