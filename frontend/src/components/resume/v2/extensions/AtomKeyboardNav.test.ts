@@ -1,0 +1,232 @@
+// frontend/src/components/resume/v2/extensions/AtomKeyboardNav.test.ts
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { Editor } from '@tiptap/core';
+import Text from '@tiptap/extension-text';
+import Paragraph from '@tiptap/extension-paragraph';
+import Bold from '@tiptap/extension-bold';
+import Italic from '@tiptap/extension-italic';
+import { BulletDocument } from './BulletDocument';
+import { AtomKeyboardNav } from './AtomKeyboardNav';
+import { useResumeStore } from '../store/useResumeStore';
+import { _resetTransactionCounter } from '../store/source-of-truth';
+import type { ProseMirrorBulletDoc, ResumeDoc } from '../types';
+
+// ─── mocks (hoisted so vi.mock factories can read them) ──────────────────
+const {
+  focusFieldWhenReady, focusFieldEnd, focusNext, focusPrevious,
+  setOrder, register, unregister, insertBulletMock, deleteBulletMock,
+} = vi.hoisted(() => ({
+  focusFieldWhenReady: vi.fn(),
+  focusFieldEnd: vi.fn().mockReturnValue(true),
+  focusNext: vi.fn(),
+  focusPrevious: vi.fn(),
+  setOrder: vi.fn(),
+  register: vi.fn(),
+  unregister: vi.fn(),
+  insertBulletMock: vi.fn().mockReturnValue('NEW_BULLET_ID'),
+  deleteBulletMock: vi.fn(),
+}));
+
+vi.mock('../interaction/AtomFocusManager', () => ({
+  atomFocusManager: {
+    register,
+    unregister,
+    setOrder,
+    focusNext,
+    focusPrevious,
+    focusFieldWhenReady,
+    focusFieldEnd,
+  },
+}));
+
+vi.mock('../store/actions/insertBlock', () => ({
+  insertBullet: (...args: unknown[]) => insertBulletMock(...args),
+}));
+vi.mock('../store/actions/deleteBlock', () => ({
+  deleteBullet: (...args: unknown[]) => deleteBulletMock(...args),
+}));
+
+// ─── helpers ──────────────────────────────────────────────────────────────
+const makeContent = (text: string): ProseMirrorBulletDoc => ({
+  type: 'doc',
+  content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : undefined }],
+});
+
+const RESUME: ResumeDoc = {
+  schema_version: 2, id: 'r', title: '', template_id: 'minimal-single-column',
+  header: { id: 'h', name: '', contact_lines: [] },
+  sections: [{ id: 's', role: 'experience', heading: 'Exp', entries: [
+    { id: 'e1', title: '', meta: '', bullets: [
+      { id: 'b1', content: makeContent('hello world') },
+      { id: 'b2', content: makeContent('') },
+    ]},
+  ]}],
+  metadata: { created_at: '', updated_at: '', target_company: null, target_role: null, parent_id: null },
+};
+
+function makeBulletEditor(bulletId: string, entryId: string, content: ProseMirrorBulletDoc): Editor {
+  return new Editor({
+    extensions: [
+      BulletDocument,
+      Paragraph,
+      Text,
+      Bold,
+      Italic,
+      AtomKeyboardNav.configure({
+        bulletId,
+        entryId,
+        field: { kind: 'bullet.content', id: bulletId },
+      }),
+    ],
+    content,
+  });
+}
+
+function fireKey(editor: Editor, key: string): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const view = (editor as any).view;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handled = view.someProp('handleKeyDown', (f: any) =>
+    f(view, new KeyboardEvent('keydown', { key })),
+  );
+  return Boolean(handled);
+}
+
+beforeEach(() => {
+  useResumeStore.setState({ resume: structuredClone(RESUME), bulletMeta: {} });
+  _resetTransactionCounter();
+  insertBulletMock.mockClear();
+  insertBulletMock.mockReturnValue('NEW_BULLET_ID');
+  deleteBulletMock.mockClear();
+  focusFieldWhenReady.mockClear();
+  focusFieldEnd.mockClear();
+  focusFieldEnd.mockReturnValue(true);
+  focusNext.mockClear();
+  focusPrevious.mockClear();
+});
+
+// ─── Enter ────────────────────────────────────────────────────────────────
+describe('AtomKeyboardNav — Enter (Notion-style split)', () => {
+  it('Enter in middle of text splits bullet: prefix stays, suffix moves to new bullet, focus jumps to new', () => {
+    const editor = makeBulletEditor('b1', 'e1', makeContent('hello world'));
+    // place cursor between "hello" and " world" → pos = 1 + len("hello") = 6
+    editor.commands.focus();
+    editor.commands.setTextSelection(6);
+
+    expect(fireKey(editor, 'Enter')).toBe(true);
+
+    // Current bullet should now contain ONLY the prefix "hello"
+    const json = editor.getJSON();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const firstInline = (json as any).content?.[0]?.content?.[0];
+    expect(firstInline).toMatchObject({ type: 'text', text: 'hello' });
+
+    // insertBullet should have been called with the suffix doc, at idx+1=1
+    expect(insertBulletMock).toHaveBeenCalledTimes(1);
+    const call = insertBulletMock.mock.calls[0] as unknown as [string, number, ProseMirrorBulletDoc, unknown];
+    expect(call[0]).toBe('e1');
+    expect(call[1]).toBe(1);
+    const para = call[2].content?.[0];
+    const inline = para?.content?.[0];
+    expect(inline).toMatchObject({ type: 'text', text: ' world' });
+
+    // Focus should be requested for the new bullet ID via focusFieldWhenReady
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'bullet.content',
+      id: 'NEW_BULLET_ID',
+    });
+
+    editor.destroy();
+  });
+
+  it('Enter at end of bullet leaves current unchanged and inserts empty new bullet after', () => {
+    const editor = makeBulletEditor('b1', 'e1', makeContent('done'));
+    editor.commands.focus();
+    const docSize = editor.state.doc.content.size;
+    editor.commands.setTextSelection(docSize);
+
+    expect(fireKey(editor, 'Enter')).toBe(true);
+
+    // Current content unchanged
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inline = (editor.getJSON() as any).content?.[0]?.content?.[0];
+    expect(inline).toMatchObject({ type: 'text', text: 'done' });
+
+    expect(insertBulletMock).toHaveBeenCalledTimes(1);
+    const call = insertBulletMock.mock.calls[0] as unknown as [string, number, ProseMirrorBulletDoc, unknown];
+    const para = call[2].content?.[0];
+    expect(para?.content ?? []).toEqual([]);
+
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'bullet.content',
+      id: 'NEW_BULLET_ID',
+    });
+    editor.destroy();
+  });
+
+  it('Enter on empty bullet inserts new empty bullet after and focuses it', () => {
+    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
+    editor.commands.focus();
+
+    expect(fireKey(editor, 'Enter')).toBe(true);
+
+    expect(insertBulletMock).toHaveBeenCalledTimes(1);
+    const call = insertBulletMock.mock.calls[0] as unknown as [string, number, ProseMirrorBulletDoc, unknown];
+    expect(call[0]).toBe('e1');
+    // b2 is at idx 1, new bullet inserted at idx 2
+    expect(call[1]).toBe(2);
+    const para = call[2].content?.[0];
+    expect(para?.content ?? []).toEqual([]);
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'bullet.content',
+      id: 'NEW_BULLET_ID',
+    });
+    editor.destroy();
+  });
+});
+
+// ─── Backspace ────────────────────────────────────────────────────────────
+describe('AtomKeyboardNav — Backspace (Notion-style)', () => {
+  it('Backspace at start of empty bullet deletes it and focuses END of previous field', () => {
+    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
+    editor.commands.focus();
+    // cursor is naturally at start (pos 1) for empty paragraph
+
+    expect(fireKey(editor, 'Backspace')).toBe(true);
+
+    expect(deleteBulletMock).toHaveBeenCalledTimes(1);
+    const delCall = deleteBulletMock.mock.calls[0] as unknown as [string, unknown];
+    expect(delCall[0]).toBe('b2');
+    // Focus should land at END of previous bullet (b1) — not via focusPrevious
+    expect(focusFieldEnd).toHaveBeenCalled();
+    const focusCall = focusFieldEnd.mock.calls[0] as unknown as [{ kind: string; id: string }];
+    expect(focusCall[0].kind).toBe('bullet.content');
+    expect(focusCall[0].id).toBe('b1');
+    expect(focusPrevious).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('Backspace at start of non-empty bullet returns false (no delete, no focus shift)', () => {
+    const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
+    editor.commands.focus();
+    editor.commands.setTextSelection(1); // start of paragraph
+
+    fireKey(editor, 'Backspace');
+    expect(deleteBulletMock).not.toHaveBeenCalled();
+    expect(focusFieldEnd).not.toHaveBeenCalled();
+    expect(focusPrevious).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('Backspace mid-text returns false (no delete, no focus shift)', () => {
+    const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
+    editor.commands.focus();
+    editor.commands.setTextSelection(3); // middle of "hello"
+
+    fireKey(editor, 'Backspace');
+    expect(deleteBulletMock).not.toHaveBeenCalled();
+    expect(focusFieldEnd).not.toHaveBeenCalled();
+    expect(focusPrevious).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+});

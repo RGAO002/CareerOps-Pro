@@ -95,6 +95,39 @@ export class AtomFocusManager {
     const prevK = this.order[i - 1];
     this.editors.get(prevK)?.commands.focus();
   }
+
+  /** Focus a specific field at the END of its content. Returns true if the
+   *  editor is currently registered (and was focused), false otherwise. */
+  focusFieldEnd(field: EditableField): boolean {
+    const k = fieldKey(field);
+    const ed = this.editors.get(k);
+    if (!ed) return false;
+    ed.commands.focus('end');
+    return true;
+  }
+
+  /** Focus a field as soon as its editor registers. Polls via
+   *  requestAnimationFrame to bridge the gap between React inserting the new
+   *  DOM node, the BulletField effect running, and the editor registering.
+   *  Cursor lands at 'start' of the editor's document.
+   *
+   *  Bounded by maxAttempts (default 20) to avoid infinite polling if the
+   *  field never appears (e.g. it was never rendered). */
+  focusFieldWhenReady(field: EditableField, opts?: { maxAttempts?: number }): void {
+    const k = fieldKey(field);
+    const max = opts?.maxAttempts ?? 20;
+    let n = 0;
+    const tick = (): void => {
+      const ed = this.editors.get(k);
+      if (ed) {
+        ed.commands.focus('start');
+        return;
+      }
+      if (++n >= max) return;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 }
 
 export const atomFocusManager = new AtomFocusManager();
