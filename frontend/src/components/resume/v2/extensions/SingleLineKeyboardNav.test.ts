@@ -16,7 +16,8 @@ const {
   focusFieldWhenReady, focusFieldEnd, focusNext, focusPrevious,
   setOrder, register, unregister,
   insertBulletMock, insertEntryMock, insertContactLineMock,
-  deleteSectionMock, deleteEntryMock, deleteContactLineMock,
+  deleteSectionMock, deleteContactLineMock,
+  setEntryHiddenFieldMock,
   forceShowMetaMock, unforceShowMetaMock,
   forceShowTitleMock, unforceShowTitleMock,
 } = vi.hoisted(() => ({
@@ -33,8 +34,8 @@ const {
   }),
   insertContactLineMock: vi.fn().mockReturnValue(0),
   deleteSectionMock: vi.fn(),
-  deleteEntryMock: vi.fn(),
   deleteContactLineMock: vi.fn(),
+  setEntryHiddenFieldMock: vi.fn(),
   forceShowMetaMock: vi.fn(),
   unforceShowMetaMock: vi.fn(),
   forceShowTitleMock: vi.fn(),
@@ -70,8 +71,10 @@ vi.mock('../store/actions/insertBlock', () => ({
 }));
 vi.mock('../store/actions/deleteBlock', () => ({
   deleteSection: (...args: unknown[]) => deleteSectionMock(...args),
-  deleteEntry: (...args: unknown[]) => deleteEntryMock(...args),
   deleteContactLine: (...args: unknown[]) => deleteContactLineMock(...args),
+}));
+vi.mock('../store/actions/setEntryHiddenField', () => ({
+  setEntryHiddenField: (...args: unknown[]) => setEntryHiddenFieldMock(...args),
 }));
 
 // ─── helpers ──────────────────────────────────────────────────────────────
@@ -153,8 +156,8 @@ beforeEach(() => {
   insertContactLineMock.mockClear();
   insertContactLineMock.mockReturnValue(0);
   deleteSectionMock.mockClear();
-  deleteEntryMock.mockClear();
   deleteContactLineMock.mockClear();
+  setEntryHiddenFieldMock.mockClear();
   focusFieldWhenReady.mockClear();
   focusFieldEnd.mockClear();
   focusFieldEnd.mockReturnValue(true);
@@ -316,7 +319,10 @@ describe('SingleLineKeyboardNav — Enter', () => {
 
 // ─── Backspace ────────────────────────────────────────────────────────────
 describe('SingleLineKeyboardNav — Backspace', () => {
-  it('Backspace on empty entry.title (entry empty) deletes entry and focuses end of previous', () => {
+  it('Backspace on empty entry.title flags the title as user-hidden and focuses prev end', () => {
+    // New UX: empty title + Backspace = user explicitly hides the row.
+    // The entry itself stays — hide is reversible via Tab from the previous
+    // field and persists across reload via EntryBlock.hiddenFields.
     useResumeStore.setState({
       resume: buildResume({
         sections: [{ id: 's1', heading: 'Exp', entries: [
@@ -330,9 +336,13 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).toHaveBeenCalledTimes(1);
-    const delCall = deleteEntryMock.mock.calls[0] as unknown as [string, unknown];
-    expect(delCall[0]).toBe('e1');
+    expect(setEntryHiddenFieldMock).toHaveBeenCalledTimes(1);
+    const call = setEntryHiddenFieldMock.mock.calls[0] as unknown as [
+      string, 'title' | 'meta', boolean, unknown,
+    ];
+    expect(call[0]).toBe('e1');
+    expect(call[1]).toBe('title');
+    expect(call[2]).toBe(true);
     // Previous = last bullet of previous entry
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'bullet.content', id: 'b0',
@@ -340,36 +350,8 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty entry.title (empty meta + single empty bullet) DOES delete entry', () => {
-    // Repro of the user-reported "stuck row": title empty, meta empty, only a
-    // visually-blank bullet remains. bulletsAllEmpty must be true so the
-    // entry is collapsed.
-    useResumeStore.setState({
-      resume: buildResume({
-        sections: [{ id: 's1', heading: 'Exp', entries: [
-          { id: 'e0', title: 'Prev', meta: '', bullets: [{ id: 'b0', text: 'something' }] },
-          { id: 'e1', title: '', meta: '', bullets: [{ id: 'b1', text: '' }] },
-        ]}],
-      }),
-      bulletMeta: {},
-    });
-    _resetTransactionCounter();
-    const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
-
-    expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).toHaveBeenCalledTimes(1);
-    const delCall = deleteEntryMock.mock.calls[0] as unknown as [string, unknown];
-    expect(delCall[0]).toBe('e1');
-    expect(focusFieldEnd).toHaveBeenCalledWith({
-      kind: 'bullet.content', id: 'b0',
-    });
-    editor.destroy();
-  });
-
-  it('Backspace on empty entry.title (entry has non-empty bullets) does NOT delete; just focuses prev end', () => {
-    // Conservative rule: the entry has real bullet content the user might not
-    // notice losing, so Backspace on the title only moves focus. Undo is a
-    // weak safety net users won't reach for if they don't see the destruction.
+  it('Backspace on empty entry.title even when entry has bullets only HIDES (does not destroy bullets)', () => {
+    // The entry's bullets are preserved — only the title row is hidden.
     useResumeStore.setState({
       resume: buildResume({
         sections: [{ id: 's1', heading: 'Exp', entries: [
@@ -382,7 +364,13 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).not.toHaveBeenCalled();
+    expect(setEntryHiddenFieldMock).toHaveBeenCalledTimes(1);
+    const call = setEntryHiddenFieldMock.mock.calls[0] as unknown as [
+      string, 'title' | 'meta', boolean, unknown,
+    ];
+    expect(call[0]).toBe('e1');
+    expect(call[1]).toBe('title');
+    expect(call[2]).toBe(true);
     // Previous of entry.title (first entry of section) = section.heading
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'section.heading', id: 's1',
@@ -390,7 +378,7 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty entry.meta focuses end of entry.title (no delete)', () => {
+  it('Backspace on empty entry.meta flags meta as user-hidden and focuses entry.title', () => {
     useResumeStore.setState({
       resume: buildResume({
         sections: [{ id: 's1', heading: 'Exp', entries: [
@@ -403,7 +391,13 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'entry.meta', id: 'e1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).not.toHaveBeenCalled();
+    expect(setEntryHiddenFieldMock).toHaveBeenCalledTimes(1);
+    const call = setEntryHiddenFieldMock.mock.calls[0] as unknown as [
+      string, 'title' | 'meta', boolean, unknown,
+    ];
+    expect(call[0]).toBe('e1');
+    expect(call[1]).toBe('meta');
+    expect(call[2]).toBe(true);
     expect(deleteSectionMock).not.toHaveBeenCalled();
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'entry.title', id: 'e1',
@@ -514,7 +508,7 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.commands.setTextSelection(1); // start of paragraph
 
     fireKey(editor, 'Backspace');
-    expect(deleteEntryMock).not.toHaveBeenCalled();
+    expect(setEntryHiddenFieldMock).not.toHaveBeenCalled();
     expect(focusFieldEnd).not.toHaveBeenCalled();
     editor.destroy();
   });
@@ -534,7 +528,7 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.commands.setTextSelection(3); // middle
 
     fireKey(editor, 'Backspace');
-    expect(deleteEntryMock).not.toHaveBeenCalled();
+    expect(setEntryHiddenFieldMock).not.toHaveBeenCalled();
     expect(focusFieldEnd).not.toHaveBeenCalled();
     editor.destroy();
   });

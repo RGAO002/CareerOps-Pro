@@ -13,6 +13,7 @@ import {
 } from './deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from './duplicateBlock';
 import { setBulletKind } from './setBulletKind';
+import { setEntryHiddenField } from './setEntryHiddenField';
 import type { ResumeDoc } from '../../types';
 
 const RESUME: ResumeDoc = {
@@ -265,5 +266,54 @@ describe('setBulletKind', () => {
     const after = useResumeStore.getState().resume!;
     // Same reference → no setState happened
     expect(after).toBe(before);
+  });
+});
+
+describe('setEntryHiddenField', () => {
+  it('adds title to an entry with no hiddenFields → hiddenFields: ["title"]', () => {
+    setEntryHiddenField('e1', 'title', true, makeOrigin('tiptap'));
+    const e = useResumeStore.getState().resume!.sections[0].entries[0];
+    expect(e.hiddenFields).toEqual(['title']);
+  });
+
+  it('adds meta to an entry already hiding title → ["title", "meta"]', () => {
+    setEntryHiddenField('e1', 'title', true, makeOrigin('tiptap'));
+    setEntryHiddenField('e1', 'meta', true, makeOrigin('tiptap'));
+    const e = useResumeStore.getState().resume!.sections[0].entries[0];
+    expect(e.hiddenFields).toEqual(['title', 'meta']);
+  });
+
+  it('removes title from ["title", "meta"] → ["meta"]', () => {
+    setEntryHiddenField('e1', 'title', true, makeOrigin('tiptap'));
+    setEntryHiddenField('e1', 'meta', true, makeOrigin('tiptap'));
+    setEntryHiddenField('e1', 'title', false, makeOrigin('tiptap'));
+    const e = useResumeStore.getState().resume!.sections[0].entries[0];
+    expect(e.hiddenFields).toEqual(['meta']);
+  });
+
+  it('removing the last hidden field drops hiddenFields entirely (undefined)', () => {
+    setEntryHiddenField('e1', 'title', true, makeOrigin('tiptap'));
+    setEntryHiddenField('e1', 'title', false, makeOrigin('tiptap'));
+    const e = useResumeStore.getState().resume!.sections[0].entries[0];
+    expect(e.hiddenFields).toBeUndefined();
+    // Property must be absent, not set-to-undefined — keeps JSON minimal.
+    expect(Object.prototype.hasOwnProperty.call(e, 'hiddenFields')).toBe(false);
+  });
+
+  it('no-ops when state already matches (no setState; same reference)', () => {
+    // Already-not-hidden, asked to un-hide.
+    const before = useResumeStore.getState().resume!;
+    setEntryHiddenField('e1', 'title', false, makeOrigin('tiptap'));
+    const after = useResumeStore.getState().resume!;
+    expect(after).toBe(before);
+  });
+
+  it('is undoable: undo restores the previous hiddenFields', () => {
+    setEntryHiddenField('e1', 'title', true, makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].hiddenFields)
+      .toEqual(['title']);
+    useResumeStore.getState().undo();
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].hiddenFields)
+      .toBeUndefined();
   });
 });

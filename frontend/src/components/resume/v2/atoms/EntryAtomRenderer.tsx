@@ -22,6 +22,8 @@ import {
   unforceShowTitle,
 } from '../interaction/title-visibility';
 import { useResumeStore } from '../store/useResumeStore';
+import { setEntryHiddenField } from '../store/actions/setEntryHiddenField';
+import { makeOrigin } from '../store/source-of-truth';
 import type { Align } from '../fields/single-line-adapter';
 import type { BlockId, CanvasMode, EntryBlock } from '../types';
 
@@ -78,14 +80,24 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     s => s.resume?.alignments?.[`entry.meta:${entry.id}`],
   ) as Align | undefined;
 
-  // Visibility state for entry.meta:
-  //  - Always render when there's actual meta text to show.
-  //  - Render while focused (so the user can keep typing into a freshly tabbed
-  //    meta even though it's still empty).
-  //  - Render when "force-shown" via Tab from entry.title (covers the brief
-  //    window between forceShowMeta() and the new editor receiving focus).
-  // Otherwise the meta editor is DOM-absent so the empty row + missing drag
-  // handle can't appear.
+  // Visibility model for entry.title / entry.meta:
+  //  - DEFAULT: render — even when empty — so the placeholder ("Title (e.g. …)")
+  //    acts as template guidance. Users see what could go there.
+  //  - HIDE: only when the user has explicitly hidden the row by pressing
+  //    Backspace at the start of an empty title/meta. That hide is persisted
+  //    on EntryBlock.hiddenFields so it survives reload.
+  //  - REVEAL: Tab from the previous field force-shows a hidden row via the
+  //    title-/meta-visibility pub/sub (covers the brief window between
+  //    forceShowX() and the new editor receiving focus). Focus inside also
+  //    keeps it shown.
+  //  - AUTO-UNHIDE on edit: if a hidden field gets non-empty content and the
+  //    user blurs, we clear hiddenFields automatically so the persisted state
+  //    matches what's now visible.
+  //  - On blur with empty + hidden, we drop the transient force-show flag and
+  //    leave hiddenFields alone — the row returns to hidden on the next render.
+  const titleHidden = entry.hiddenFields?.includes('title') ?? false;
+  const metaHidden = entry.hiddenFields?.includes('meta') ?? false;
+
   const [metaForced, setMetaForced] = useState<boolean>(() => isMetaForced(entry.id));
   useEffect(() => {
     return subscribeMetaVisibility((id, forced) => {
@@ -102,24 +114,12 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     });
   }, [entry.id]);
 
-  const showMeta =
-    metaForced ||
-    metaFocused ||
-    (entry.meta?.trim().length ?? 0) > 0;
+  const showMeta = !metaHidden || metaForced || metaFocused;
 
-  // Visibility state for entry.title (mirrors entry.meta above):
-  //  - Always render when there's actual title text to show.
-  //  - Render while focused (so the user can keep typing into a freshly-tabbed
-  //    title even though it's still empty).
-  //  - Render when "force-shown" via Tab from section.heading or a previous
-  //    entry's last bullet (covers the brief window between forceShowTitle()
-  //    and the new editor receiving focus).
-  // Otherwise the title editor is DOM-absent so the empty row can't appear.
-  //
-  // CAVEAT: the entry's drag handle (⋮⋮) is currently anchored to the title
-  // row. When the title is hidden, the handle floats over whatever the next
-  // visible row is (meta or first bullet). Phase 2 will re-anchor the handle
-  // to the entry as a whole.
+  // Title mirrors meta. CAVEAT: the entry's drag handle (⋮⋮) is currently
+  // anchored to the title row. When the title is hidden, the handle floats
+  // over whatever the next visible row is (meta or first bullet). Phase 2
+  // will re-anchor the handle to the entry as a whole.
   const [titleForced, setTitleForced] = useState<boolean>(() => isTitleForced(entry.id));
   useEffect(() => {
     return subscribeTitleVisibility((id, forced) => {
@@ -136,10 +136,7 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     });
   }, [entry.id]);
 
-  const showTitle =
-    titleForced ||
-    titleFocused ||
-    (entry.title?.trim().length ?? 0) > 0;
+  const showTitle = !titleHidden || titleForced || titleFocused;
 
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
@@ -152,12 +149,18 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
           className="resume-entry-title"
           placeholder="Title (e.g. Software Engineer @ Acme)"
           onBlur={(ed) => {
-            // When title blurs and is still empty, drop the force-show flag so
-            // the row hides again on the next render. Non-empty title keeps
-            // rendering naturally via the entry.title.trim() condition.
-            if (ed.state.doc.textContent.trim() === '') {
-              unforceShowTitle(entry.id);
+            // When the row blurs:
+            //  - non-empty: ensure hiddenFields no longer contains 'title'.
+            //    A user who started typing into a previously-hidden row clearly
+            //    wants it shown — auto-unhide so reload stays consistent.
+            //  - empty + force-shown: drop the transient force-show so the
+            //    row returns to its hidden state (or stays visible if not
+            //    hidden at all).
+            const empty = ed.state.doc.textContent.trim() === '';
+            if (!empty) {
+              setEntryHiddenField(entry.id, 'title', false, makeOrigin('tiptap'));
             }
+            unforceShowTitle(entry.id);
           }}
         />
       )}
@@ -170,12 +173,12 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
           className="resume-entry-meta"
           placeholder="Date · Location"
           onBlur={(ed) => {
-            // When meta blurs and is still empty, drop the force-show flag so
-            // the row hides again on the next render. Non-empty meta keeps
-            // rendering naturally via the entry.meta.trim() condition.
-            if (ed.state.doc.textContent.trim() === '') {
-              unforceShowMeta(entry.id);
+            // Same auto-unhide / drop-force logic as title above.
+            const empty = ed.state.doc.textContent.trim() === '';
+            if (!empty) {
+              setEntryHiddenField(entry.id, 'meta', false, makeOrigin('tiptap'));
             }
+            unforceShowMeta(entry.id);
           }}
         />
       )}

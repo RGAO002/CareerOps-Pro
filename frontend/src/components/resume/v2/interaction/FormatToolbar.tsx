@@ -32,11 +32,26 @@ const HIGHLIGHT_PALETTE = [
   { label: 'Gray',    value: '#e5e7eb' },
 ];
 
+// Curated set of resume-friendly fonts. Default = unset = whatever the
+// template / canvas CSS defines. Stored as the standard textStyle.fontFamily
+// attribute via @tiptap/extension-font-family.
+const FONT_CHOICES: { label: string; value: string | null }[] = [
+  { label: 'Default',   value: null },
+  { label: 'Inter',     value: 'Inter, sans-serif' },
+  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+  { label: 'Times',     value: '"Times New Roman", Times, serif' },
+  { label: 'Georgia',   value: 'Georgia, serif' },
+  { label: 'Garamond',  value: 'Garamond, serif' },
+  { label: 'Calibri',   value: 'Calibri, "Trebuchet MS", sans-serif' },
+  { label: 'Arial',     value: 'Arial, sans-serif' },
+];
+
 export function FormatToolbar() {
   const [, force] = useState(0);
   const lastEditorRef = useRef<Editor | null>(null);
   const [colorOpen, setColorOpen] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
+  const [fontOpen, setFontOpen] = useState(false);
 
   useEffect(() => atomFocusManager.subscribe(() => {
     const ed = atomFocusManager.currentEditor();
@@ -48,16 +63,16 @@ export function FormatToolbar() {
 
   // Close popovers on outside click
   useEffect(() => {
-    if (!colorOpen && !hlOpen) return;
+    if (!colorOpen && !hlOpen && !fontOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest?.('[data-toolbar-popover]') && !t.closest?.('[data-toolbar-trigger]')) {
-        setColorOpen(false); setHlOpen(false);
+        setColorOpen(false); setHlOpen(false); setFontOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
-  }, [colorOpen, hlOpen]);
+  }, [colorOpen, hlOpen, fontOpen]);
 
   const liveEditor = atomFocusManager.currentEditor();
   const editor: Editor | null = liveEditor ?? lastEditorRef.current;
@@ -163,7 +178,7 @@ export function FormatToolbar() {
         <button type="button" aria-label="Highlight" title="Highlight"
           data-toolbar-trigger
           onMouseDown={noStealFocus}
-          onClick={() => { setHlOpen(o => !o); setColorOpen(false); }}
+          onClick={() => { setHlOpen(o => !o); setColorOpen(false); setFontOpen(false); }}
           disabled={!has('highlight')}
           className={btn(isActive('highlight'), !has('highlight'))}>
           <Highlighter className="size-3.5" strokeWidth={2} />
@@ -176,6 +191,31 @@ export function FormatToolbar() {
               if (value === null) editor.chain().focus().unsetHighlight().run();
               else editor.chain().focus().toggleHighlight({ color: value }).run();
               setHlOpen(false);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Font family — depends on textStyle being in the schema */}
+      <div className="relative">
+        <button type="button" aria-label="Font family" title="Font family"
+          data-toolbar-trigger
+          onMouseDown={noStealFocus}
+          onClick={() => { setFontOpen(o => !o); setColorOpen(false); setHlOpen(false); }}
+          disabled={!has('textStyle')}
+          className={`${btn(false, !has('textStyle'))} px-1.5`}
+          style={{ width: 'auto', minWidth: 28 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>Aa</span>
+        </button>
+        {fontOpen && (
+          <FontList
+            choices={FONT_CHOICES}
+            current={(editor?.getAttributes('textStyle').fontFamily as string | undefined) ?? null}
+            apply={(value) => {
+              if (!editor) return;
+              if (value === null) editor.chain().focus().unsetFontFamily().run();
+              else editor.chain().focus().setFontFamily(value).run();
+              setFontOpen(false);
             }}
           />
         )}
@@ -219,6 +259,66 @@ export function FormatToolbar() {
         disabled={!has('link')} className={btn(isActive('link'), !has('link'))}>
         <LinkIcon className="size-3.5" strokeWidth={2} />
       </button>
+    </div>
+  );
+}
+
+function FontList({
+  choices, current, apply,
+}: {
+  choices: { label: string; value: string | null }[];
+  /** The currently active fontFamily attr (or null = unset). Used for the
+   *  active row highlight — exact-match against the choice's value. */
+  current: string | null;
+  apply: (v: string | null) => void;
+}) {
+  return (
+    <div
+      data-toolbar-popover
+      className="rounded-md border border-neutral-200 bg-white shadow-md"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 'calc(100% + 4px)',
+        zIndex: 50,
+        padding: 4,
+        width: 140,
+        maxHeight: 240,
+        overflowY: 'auto',
+      }}
+    >
+      {choices.map(({ label, value }) => {
+        const active = (current ?? null) === value;
+        return (
+          <button
+            key={label}
+            type="button"
+            onClick={() => apply(value)}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              padding: '4px 8px',
+              borderRadius: 4,
+              border: 'none',
+              background: active ? '#e5e7eb' : 'transparent',
+              cursor: 'pointer',
+              fontFamily: value ?? undefined,
+              fontSize: 12,
+              color: '#111827',
+            }}
+            onMouseEnter={(e) => {
+              if (!active) (e.currentTarget as HTMLElement).style.background = '#f3f4f6';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = active ? '#e5e7eb' : 'transparent';
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

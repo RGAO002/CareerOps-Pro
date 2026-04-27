@@ -11,6 +11,7 @@ import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
+import FontFamily from '@tiptap/extension-font-family';
 import TextAlign from '@tiptap/extension-text-align';
 import { UndoRedo } from '@tiptap/extensions';   // TipTap 3 history
 
@@ -61,11 +62,12 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
       BulletDocument,
       Paragraph,
       Text,
-      TextStyle,                  // required by Color
+      TextStyle,                  // required by Color + FontFamily
       Bold,
       Italic,
       Underline,
       Color,
+      FontFamily.configure({ types: ['textStyle'] }),
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['paragraph'], alignments: ['left', 'center', 'right'] }),
       Link.configure({ openOnClick: false }),

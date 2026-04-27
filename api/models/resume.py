@@ -106,6 +106,15 @@ class EntryBlockV2(BaseModel):
     title: str = ""
     meta: str = ""
     bullets: List[BulletBlockV2] = Field(default_factory=list)
+    # Fields the user has explicitly hidden via Backspace on an empty single-line
+    # row. None ≡ no hidden fields. Persisted as `hiddenFields` in JSON
+    # (camelCase, matching the frontend EntryBlock.hiddenFields shape) but also
+    # accepted under the snake_case `hidden_fields` name for Python callers.
+    hidden_fields: Optional[List[Literal["title", "meta"]]] = Field(
+        default=None, alias="hiddenFields",
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 SectionRole = Literal[

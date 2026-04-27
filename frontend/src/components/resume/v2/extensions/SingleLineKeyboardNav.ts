@@ -8,8 +8,9 @@ import {
   insertBullet, insertEntry, insertContactLine,
 } from '../store/actions/insertBlock';
 import {
-  deleteEntry, deleteSection, deleteContactLine,
+  deleteSection, deleteContactLine,
 } from '../store/actions/deleteBlock';
+import { setEntryHiddenField } from '../store/actions/setEntryHiddenField';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import type { BlockId, EditableField } from '../types';
@@ -39,37 +40,6 @@ function isAtStartOfEmpty(editor: Editor): boolean {
   if (from !== to) return false;
   if (from > 1) return false;
   return editor.state.doc.textContent.trim() === '';
-}
-
-/** Find the section + entry that owns the given entryId. */
-function findEntry(entryId: BlockId): {
-  sectionId: BlockId;
-  entryId: BlockId;
-  bulletsCount: number;
-  metaText: string;
-  bulletsAllEmpty: boolean;
-} | null {
-  const r = useResumeStore.getState().resume;
-  if (!r) return null;
-  for (const s of r.sections) {
-    const e = s.entries.find(x => x.id === entryId);
-    if (!e) continue;
-    const bulletsAllEmpty = e.bullets.every(b => {
-      const para = b.content.content?.[0];
-      const text = (para?.content ?? [])
-        .map(n => (n.type === 'text' ? n.text : ''))
-        .join('');
-      return text.trim() === '';
-    });
-    return {
-      sectionId: s.id,
-      entryId: e.id,
-      bulletsCount: e.bullets.length,
-      metaText: e.meta ?? '',
-      bulletsAllEmpty,
-    };
-  }
-  return null;
 }
 
 /** For section.heading: identify the section and check if it has entries. */
@@ -235,25 +205,19 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
           return true;
         }
         case 'entry.title': {
-          const info = findEntry(field.id);
-          if (!info) return false;
+          // User-controlled hide: empty title + Backspace records that the
+          // user wants this row hidden. The hide is persisted on the entry as
+          // hiddenFields: ['title']. Tab from the previous field re-reveals
+          // it via the title-visibility pub/sub. Edits that leave it
+          // non-empty auto-clear the flag (handled in EntryAtomRenderer).
+          setEntryHiddenField(field.id, 'title', true, makeOrigin('tiptap'));
           const prev = previousFieldFor(field);
-          // Only delete the entry when it's TRULY EMPTY end-to-end. If user
-          // has any bullet content or meta text, just move focus — don't blow
-          // away their work. Undo wouldn't help if they don't notice the
-          // destruction.
-          const canDelete =
-            info.metaText.trim() === '' &&
-            (info.bulletsCount === 0 || info.bulletsAllEmpty);
-          if (canDelete) {
-            deleteEntry(field.id, makeOrigin('tiptap'));
-          }
           if (prev) atomFocusManager.focusFieldEnd(prev);
           return true;
         }
         case 'entry.meta': {
-          // Notion-like merge into previous, but since both are single-line
-          // we just shift focus to entry.title (no content merge).
+          // Same user-controlled hide as title — see above.
+          setEntryHiddenField(field.id, 'meta', true, makeOrigin('tiptap'));
           const prev = previousFieldFor(field);
           if (prev) atomFocusManager.focusFieldEnd(prev);
           return true;

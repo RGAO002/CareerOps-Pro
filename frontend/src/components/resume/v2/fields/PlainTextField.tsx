@@ -13,6 +13,7 @@ import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
+import FontFamily from '@tiptap/extension-font-family';
 import TextAlign from '@tiptap/extension-text-align';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { NoNewline } from '../extensions/NoNewline';
@@ -67,11 +68,12 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
       SingleLineDocument,
       Paragraph,            // required because the schema content is now 'paragraph'
       Text,
-      TextStyle,            // required by Color
+      TextStyle,            // required by Color + FontFamily
       Bold,
       Italic,
       Underline,
       Color,
+      FontFamily.configure({ types: ['textStyle'] }),
       Highlight.configure({ multicolor: true }),
       Link.configure({ openOnClick: false }),
       NoNewline,
