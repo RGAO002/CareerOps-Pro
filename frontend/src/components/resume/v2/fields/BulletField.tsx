@@ -11,6 +11,8 @@ import { UndoRedo } from '@tiptap/extensions';   // TipTap 3 history
 
 import { BulletDocument } from '../extensions/BulletDocument';
 import { AtomKeyboardNav } from '../extensions/AtomKeyboardNav';
+import { SlashCommand } from '../extensions/SlashCommand';
+import { showSlashMenu, hideSlashMenu } from '../interaction/SlashMenu';
 import { useMeasureModeSync } from './useMeasureModeSync';
 import {
   makeTransformPastedHTML,
@@ -58,6 +60,15 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
       ...(mode === 'edit' ? [
         UndoRedo,
         AtomKeyboardNav.configure({ bulletId, entryId, field: fieldKey }),
+        SlashCommand.configure({
+          bulletId,
+          entryId,
+          sectionId: useResumeStore.getState().resume?.sections.find(
+            s => s.entries.some(e => e.id === entryId),
+          )?.id ?? '',
+          onShowMenu: showSlashMenu,
+          onHideMenu: hideSlashMenu,
+        }),
       ] : []),
     ],
     content,
