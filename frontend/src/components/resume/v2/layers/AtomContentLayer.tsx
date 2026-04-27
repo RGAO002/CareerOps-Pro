@@ -32,37 +32,40 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
 
   /**
    * Compute the shift offset for atom at `atomIndex`, simulating the post-move
-   * layout so atoms slide cleanly without the dragged atom's faded ghost
+   * layout so atoms slide cleanly without the dragged group's faded ghost
    * staying behind.
    *
-   * Algorithm (Notion-style):
-   *   - If srcIdx < dstIdx (moving DOWN): atoms in (srcIdx, dstIdx) shift UP
-   *     by H to close the source gap. Atoms ≥ dstIdx and atoms < srcIdx stay.
-   *     Net result: a slot opens at the new position; old position closes.
-   *   - If srcIdx > dstIdx (moving UP): atoms in [dstIdx, srcIdx) shift DOWN
-   *     by H to open the target slot.
-   *   - The dragged atom itself is hidden (opacity 0 + visibility hidden) —
-   *     the floating ghost shows where it's headed.
+   * The dragged "group" can be:
+   *   - a single entry atom (entry drag), OR
+   *   - a section heading + all its entries as a contiguous range (section
+   *     drag — group lifts together so the user sees the whole section move).
+   *
+   * Algorithm (Notion-style, generalized for ranges):
+   *   group = [srcStart, srcEnd)
+   *   - If srcStart < dst (moving DOWN): atoms in [srcEnd, dst) shift UP by H
+   *     (close the group's gap; opens a slot at dst).
+   *   - If srcStart > dst (moving UP): atoms in [dst, srcStart) shift DOWN
+   *     by H (open a slot at dst; group will fill above).
+   *   - Atoms inside the group: hidden.
    */
   function shiftFor(atomId: AtomId, atomIndex: number): number {
     if (!preview || preview.kind !== 'atom') return 0;
-    if (preview.draggedAtomId === atomId) return 0;
+    if (preview.draggedAtomIds.includes(atomId)) return 0;
     if (preview.dstAtomIndex === null) return 0;
-    const src = preview.srcAtomIndex;
+    const srcStart = preview.srcStartIdx;
+    const srcEnd = preview.srcEndIdx;
     const dst = preview.dstAtomIndex;
     const H = preview.draggedHeight + DROP_SLOT_GAP_PX;
-    if (src < dst) {
-      // moving down: atoms strictly between src and dst slide up
-      if (atomIndex > src && atomIndex < dst) return -H;
-    } else if (src > dst) {
-      // moving up: atoms in [dst, src) slide down
-      if (atomIndex >= dst && atomIndex < src) return H;
+    if (srcStart < dst) {
+      if (atomIndex >= srcEnd && atomIndex < dst) return -H;
+    } else if (srcStart > dst) {
+      if (atomIndex >= dst && atomIndex < srcStart) return H;
     }
     return 0;
   }
 
   function isDragged(atomId: AtomId): boolean {
-    return preview?.kind === 'atom' && preview.draggedAtomId === atomId;
+    return preview?.kind === 'atom' && preview.draggedAtomIds.includes(atomId);
   }
 
   return (

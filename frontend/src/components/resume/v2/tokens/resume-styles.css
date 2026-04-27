@@ -87,6 +87,14 @@
   margin-bottom: 0.25rem;
   break-inside: avoid;
   page-break-inside: avoid;
+  /* Suppress the browser's default <li> disc — we draw our own dot via ::before.
+     `list-style:none` on the parent <ul> alone isn't reliable when LIs have
+     non-zero padding-left; setting it on the <li> itself is the bulletproof fix. */
+  list-style: none;
+}
+
+[data-canvas-root] .resume-bullet::marker {
+  content: "";
 }
 
 [data-canvas-root] .resume-bullet::before {

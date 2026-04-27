@@ -181,6 +181,50 @@ function currentAtoms(): LayoutAtom[] {
   return r ? projectAtoms(r) : [];
 }
 
+/**
+ * For a SectionBlock drag: group = [section-heading atom, ...all entry atoms
+ *   until the next section-heading or end of list]. The whole group lifts
+ *   visually, just like dragging a section in Notion lifts heading + content.
+ * For an EntryBlock drag: group = [the single entry atom] (entries already
+ *   render their bullets nested in EntryAtomRenderer, so the visual is whole).
+ * For a BulletBlock drag: this function isn't called (bullet drag uses the
+ *   bullet-level preview path).
+ *
+ * Returns: start/end indices (half-open) into the atoms array, the ids of
+ * all atoms in the group, and the SUM of their measured heights (plus gaps
+ * between them). Heights are read from current DOM via data-block-id.
+ */
+function atomGroupForBlock(
+  block: SelectableBlock,
+  atoms: LayoutAtom[],
+): { startIdx: number; endIdx: number; ids: BlockId[]; heightSum: number } {
+  const startIdx = atoms.findIndex(a => a.sourceBlockId === block.id);
+  if (startIdx < 0) {
+    return { startIdx: 0, endIdx: 0, ids: [], heightSum: 0 };
+  }
+
+  let endIdx: number;
+  if (block.kind === 'section') {
+    // Walk forward until we hit the next section-heading or end.
+    endIdx = startIdx + 1;
+    while (endIdx < atoms.length && atoms[endIdx].kind !== 'section-heading') {
+      endIdx++;
+    }
+  } else {
+    endIdx = startIdx + 1;
+  }
+
+  const ids: BlockId[] = atoms.slice(startIdx, endIdx).map(a => a.id);
+  let heightSum = 0;
+  const ATOM_GAP = 12; // mirror layout-tokens ATOM_SPEC.GAP
+  for (let i = startIdx; i < endIdx; i++) {
+    const el = document.querySelector(`[data-block-id="${atoms[i].sourceBlockId}"]`) as HTMLElement | null;
+    heightSum += el ? el.getBoundingClientRect().height : 0;
+    if (i < endIdx - 1) heightSum += ATOM_GAP;
+  }
+  return { startIdx, endIdx, ids, heightSum };
+}
+
 export type DropIndicatorPayload = { target: DropTarget; y: number } | null;
 
 export type DragSession = { cancel(): void };
@@ -195,7 +239,7 @@ export function startDrag(
   const startX = e.clientX, startY = e.clientY;
   let dragStarted = false;
   let ghost: HTMLElement | null = null;
-  let draggedHeight = 0;
+  let bulletDraggedHeight = 0;  // only used for bullet drags (atom drags compute their own group height)
   const validTargets = getDropTargetsFor(block);
 
   const onMove = (ev: PointerEvent) => {
@@ -205,10 +249,12 @@ export function startDrag(
       ghost = makeDragGhost(block.id);
       if (ghost) document.body.appendChild(ghost);
       document.body.style.cursor = 'grabbing';
-      // Measure the dragged atom's rendered height so AtomContentLayer can
-      // shift everything below the drop target by exactly that amount.
-      const blockEl = document.querySelector(`[data-block-id="${block.id}"]`) as HTMLElement | null;
-      draggedHeight = blockEl ? blockEl.getBoundingClientRect().height : 0;
+      // Measure dragged element height for bullet drags (atom drags compute
+      // a group height per move via atomGroupForBlock).
+      if (block.kind === 'bullet') {
+        const blockEl = document.querySelector(`[data-block-id="${block.id}"]`) as HTMLElement | null;
+        bulletDraggedHeight = blockEl ? blockEl.getBoundingClientRect().height : 0;
+      }
     }
     if (ghost) {
       ghost.style.left = ev.clientX + 'px';
@@ -229,7 +275,7 @@ export function startDrag(
       setDragPreview({
         kind: 'bullet',
         draggedBulletId: block.id,
-        draggedHeight,
+        draggedHeight: bulletDraggedHeight,
         srcEntryId: block.entryId,
         dstEntryId: target.entryId,
         dstBulletIndex: target.insertAtIndex,
@@ -237,15 +283,18 @@ export function startDrag(
       return;
     }
 
-    // Atom-level preview (section / entry).
+    // Atom-level preview. For a section drag this is a CONTIGUOUS GROUP:
+    //   [section-heading, entry, entry, ...]
+    // For an entry drag it's a single atom.
     const atoms = currentAtoms();
-    const srcAtomIndex = atoms.findIndex(a => a.sourceBlockId === block.id);
+    const { startIdx, endIdx, ids, heightSum } = atomGroupForBlock(block, atoms);
     const dstAtomIndex = dropTargetToAtomIndex(target, atoms);
     setDragPreview({
       kind: 'atom',
-      draggedAtomId: block.id,
-      draggedHeight,
-      srcAtomIndex,
+      draggedAtomIds: ids,
+      draggedHeight: heightSum,
+      srcStartIdx: startIdx,
+      srcEndIdx: endIdx,
       dstAtomIndex,
     });
   };

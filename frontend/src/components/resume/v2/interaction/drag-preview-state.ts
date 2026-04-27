@@ -20,10 +20,16 @@ import type { AtomId, BlockId } from '../types';
 export type DragPreview =
   | {
       kind: 'atom';
-      draggedAtomId: AtomId;
+      // Set of atoms being dragged as a group. For an entry drag this is just
+      // the one entry atom. For a section drag this is the section heading PLUS
+      // all entry atoms that follow it (until the next section or end of doc).
+      draggedAtomIds: AtomId[];
+      // Sum of all dragged atoms' heights + inter-atom gaps. Used to compute
+      // how much room to open at the drop target.
       draggedHeight: number;
-      srcAtomIndex: number;             // current index in atom list
-      dstAtomIndex: number | null;       // where it would land, or null
+      srcStartIdx: number;     // first index in atom list (inclusive)
+      srcEndIdx: number;       // last index + 1 (exclusive)
+      dstAtomIndex: number | null;
     }
   | {
       kind: 'bullet';
@@ -31,7 +37,7 @@ export type DragPreview =
       draggedHeight: number;
       srcEntryId: BlockId;
       dstEntryId: BlockId;
-      dstBulletIndex: number;            // index within target entry's bullets
+      dstBulletIndex: number;
     }
   | null;
 
