@@ -1,5 +1,5 @@
 // frontend/src/components/resume/v2/interaction/DragController.ts
-import type { BlockId, LayoutAtom, SelectableBlock, UpdateOrigin } from '../types';
+import type { AtomId, AtomLayout, BlockId, LayoutAtom, SelectableBlock, UpdateOrigin } from '../types';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import { moveSection } from '../store/actions/moveSection';
@@ -7,8 +7,9 @@ import { moveEntry } from '../store/actions/moveEntry';
 import { moveBullet } from '../store/actions/moveBullet';
 import { projectAtoms } from '../layout/atoms-projection';
 import { selectionManager } from './SelectionManager';
-import { setDragPreview } from './drag-preview-state';
+import { setDragPreview, setRecentlyDroppedId, getRecentlyDroppedId } from './drag-preview-state';
 import { makeDragGhost } from './DragGhost';
+import type { LayoutEngine } from '../layout/LayoutEngine';
 
 /** Document-order block id list (sections, entries, bullets) — used as the
  *  range for shift-click selection extension. */
@@ -33,6 +34,35 @@ export type DropTarget =
 
 const DRAG_THRESHOLD = 5;
 const SCROLL_EDGE_PX = 30;
+/**
+ * Pixels the cursor must travel PAST a competing target's midline before drop
+ * selection switches to that target. Prevents jitter when the cursor sits near
+ * the boundary between two adjacent rows — without hysteresis, the displaced
+ * row visibly flips back and forth on each pointermove of a noisy mouse.
+ *
+ * Empirically 8px is enough to absorb mouse jitter without making target
+ * switching feel sluggish. Tested adjacent-bullet swap (the worst-case Problem 1
+ * scenario) — at 8px, micro-movements stay sticky; at the next dst's midline
+ * crossing the switch is still snappy.
+ */
+const HYSTERESIS_PX = 8;
+
+/**
+ * Per-drag-session state for hysteresis. We DON'T put this on a closure inside
+ * startDrag because findNearestDropTarget is exported (and tested) standalone.
+ * Caller resets via resetDropTargetHysteresis() at drag start.
+ */
+let _stickyTargetKey: string | null = null;
+
+function targetKey(t: DropTarget): string {
+  if (t.kind === 'section-slot') return `s:${t.insertBeforeSectionId ?? '*'}`;
+  if (t.kind === 'entry-slot') return `e:${t.sectionId}:${t.insertAtIndex}`;
+  return `b:${t.entryId}:${t.insertAtIndex}`;
+}
+
+export function resetDropTargetHysteresis(): void {
+  _stickyTargetKey = null;
+}
 
 export function getDropTargetsFor(block: SelectableBlock): DropTarget[] {
   const r = useResumeStore.getState().resume;
@@ -81,6 +111,72 @@ export function commitDrop(block: SelectableBlock, target: DropTarget, origin: U
       }
     });
   });
+}
+
+/**
+ * Build the post-drop atom list (the order the canvas WILL be in if the user
+ * drops here right now). Used by previewLayout to compute true post-drop
+ * positions for shifted atoms — without this we can only offer a local
+ * +H/-H stub which is wrong across page boundaries.
+ *
+ * Mirrors the same insert-after-remove semantics as moveSection/moveEntry,
+ * but on the projected atom list. Bullet drops aren't atom-level so they
+ * return the current atoms unchanged (preview stays null).
+ */
+function buildHypotheticalAtoms(
+  block: SelectableBlock,
+  target: DropTarget,
+  currentAtoms: LayoutAtom[],
+): LayoutAtom[] | null {
+  if (target.kind === 'bullet-slot') return null;
+  // Identify the dragged group (single entry, or section-heading + entries).
+  const startIdx = currentAtoms.findIndex(a => a.sourceBlockId === block.id);
+  if (startIdx < 0) return null;
+  let endIdx = startIdx + 1;
+  if (block.kind === 'section') {
+    while (endIdx < currentAtoms.length && currentAtoms[endIdx].kind !== 'section-heading') {
+      endIdx++;
+    }
+  }
+  const group = currentAtoms.slice(startIdx, endIdx);
+  const remaining = [...currentAtoms.slice(0, startIdx), ...currentAtoms.slice(endIdx)];
+  // Translate the DropTarget into an insertion index in `remaining`.
+  let insertAt: number;
+  if (target.kind === 'section-slot') {
+    if (target.insertBeforeSectionId === null) {
+      insertAt = remaining.length;
+    } else {
+      const i = remaining.findIndex(
+        a => a.kind === 'section-heading' && a.sourceBlockId === target.insertBeforeSectionId,
+      );
+      insertAt = i >= 0 ? i : remaining.length;
+    }
+  } else {
+    // entry-slot — insert after the section heading, at the Nth entry slot.
+    const sectionAtomIdx = remaining.findIndex(
+      a => a.kind === 'section-heading' && a.sourceBlockId === target.sectionId,
+    );
+    if (sectionAtomIdx < 0) return null;
+    let entryCount = 0;
+    let cursor = sectionAtomIdx + 1;
+    while (cursor < remaining.length && remaining[cursor].kind !== 'section-heading') {
+      if (entryCount === target.insertAtIndex) break;
+      if (remaining[cursor].kind === 'entry') entryCount++;
+      cursor++;
+    }
+    insertAt = cursor;
+  }
+  return [...remaining.slice(0, insertAt), ...group, ...remaining.slice(insertAt)];
+}
+
+/**
+ * Resolve the LayoutEngine instance the canvas exposes on window during drag.
+ * Falls back to null if not in a browser env (tests) or not yet mounted —
+ * AtomContentLayer.shiftFor will then use the legacy H-based math.
+ */
+function getLayoutEngine(): LayoutEngine | null {
+  if (typeof window === 'undefined') return null;
+  return ((window as any).__layoutEngine as LayoutEngine | undefined) ?? null;
 }
 
 function getDropTargetY(target: DropTarget): number | null {
@@ -144,7 +240,25 @@ export function findNearestDropTarget(
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => Math.abs(a.y - cursorY) - Math.abs(b.y - cursorY));
-  return candidates[0].target;
+  const nearest = candidates[0];
+
+  // Hysteresis: keep the previously-chosen target sticky until the cursor
+  // moves at least HYSTERESIS_PX closer to a different candidate. Prevents
+  // adjacent-row jitter when the cursor sits near the boundary midline.
+  if (_stickyTargetKey !== null) {
+    const stuck = candidates.find(c => targetKey(c.target) === _stickyTargetKey);
+    if (stuck) {
+      const stuckDist = Math.abs(stuck.y - cursorY);
+      const nearestDist = Math.abs(nearest.y - cursorY);
+      // Switch only if the new candidate is the better choice by MORE than
+      // HYSTERESIS_PX. Otherwise stay sticky.
+      if (stuckDist - nearestDist <= HYSTERESIS_PX) {
+        return stuck.target;
+      }
+    }
+  }
+  _stickyTargetKey = targetKey(nearest.target);
+  return nearest.target;
 }
 
 /** Map a DropTarget back to an atom-list index (the position where the
@@ -229,6 +343,45 @@ export type DropIndicatorPayload = { target: DropTarget; y: number } | null;
 
 export type DragSession = { cancel(): void };
 
+/**
+ * After commitDrop, glide the ghost from its current cursor-anchored position
+ * to the dropped atom's final bounding rect, then fade it out. Runs in sync
+ * with the dropped atom's opacity 0 → 1 fade-in (driven by recentlyDroppedId
+ * in drag-preview-state). Net effect: the ghost looks like it lands and
+ * dissolves into the atom — no more "ghost vanishes, atom blinks" jolt.
+ *
+ * Two rAFs to wait for React commit + layout engine repaginate so the dropped
+ * atom's new bounding rect is correct. If the element can't be found (e.g.
+ * scrolled off-screen, deleted between commit and animate), we just fade the
+ * ghost in place.
+ */
+function animateSoftDrop(ghost: HTMLElement | null, droppedBlockId: BlockId): void {
+  if (!ghost) return;
+  // Stop the cursor-tracking position updates by removing event listeners
+  // BEFORE we animate (cursor updates would fight our transition).
+  // The ghost element has no listeners of its own — startDrag's onMove was
+  // removed by cleanup() — so we just animate the inline styles directly.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const droppedEl = document.querySelector(
+        `[data-block-id="${droppedBlockId}"]`,
+      ) as HTMLElement | null;
+      if (droppedEl) {
+        const r = droppedEl.getBoundingClientRect();
+        ghost.style.transition = 'left 0.18s ease-out, top 0.18s ease-out, opacity 0.15s ease-out 0.05s';
+        ghost.style.left = `${r.left + r.width / 2}px`;
+        ghost.style.top = `${r.top + r.height / 2}px`;
+        ghost.style.opacity = '0';
+      } else {
+        // Fallback: just fade in place over 150ms.
+        ghost.style.transition = 'opacity 0.15s ease-out';
+        ghost.style.opacity = '0';
+      }
+      setTimeout(() => ghost.remove(), 220);
+    });
+  });
+}
+
 export function startDrag(
   e: PointerEvent,
   handleEl: HTMLElement,
@@ -241,6 +394,7 @@ export function startDrag(
   let ghost: HTMLElement | null = null;
   let bulletDraggedHeight = 0;  // only used for bullet drags (atom drags compute their own group height)
   const validTargets = getDropTargetsFor(block);
+  resetDropTargetHysteresis();
 
   const onMove = (ev: PointerEvent) => {
     if (!dragStarted) {
@@ -304,6 +458,24 @@ export function startDrag(
     const atoms = currentAtoms();
     const { startIdx, endIdx, ids, heightSum } = atomGroupForBlock(block, atoms);
     const dstAtomIndex = dropTargetToAtomIndex(target, atoms);
+
+    // Compute true post-drop layout for every atom so AtomContentLayer can
+    // shift each atom to its real destination (cross-page-correct), not a
+    // local +H/-H stub. If engine isn't available (tests), pass null and
+    // shiftFor falls back to legacy math.
+    let previewLayouts: Map<AtomId, AtomLayout> | null = null;
+    const engine = getLayoutEngine();
+    if (engine) {
+      const hypothetical = buildHypotheticalAtoms(block, target, atoms);
+      if (hypothetical) {
+        try {
+          previewLayouts = engine.previewLayout(hypothetical);
+        } catch {
+          previewLayouts = null;
+        }
+      }
+    }
+
     setDragPreview({
       kind: 'atom',
       draggedAtomIds: ids,
@@ -311,12 +483,13 @@ export function startDrag(
       srcStartIdx: startIdx,
       srcEndIdx: endIdx,
       dstAtomIndex,
+      previewLayouts,
     });
   };
 
   const onUp = (ev: PointerEvent) => {
-    cleanup();
     if (!dragStarted) {
+      cleanup();
       // Click-without-drag on the ⋮⋮ handle → block selection.
       // Mirrors the modifier semantics that used to live on the (now-deleted)
       // select dot: shift extends a range, cmd/ctrl toggles, plain selects.
@@ -330,7 +503,21 @@ export function startDrag(
       return;
     }
     const target = findNearestDropTarget(ev.clientY, block, validTargets);
-    if (target) commitDrop(block, target, makeOrigin('drag-reorder'));
+    if (target) {
+      // SOFT DROP: hold the ghost, glide it to the dropped atom's final
+      // bounding rect, fade in the dropped atom in sync. Without this, the
+      // ghost vanishes instantly and the atom blinks at its new position.
+      animateSoftDrop(ghost, block.id);
+      ghost = null;  // ownership transferred to animateSoftDrop
+      // Mark dropped atom so AtomContentLayer fades it in (opacity 0 → 1).
+      setRecentlyDroppedId(block.id);
+      setTimeout(() => {
+        // Clear only if it's still us (defensive — another drop could have started)
+        if (getRecentlyDroppedId() === block.id) setRecentlyDroppedId(null);
+      }, 220);
+      commitDrop(block, target, makeOrigin('drag-reorder'));
+    }
+    cleanup();
   };
 
   const onCancel = () => cleanup();
@@ -338,6 +525,8 @@ export function startDrag(
 
   function cleanup(): void {
     try { handleEl.releasePointerCapture(e.pointerId); } catch {}
+    // Only remove the ghost here if it hasn't been transferred to the soft-drop
+    // animator (which manages its own teardown).
     if (ghost) ghost.remove();
     document.body.style.cursor = '';
     onDropIndicator(null);

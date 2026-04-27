@@ -182,15 +182,46 @@
   position: relative;
 }
 
+/* Placeholder text comes from --resume-placeholder, set per-instance via
+   inline style on each EditorContent in PlainTextField / BulletField /
+   ContactLinesField. Fallback to empty string keeps the rule harmless when
+   the var isn't set. The previous hardcoded per-class strings prevented
+   role-aware placeholders (e.g., Skills entries shouldn't say
+   "Date · Location"). */
 [data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Your name"; }
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
 [data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "email | phone | location"; }
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
 [data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Section heading"; }
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
 [data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Title (e.g. Software Engineer @ Acme)"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
 [data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Date · Location"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
 [data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Empty bullet — type, or Backspace to remove"; }
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: var(--resume-placeholder, "");
+}
+
+/* Cross-page drag-preview shift: fade out at start position, snap, fade in at
+   end position. Used by AtomContentLayer when an atom would otherwise have to
+   linearly translate through the inter-page gap region (which would render the
+   atom inside the gray gap mid-animation). The `--atom-shift-to` CSS var is
+   set per-element to the final translateY pixels; same keyframes serve every
+   shift magnitude / direction. */
+@keyframes atom-cross-page-shift {
+  0%   { opacity: 1; transform: translateY(0); }
+  40%  { opacity: 0; transform: translateY(0); }
+  60%  { opacity: 0; transform: translateY(var(--atom-shift-to, 0)); }
+  100% { opacity: 1; transform: translateY(var(--atom-shift-to, 0)); }
+}
+
+/* Soft-drop fade-in: a freshly-dropped atom (recentlyDroppedId in
+   drag-preview-state) animates opacity 0 → 1 over 180ms while the floating
+   ghost simultaneously glides to the atom's final bounding rect (see
+   animateSoftDrop in DragController). The cross-fade replaces the previous
+   "ghost vanishes, atom blinks" jolt with a continuous landing motion. */
+@keyframes atom-soft-drop-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}

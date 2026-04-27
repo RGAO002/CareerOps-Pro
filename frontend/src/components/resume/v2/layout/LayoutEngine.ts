@@ -62,5 +62,30 @@ export class LayoutEngine {
     this.callbacks.onLayout(result);
   }
 
+  /**
+   * Run the same pagination strategy on a hypothetical atom list (e.g. the
+   * post-drop atom order during a drag preview) WITHOUT mutating engine state
+   * or firing onLayout. Returns just the atomLayouts map.
+   *
+   * Used by DragController to compute the true post-drop layout per drag tick,
+   * so AtomContentLayer can shift atoms to their actual destination instead of
+   * a local +H/-H stub (which is wrong across page boundaries).
+   *
+   * Reuses the engine's latest measured heights — heights for hypothetical
+   * atoms that weren't measured yet just default to 0, which is the same
+   * conservative behavior the live engine uses.
+   */
+  previewLayout(hypotheticalAtoms: LayoutAtom[]): Map<AtomId, AtomLayout> {
+    if (!this.latestTemplate) return new Map();
+    const strategy = LAYOUT_STRATEGIES[this.latestTemplate.layoutStrategyId];
+    if (!strategy) return new Map();
+    const result = strategy.computeLayout({
+      atoms: hypotheticalAtoms,
+      measuredHeights: this.latestHeights,
+      template: this.latestTemplate,
+    });
+    return result.atomLayouts;
+  }
+
   isComposing(): boolean { return this.composingEditors.size > 0; }
 }

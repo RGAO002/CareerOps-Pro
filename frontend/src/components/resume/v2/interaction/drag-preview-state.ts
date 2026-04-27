@@ -10,7 +10,7 @@
 // null), so the canvas does not animate when reordering bullets within an
 // entry — bullets aren't atoms.
 
-import type { AtomId, BlockId } from '../types';
+import type { AtomId, AtomLayout, BlockId } from '../types';
 
 /**
  * Drag preview can describe either an atom-level drag (header / section /
@@ -30,6 +30,16 @@ export type DragPreview =
       srcStartIdx: number;     // first index in atom list (inclusive)
       srcEndIdx: number;       // last index + 1 (exclusive)
       dstAtomIndex: number | null;
+      /**
+       * If present: the post-drop AtomLayout for every atom (computed by
+       * LayoutEngine.previewLayout on a hypothetical reordered atom list).
+       * AtomContentLayer uses this to translate each displaced atom to its
+       * true post-drop position instead of a local +H/-H stub — the only
+       * way to render a correct preview when the drop crosses a page break.
+       * Null when the engine isn't available (e.g. tests) → falls back to
+       * the legacy H-based math.
+       */
+      previewLayouts: Map<AtomId, AtomLayout> | null;
     }
   | {
       kind: 'bullet';
@@ -57,5 +67,30 @@ export function subscribeDragPreview(l: (s: DragPreview) => void): () => void {
   _listeners.add(l);
   return () => {
     _listeners.delete(l);
+  };
+}
+
+// ─── Recently-dropped marker ────────────────────────────────────────────────
+// After commitDrop, the dropped atom is briefly tagged so AtomContentLayer
+// can fade it in (opacity 0 → 1) while the ghost glides to its final rect.
+// Without this, the ghost vanishes instantly and the atom blinks at its new
+// position — the "soft landing" we want is a coordinated cross-fade.
+
+let _recentlyDroppedId: BlockId | null = null;
+const _droppedListeners = new Set<(id: BlockId | null) => void>();
+
+export function getRecentlyDroppedId(): BlockId | null {
+  return _recentlyDroppedId;
+}
+
+export function setRecentlyDroppedId(id: BlockId | null): void {
+  _recentlyDroppedId = id;
+  for (const l of _droppedListeners) l(id);
+}
+
+export function subscribeRecentlyDropped(l: (id: BlockId | null) => void): () => void {
+  _droppedListeners.add(l);
+  return () => {
+    _droppedListeners.delete(l);
   };
 }
