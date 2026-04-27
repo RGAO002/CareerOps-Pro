@@ -16,6 +16,11 @@ import {
   subscribeMetaVisibility,
   unforceShowMeta,
 } from '../interaction/meta-visibility';
+import {
+  isTitleForced,
+  subscribeTitleVisibility,
+  unforceShowTitle,
+} from '../interaction/title-visibility';
 import { useResumeStore } from '../store/useResumeStore';
 import type { Align } from '../fields/single-line-adapter';
 import type { BlockId, CanvasMode, EntryBlock } from '../types';
@@ -102,16 +107,60 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     metaFocused ||
     (entry.meta?.trim().length ?? 0) > 0;
 
+  // Visibility state for entry.title (mirrors entry.meta above):
+  //  - Always render when there's actual title text to show.
+  //  - Render while focused (so the user can keep typing into a freshly-tabbed
+  //    title even though it's still empty).
+  //  - Render when "force-shown" via Tab from section.heading or a previous
+  //    entry's last bullet (covers the brief window between forceShowTitle()
+  //    and the new editor receiving focus).
+  // Otherwise the title editor is DOM-absent so the empty row can't appear.
+  //
+  // CAVEAT: the entry's drag handle (⋮⋮) is currently anchored to the title
+  // row. When the title is hidden, the handle floats over whatever the next
+  // visible row is (meta or first bullet). Phase 2 will re-anchor the handle
+  // to the entry as a whole.
+  const [titleForced, setTitleForced] = useState<boolean>(() => isTitleForced(entry.id));
+  useEffect(() => {
+    return subscribeTitleVisibility((id, forced) => {
+      if (id === entry.id) setTitleForced(forced);
+    });
+  }, [entry.id]);
+
+  const [titleFocused, setTitleFocused] = useState(false);
+  useEffect(() => {
+    return atomFocusManager.subscribe(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const inTitle = !!el?.closest?.(`[data-field-key="entry.title:${entry.id}"]`);
+      setTitleFocused(inTitle);
+    });
+  }, [entry.id]);
+
+  const showTitle =
+    titleForced ||
+    titleFocused ||
+    (entry.title?.trim().length ?? 0) > 0;
+
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
-      <PlainTextField
-        fieldKey={{ kind: 'entry.title', id: entry.id }}
-        value={entry.title}
-        align={titleAlign}
-        mode={mode}
-        className="resume-entry-title"
-        placeholder="Title (e.g. Software Engineer @ Acme)"
-      />
+      {showTitle && (
+        <PlainTextField
+          fieldKey={{ kind: 'entry.title', id: entry.id }}
+          value={entry.title}
+          align={titleAlign}
+          mode={mode}
+          className="resume-entry-title"
+          placeholder="Title (e.g. Software Engineer @ Acme)"
+          onBlur={(ed) => {
+            // When title blurs and is still empty, drop the force-show flag so
+            // the row hides again on the next render. Non-empty title keeps
+            // rendering naturally via the entry.title.trim() condition.
+            if (ed.state.doc.textContent.trim() === '') {
+              unforceShowTitle(entry.id);
+            }
+          }}
+        />
+      )}
       {showMeta && (
         <PlainTextField
           fieldKey={{ kind: 'entry.meta', id: entry.id }}

@@ -3,6 +3,7 @@ import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
 import { forceShowMeta } from '../interaction/meta-visibility';
+import { forceShowTitle } from '../interaction/title-visibility';
 import {
   insertBullet, insertEntry, insertContactLine,
 } from '../store/actions/insertBlock';
@@ -278,6 +279,41 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
           forceShowMeta(field.id);
           atomFocusManager.focusFieldWhenReady({ kind: 'entry.meta', id: field.id });
           return true;
+        }
+        // From section.heading, jump to the FIRST entry's title — even when
+        // the title is currently hidden because empty. We force-render the
+        // title via the title-visibility pub/sub mirroring meta-visibility.
+        if (field.kind === 'section.heading') {
+          const r = useResumeStore.getState().resume;
+          if (!r) return false;
+          const sec = r.sections.find(s => s.id === field.id);
+          if (!sec) return false;
+          const firstEntry = sec.entries[0];
+          if (!firstEntry) return false;
+          forceShowTitle(firstEntry.id);
+          atomFocusManager.focusFieldWhenReady({
+            kind: 'entry.title', id: firstEntry.id,
+          });
+          return true;
+        }
+        // From entry.meta, jump to the NEXT entry's title (force-show if
+        // hidden). Less critical than the section.heading case but mirrors
+        // the same intent: Tab walks the visible structural rows.
+        if (field.kind === 'entry.meta') {
+          const r = useResumeStore.getState().resume;
+          if (!r) return false;
+          for (const s of r.sections) {
+            const i = s.entries.findIndex(e => e.id === field.id);
+            if (i < 0) continue;
+            const nextEntry = s.entries[i + 1];
+            if (!nextEntry) return false;
+            forceShowTitle(nextEntry.id);
+            atomFocusManager.focusFieldWhenReady({
+              kind: 'entry.title', id: nextEntry.id,
+            });
+            return true;
+          }
+          return false;
         }
         return false;
       },

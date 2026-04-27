@@ -18,6 +18,7 @@ const {
   insertBulletMock, insertEntryMock, insertContactLineMock,
   deleteSectionMock, deleteEntryMock, deleteContactLineMock,
   forceShowMetaMock, unforceShowMetaMock,
+  forceShowTitleMock, unforceShowTitleMock,
 } = vi.hoisted(() => ({
   focusFieldWhenReady: vi.fn(),
   focusFieldEnd: vi.fn().mockReturnValue(true),
@@ -36,6 +37,8 @@ const {
   deleteContactLineMock: vi.fn(),
   forceShowMetaMock: vi.fn(),
   unforceShowMetaMock: vi.fn(),
+  forceShowTitleMock: vi.fn(),
+  unforceShowTitleMock: vi.fn(),
 }));
 
 vi.mock('../interaction/AtomFocusManager', () => ({
@@ -51,6 +54,13 @@ vi.mock('../interaction/meta-visibility', () => ({
   unforceShowMeta: (...args: unknown[]) => unforceShowMetaMock(...args),
   isMetaForced: () => false,
   subscribeMetaVisibility: () => () => {},
+}));
+
+vi.mock('../interaction/title-visibility', () => ({
+  forceShowTitle: (...args: unknown[]) => forceShowTitleMock(...args),
+  unforceShowTitle: (...args: unknown[]) => unforceShowTitleMock(...args),
+  isTitleForced: () => false,
+  subscribeTitleVisibility: () => () => {},
 }));
 
 vi.mock('../store/actions/insertBlock', () => ({
@@ -152,6 +162,8 @@ beforeEach(() => {
   focusPrevious.mockClear();
   forceShowMetaMock.mockClear();
   unforceShowMetaMock.mockClear();
+  forceShowTitleMock.mockClear();
+  unforceShowTitleMock.mockClear();
 });
 
 // ─── Enter ────────────────────────────────────────────────────────────────
@@ -548,6 +560,83 @@ describe('SingleLineKeyboardNav — Tab', () => {
     expect(focusFieldWhenReady).toHaveBeenCalledWith({
       kind: 'entry.meta', id: 'e1',
     });
+    editor.destroy();
+  });
+
+  it('Tab from section.heading calls forceShowTitle on first entry and focusFieldWhenReady on entry.title', () => {
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [
+          { id: 'e1', title: '', meta: '', bullets: [] },
+          { id: 'e2', title: 'X', meta: '', bullets: [] },
+        ]}],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'section.heading', id: 's1' }, makeDoc('Exp'));
+
+    expect(fireKey(editor, 'Tab')).toBe(true);
+    expect(forceShowTitleMock).toHaveBeenCalledTimes(1);
+    expect(forceShowTitleMock).toHaveBeenCalledWith('e1');
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'entry.title', id: 'e1',
+    });
+    editor.destroy();
+  });
+
+  it('Tab from section.heading on a section with no entries returns false (does nothing)', () => {
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [] }],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'section.heading', id: 's1' }, makeDoc('Exp'));
+
+    expect(fireKey(editor, 'Tab')).toBe(false);
+    expect(forceShowTitleMock).not.toHaveBeenCalled();
+    expect(focusFieldWhenReady).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('Tab from entry.meta calls forceShowTitle on next entry and focusFieldWhenReady on next entry.title', () => {
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [
+          { id: 'e1', title: 'A', meta: '', bullets: [] },
+          { id: 'e2', title: '', meta: '', bullets: [] },
+        ]}],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'entry.meta', id: 'e1' }, makeDoc(''));
+
+    expect(fireKey(editor, 'Tab')).toBe(true);
+    expect(forceShowTitleMock).toHaveBeenCalledTimes(1);
+    expect(forceShowTitleMock).toHaveBeenCalledWith('e2');
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'entry.title', id: 'e2',
+    });
+    editor.destroy();
+  });
+
+  it('Tab from entry.meta with no following entry returns false', () => {
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [
+          { id: 'e1', title: 'A', meta: '', bullets: [] },
+        ]}],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'entry.meta', id: 'e1' }, makeDoc(''));
+
+    expect(fireKey(editor, 'Tab')).toBe(false);
+    expect(forceShowTitleMock).not.toHaveBeenCalled();
     editor.destroy();
   });
 });

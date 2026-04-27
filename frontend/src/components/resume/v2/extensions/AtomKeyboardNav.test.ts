@@ -229,12 +229,79 @@ describe('AtomKeyboardNav — Backspace (single-step delete)', () => {
     editor.destroy();
   });
 
-  it('Backspace at start of non-empty bullet returns false (no delete, no focus shift)', () => {
+  it('Backspace at start of non-empty BULLET outdents to plain (preserves content) and returns true', () => {
+    // b1 has no kind set → defaults to 'bullet'. Pressing Backspace at start
+    // with content present must call setBulletKind('plain') and NOT delete.
     const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
     editor.commands.focus();
     editor.commands.setTextSelection(1); // start of paragraph
 
-    fireKey(editor, 'Backspace');
+    expect(fireKey(editor, 'Backspace')).toBe(true);
+
+    expect(setBulletKindMock).toHaveBeenCalledTimes(1);
+    const skCall = setBulletKindMock.mock.calls[0] as unknown as [string, string, unknown];
+    expect(skCall[0]).toBe('b1');
+    expect(skCall[1]).toBe('plain');
+    expect(deleteBulletMock).not.toHaveBeenCalled();
+    expect(focusFieldEnd).not.toHaveBeenCalled();
+    expect(focusPrevious).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('Backspace at start of EMPTY plain row deletes it and focuses end of previous field', () => {
+    // Mark b2 as kind='plain' and keep its content empty.
+    const r = useResumeStore.getState().resume!;
+    useResumeStore.setState({
+      resume: {
+        ...r,
+        sections: r.sections.map(s => ({
+          ...s,
+          entries: s.entries.map(e => ({
+            ...e,
+            bullets: e.bullets.map(b =>
+              b.id === 'b2' ? { ...b, kind: 'plain' as const } : b),
+          })),
+        })),
+      },
+    });
+
+    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
+    editor.commands.focus();
+
+    expect(fireKey(editor, 'Backspace')).toBe(true);
+
+    expect(setBulletKindMock).not.toHaveBeenCalled();
+    expect(deleteBulletMock).toHaveBeenCalledTimes(1);
+    expect(deleteBulletMock.mock.calls[0][0]).toBe('b2');
+    expect(focusFieldEnd).toHaveBeenCalled();
+    const focusCall = focusFieldEnd.mock.calls[0] as unknown as [{ kind: string; id: string }];
+    expect(focusCall[0].kind).toBe('bullet.content');
+    expect(focusCall[0].id).toBe('b1');
+    editor.destroy();
+  });
+
+  it('Backspace at start of NON-empty plain row returns false (no setBulletKind, no delete)', () => {
+    // Mark b1 as kind='plain' with content. Backspace must be a no-op.
+    const r = useResumeStore.getState().resume!;
+    useResumeStore.setState({
+      resume: {
+        ...r,
+        sections: r.sections.map(s => ({
+          ...s,
+          entries: s.entries.map(e => ({
+            ...e,
+            bullets: e.bullets.map(b =>
+              b.id === 'b1' ? { ...b, kind: 'plain' as const } : b),
+          })),
+        })),
+      },
+    });
+
+    const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
+    editor.commands.focus();
+    editor.commands.setTextSelection(1); // start of paragraph
+
+    expect(fireKey(editor, 'Backspace')).toBe(false);
     expect(setBulletKindMock).not.toHaveBeenCalled();
     expect(deleteBulletMock).not.toHaveBeenCalled();
     expect(focusFieldEnd).not.toHaveBeenCalled();
@@ -242,7 +309,7 @@ describe('AtomKeyboardNav — Backspace (single-step delete)', () => {
     editor.destroy();
   });
 
-  it('Backspace mid-text returns false (no delete, no focus shift)', () => {
+  it('Backspace mid-text returns false (no delete, no focus shift, no kind flip)', () => {
     const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
     editor.commands.focus();
     editor.commands.setTextSelection(3); // middle of "hello"

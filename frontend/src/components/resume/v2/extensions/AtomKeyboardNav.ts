@@ -3,8 +3,10 @@ import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 import type { Node as PMNode } from 'prosemirror-model';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
+import { forceShowTitle } from '../interaction/title-visibility';
 import { insertBullet } from '../store/actions/insertBlock';
 import { deleteBullet } from '../store/actions/deleteBlock';
+import { setBulletKind } from '../store/actions/setBulletKind';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import type {
@@ -148,29 +150,44 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         return true;
       },
       Backspace: () => {
-        // Single-step delete (matches every other field):
-        //   - cursor in middle / end → let TipTap delete previous char
-        //   - cursor at start of NON-empty bullet → no-op (don't lose content;
-        //     true "merge into previous bullet" is v2.1 territory)
-        //   - cursor at start of EMPTY bullet (any kind) → delete the row,
-        //     focus END of previous field
-        // We deliberately do NOT auto-flip kind='bullet' → 'plain' on the
-        // first Backspace: outdented bullets render with no marker and no
-        // padding, so the row looked empty and users assumed it was gone
-        // ("ghost rows"). The plain-kind toggle infrastructure is kept for
-        // future manual exposure (toolbar / context menu).
+        // Backspace at start of a bullet row, by current kind + content:
+        //   bullet + empty   → delete the row, focus END of previous field
+        //   bullet + content → outdent to kind='plain' (drop marker + indent,
+        //                       preserve content + cursor)
+        //   plain  + empty   → delete the row, focus END of previous field
+        //   plain  + content → no-op (don't lose content; "merge into prev"
+        //                       is v2.1 territory)
+        //   selection / mid-text → let TipTap delete normally
         const { from, to } = this.editor.state.selection;
         if (from !== to) return false;       // selection — let TipTap handle
-        const isAtStart = from <= 1;
-        if (!isAtStart) return false;        // not at start — TipTap deletes char
-        const isEmpty = this.editor.state.doc.textContent.trim() === '';
-        if (!isEmpty) return false;          // non-empty + at start — preserve content
+        if (from > 1) return false;          // not at start — TipTap deletes char
 
-        // Compute previous BEFORE delete (store mutation invalidates indices).
-        const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
-        deleteBullet(opts.bulletId, makeOrigin('tiptap'));
-        if (prev) atomFocusManager.focusFieldEnd(prev);
-        return true;
+        const isEmpty = this.editor.state.doc.textContent.trim() === '';
+        const kind = readBulletKind(opts.bulletId);
+
+        if (kind === 'bullet') {
+          if (isEmpty) {
+            // Empty bullet: single-step delete.
+            const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
+            deleteBullet(opts.bulletId, makeOrigin('tiptap'));
+            if (prev) atomFocusManager.focusFieldEnd(prev);
+            return true;
+          }
+          // Non-empty bullet: outdent to plain. Keep content + cursor.
+          setBulletKind(opts.bulletId, 'plain', makeOrigin('tiptap'));
+          return true;
+        }
+
+        // kind === 'plain'
+        if (isEmpty) {
+          // Empty plain row: delete it (no marker, no content — get rid of it).
+          const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
+          deleteBullet(opts.bulletId, makeOrigin('tiptap'));
+          if (prev) atomFocusManager.focusFieldEnd(prev);
+          return true;
+        }
+        // Non-empty plain at start: no-op (don't lose content).
+        return false;
       },
       ArrowUp: () => {
         const { from } = this.editor.state.selection;
