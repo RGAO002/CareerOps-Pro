@@ -192,44 +192,10 @@ describe('AtomKeyboardNav — Enter (Notion-style split)', () => {
 });
 
 // ─── Backspace ────────────────────────────────────────────────────────────
-describe('AtomKeyboardNav — Backspace (Notion-style outdent)', () => {
-  it('Backspace at start of empty BULLET-kind row outdents to plain (no delete, no focus shift)', () => {
-    // b2 in the default RESUME is an empty bullet with kind absent (treated as 'bullet')
-    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
-    editor.commands.focus();
-    // cursor is naturally at start (pos 1) for empty paragraph
-
-    expect(fireKey(editor, 'Backspace')).toBe(true);
-
-    // Outdent: setBulletKind called with 'plain', deleteBullet NOT called,
-    // focus does NOT move.
-    expect(setBulletKindMock).toHaveBeenCalledTimes(1);
-    const skCall = setBulletKindMock.mock.calls[0] as unknown as [string, string, unknown];
-    expect(skCall[0]).toBe('b2');
-    expect(skCall[1]).toBe('plain');
-    expect(deleteBulletMock).not.toHaveBeenCalled();
-    expect(focusFieldEnd).not.toHaveBeenCalled();
-    expect(focusPrevious).not.toHaveBeenCalled();
-    editor.destroy();
-  });
-
-  it('Backspace at start of empty PLAIN-kind row deletes it and focuses END of previous field', () => {
-    // Mark b2 as kind='plain' so the second-Backspace path triggers.
-    const r = useResumeStore.getState().resume!;
-    useResumeStore.setState({
-      resume: {
-        ...r,
-        sections: r.sections.map(s => ({
-          ...s,
-          entries: s.entries.map(e => ({
-            ...e,
-            bullets: e.bullets.map(b =>
-              b.id === 'b2' ? { ...b, kind: 'plain' as const } : b),
-          })),
-        })),
-      },
-    });
-
+describe('AtomKeyboardNav — Backspace (single-step delete)', () => {
+  it('Backspace at start of empty bullet (any kind) deletes it and focuses END of previous field', () => {
+    // b2 in the default RESUME is an empty bullet with kind absent (treated as 'bullet').
+    // No setBulletKind setup needed — single-step delete fires regardless of kind.
     const editor = makeBulletEditor('b2', 'e1', makeContent(''));
     editor.commands.focus();
 
@@ -247,7 +213,23 @@ describe('AtomKeyboardNav — Backspace (Notion-style outdent)', () => {
     editor.destroy();
   });
 
-  it('Backspace at start of non-empty bullet returns false (no outdent, no delete, no focus shift)', () => {
+  it('Backspace at start of empty bullet ALWAYS deletes (single-step, no outdent)', () => {
+    // Entry has [b1(text), b2(empty)]. Pressing Backspace in b2 must call
+    // deleteBullet exactly once and must NEVER call setBulletKind — the
+    // two-step outdent → delete path is gone.
+    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
+    editor.commands.focus();
+
+    expect(fireKey(editor, 'Backspace')).toBe(true);
+
+    expect(deleteBulletMock).toHaveBeenCalledTimes(1);
+    expect(deleteBulletMock.mock.calls[0][0]).toBe('b2');
+    // Critical assertion: no auto-conversion to 'plain'.
+    expect(setBulletKindMock).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+
+  it('Backspace at start of non-empty bullet returns false (no delete, no focus shift)', () => {
     const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
     editor.commands.focus();
     editor.commands.setTextSelection(1); // start of paragraph
@@ -260,7 +242,7 @@ describe('AtomKeyboardNav — Backspace (Notion-style outdent)', () => {
     editor.destroy();
   });
 
-  it('Backspace mid-text returns false (no outdent, no delete, no focus shift)', () => {
+  it('Backspace mid-text returns false (no delete, no focus shift)', () => {
     const editor = makeBulletEditor('b1', 'e1', makeContent('hello'));
     editor.commands.focus();
     editor.commands.setTextSelection(3); // middle of "hello"

@@ -5,7 +5,6 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
 import { insertBullet } from '../store/actions/insertBlock';
 import { deleteBullet } from '../store/actions/deleteBlock';
-import { setBulletKind } from '../store/actions/setBulletKind';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import type {
@@ -149,14 +148,17 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         return true;
       },
       Backspace: () => {
-        // Notion-style outdent + delete:
+        // Single-step delete (matches every other field):
         //   - cursor in middle / end → let TipTap delete previous char
         //   - cursor at start of NON-empty bullet → no-op (don't lose content;
         //     true "merge into previous bullet" is v2.1 territory)
-        //   - cursor at start of EMPTY 'bullet'-kind row → outdent to 'plain'
-        //     (cancel the marker, keep the row, keep the cursor)
-        //   - cursor at start of EMPTY 'plain'-kind row → delete the row,
+        //   - cursor at start of EMPTY bullet (any kind) → delete the row,
         //     focus END of previous field
+        // We deliberately do NOT auto-flip kind='bullet' → 'plain' on the
+        // first Backspace: outdented bullets render with no marker and no
+        // padding, so the row looked empty and users assumed it was gone
+        // ("ghost rows"). The plain-kind toggle infrastructure is kept for
+        // future manual exposure (toolbar / context menu).
         const { from, to } = this.editor.state.selection;
         if (from !== to) return false;       // selection — let TipTap handle
         const isAtStart = from <= 1;
@@ -164,17 +166,7 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         const isEmpty = this.editor.state.doc.textContent.trim() === '';
         if (!isEmpty) return false;          // non-empty + at start — preserve content
 
-        const kind = readBulletKind(opts.bulletId);
-        if (kind === 'bullet') {
-          // Outdent: flip to 'plain'. Don't delete, don't move focus —
-          // the cursor stays in the now-marker-less row.
-          setBulletKind(opts.bulletId, 'plain', makeOrigin('tiptap'));
-          return true;
-        }
-
-        // kind === 'plain' → empty plain row + Backspace = delete the row
-        // and land at END of the previous field. Compute previous BEFORE
-        // delete (store mutation invalidates indices).
+        // Compute previous BEFORE delete (store mutation invalidates indices).
         const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
         deleteBullet(opts.bulletId, makeOrigin('tiptap'));
         if (prev) atomFocusManager.focusFieldEnd(prev);
