@@ -156,7 +156,7 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
     <>
       <EditorContent
         editor={editor}
-        className="resume-bullet"
+        className="resume-bullet-content"
         data-field-key={`bullet.content:${bulletId}`}
       />
       {mode === 'edit' && <BubbleMenu editor={editor} />}
