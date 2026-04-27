@@ -26,7 +26,7 @@ describe('SelectionManager', () => {
     let last: Set<string> | null = null;
     mgr.subscribe(s => { last = s; });
     mgr.selectSingleBlock('x');
-    expect(last?.has('x')).toBe(true);
+    expect((last as Set<string> | null)?.has('x')).toBe(true);
   });
   it('notifyTipTapFocus clears block selection', () => {
     mgr.selectSingleBlock('a');
