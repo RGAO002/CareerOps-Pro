@@ -12,15 +12,23 @@ export function moveBullet(
   if (!r) return;
   let bullet: any = null;
   let sourceEntryId: BlockId | null = null;
+  let srcIdxInEntry = -1;
   for (const s of r.sections) {
     for (const e of s.entries) {
-      const found = e.bullets.find(b => b.id === bulletId);
-      if (found) { bullet = found; sourceEntryId = e.id; break; }
+      const idx = e.bullets.findIndex(b => b.id === bulletId);
+      if (idx >= 0) { bullet = e.bullets[idx]; sourceEntryId = e.id; srcIdxInEntry = idx; break; }
     }
     if (bullet) break;
   }
-  if (!bullet) return;
+  if (!bullet || !sourceEntryId) return;
   if (!r.sections.some(s => s.entries.some(e => e.id === targetEntryId))) return;
+
+  // No-op detection: drop on self / drop right-after-self in same entry.
+  if (sourceEntryId === targetEntryId) {
+    if (indexInEntry === srcIdxInEntry) return;
+    if (indexInEntry === srcIdxInEntry + 1) return;
+  }
+
   _pushUndo('moveBullet');
   const next = r.sections.map(s => ({
     ...s,
@@ -33,7 +41,12 @@ export function moveBullet(
           ? e.bullets.filter(b => b.id !== bulletId)
           : e.bullets;
         const out = [...cleaned];
-        out.splice(Math.min(indexInEntry, out.length), 0, bullet);
+        // Same-entry index adjustment: post-removal, original-array indices
+        // > srcIdxInEntry shift down by one in the cleaned array.
+        const adjustedIdx = (e.id === sourceEntryId && indexInEntry > srcIdxInEntry)
+          ? indexInEntry - 1
+          : indexInEntry;
+        out.splice(Math.min(adjustedIdx, out.length), 0, bullet);
         return { ...e, bullets: out };
       }
       return e;
