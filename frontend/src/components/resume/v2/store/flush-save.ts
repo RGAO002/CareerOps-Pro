@@ -28,9 +28,13 @@ export function setSaveBackend(backend: SaveBackend): void {
   _backend = backend;
 }
 
-/** Default backend: PUT to /api/resume/[id]. */
+/** Default backend: PUT to /api/resume/[id] on the FastAPI backend. */
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
+  'http://localhost:8000';
+
 export async function defaultBackendSave(doc: ResumeDoc): Promise<void> {
-  const resp = await fetch(`/api/resume/${encodeURIComponent(doc.id)}`, {
+  const resp = await fetch(`${API_BASE}/api/resume/${encodeURIComponent(doc.id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(doc),

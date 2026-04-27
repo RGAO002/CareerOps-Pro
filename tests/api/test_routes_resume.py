@@ -48,13 +48,21 @@ def test_list_returns_summary_fields_only(client):
     assert "doc" not in items[0]
 
 
-def test_get_one_returns_full_resume(client):
+def test_get_one_returns_v2_shape(client):
+    """GET emits a v2-shaped dict regardless of what's on disk.
+
+    A v1 resume on disk (seeded via legacy save) is auto-migrated through
+    resume_store.load_dict on read.
+    """
     _seed_resume("x", "X")
     resp = client.get("/api/resume/x")
     assert resp.status_code == 200
     body = resp.json()
+    assert body["schema_version"] == 2
     assert body["id"] == "x"
-    assert "doc" in body
+    assert "header" in body
+    assert "sections" in body
+    assert "metadata" in body
 
 
 def test_get_missing_returns_404(client):
@@ -62,37 +70,59 @@ def test_get_missing_returns_404(client):
     assert resp.status_code == 404
 
 
-def test_put_creates_or_replaces_resume(client):
-    payload = {
-        "id": "new1",
-        "title": "Brand new",
-        "created_at": 1000,
-        "updated_at": 1000,
-        "doc": {"type": "doc", "content": []},
+def _v2_payload(rid: str = "new1", title: str = "Brand new") -> dict:
+    return {
+        "schema_version": 2,
+        "id": rid,
+        "title": title,
+        "template_id": "minimal-single-column",
+        "header": {"id": "h", "name": "", "contact_lines": []},
+        "sections": [],
+        "metadata": {
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "target_company": None,
+            "target_role": None,
+            "parent_id": None,
+        },
     }
-    resp = client.put("/api/resume/new1", json=payload)
+
+
+def test_put_creates_or_replaces_resume(client):
+    """PUT accepts a v2-shaped dict and round-trips through GET."""
+    resp = client.put("/api/resume/new1", json=_v2_payload("new1", "Brand new"))
     assert resp.status_code == 200
     assert resp.json()["id"] == "new1"
+    assert resp.json()["schema_version"] == 2
 
     got = client.get("/api/resume/new1")
     assert got.status_code == 200
     assert got.json()["title"] == "Brand new"
+    assert got.json()["schema_version"] == 2
 
 
 def test_put_with_mismatched_id_uses_url_id(client):
     """URL :id wins if body id differs (defensive)."""
-    payload = {
-        "id": "bodyid",
-        "title": "T",
+    resp = client.put("/api/resume/urlid", json=_v2_payload("bodyid", "T"))
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "urlid"
+    # Verify on disk (load_dict, since GET goes through the same helper).
+    assert resume_store.load_dict("urlid")["id"] == "urlid"
+    from pathlib import Path
+    assert not (resume_store.RESUMES_DIR / "bodyid.json").exists()
+
+
+def test_put_rejects_v1_payload(client):
+    """A legacy v1 payload (no schema_version=2) is rejected with 400."""
+    legacy = {
+        "id": "old",
+        "title": "Old shape",
         "created_at": 1,
         "updated_at": 1,
         "doc": {"type": "doc", "content": []},
     }
-    resp = client.put("/api/resume/urlid", json=payload)
-    assert resp.status_code == 200
-    assert resp.json()["id"] == "urlid"
-    assert resume_store.get("urlid") is not None
-    assert resume_store.get("bodyid") is None
+    resp = client.put("/api/resume/old", json=legacy)
+    assert resp.status_code == 400
 
 
 def test_post_creates_blank_resume(client):

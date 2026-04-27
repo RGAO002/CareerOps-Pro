@@ -1,9 +1,10 @@
 // frontend/src/app/resume/[id]/print/page.tsx
 //
 // Headless-Chromium prints THIS route to PDF. We fetch the resume on the
-// server so the client component receives data immediately — no client
+// server so the client component receives v2 data immediately — no client
 // loading flicker, faster ready-flag for Playwright.
-import { PrintCanvasClient } from "./PrintCanvasClient";
+import { PrintCanvasClient } from "@/components/resume/v2/PrintCanvasClient";
+import type { ResumeDoc } from "@/components/resume/v2/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -26,6 +27,6 @@ export default async function PrintPage({ params }: PageProps) {
     );
   }
 
-  const resume = await resp.json();
+  const resume = (await resp.json()) as ResumeDoc;
   return <PrintCanvasClient resume={resume} />;
 }

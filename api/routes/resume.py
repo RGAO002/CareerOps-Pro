@@ -65,22 +65,43 @@ async def list_resumes() -> dict:
 
 
 @router.get("/{resume_id}")
-async def get_resume(resume_id: str) -> Resume:
-    """Get one resume in full (meta + doc)."""
+async def get_resume(resume_id: str) -> dict:
+    """Get one resume in full, in v2-shaped form.
+
+    v1 docs on disk are auto-migrated through ``resume_store.load_dict``;
+    the on-disk file is NOT rewritten — only an explicit save (CLI migration
+    or PUT) flips the on-disk version.
+    """
     _ensure_valid_id(resume_id)
-    r = resume_store.get(resume_id)
-    if r is None:
+    try:
+        return resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
-    return r
 
 
 @router.put("/{resume_id}")
-async def upsert_resume(resume_id: str, payload: Resume) -> Resume:
-    """Create or replace a resume. URL id always wins."""
+async def upsert_resume(resume_id: str, payload: dict) -> dict:
+    """Create or replace a resume with a v2-shaped doc. URL id always wins.
+
+    The body must declare ``schema_version: 2`` — the route does not accept
+    legacy v1 payloads. The frontend (post-Task 38) always writes v2.
+    """
     _ensure_valid_id(resume_id)
-    payload.id = resume_id
-    payload.updated_at = max(payload.updated_at, _now_ms())
-    resume_store.save(payload)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    if payload.get("schema_version") != 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Only v2 resumes accepted (schema_version must be 2)",
+        )
+    payload["id"] = resume_id
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=400, detail="metadata is required")
+    # Refresh updated_at server-side to a current ISO-8601 timestamp.
+    from datetime import datetime, timezone
+    metadata["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    resume_store.save_v2_dict(payload)
     return payload
 
 
