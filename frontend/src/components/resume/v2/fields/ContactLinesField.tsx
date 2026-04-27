@@ -16,6 +16,7 @@ import { UndoRedo } from '@tiptap/extensions';
 
 import { SingleLineWithMarksDocument } from '../extensions/SingleLineWithMarksDocument';
 import { NoNewline } from '../extensions/NoNewline';
+import { SingleLineKeyboardNav } from '../extensions/SingleLineKeyboardNav';
 import { contactItemsToDoc, docToContactItems } from './contact-lines-adapter';
 import { alignFromDoc, type Align } from './single-line-adapter';
 import { useMeasureModeSync } from './useMeasureModeSync';
@@ -57,7 +58,14 @@ export function ContactLinesField({ index, items, align, mode }: Props) {
       Link.configure({ openOnClick: false }),
       NoNewline,
       TextAlign.configure({ types: ['paragraph'], alignments: ['left', 'center', 'right'] }),
-      ...(mode === 'edit' ? [UndoRedo] : []),
+      ...(mode === 'edit'
+        ? [
+            UndoRedo,
+            SingleLineKeyboardNav.configure({
+              field: { kind: 'header.contact', index },
+            }),
+          ]
+        : []),
     ],
     content: initialDoc,
     editable: mode === 'edit',

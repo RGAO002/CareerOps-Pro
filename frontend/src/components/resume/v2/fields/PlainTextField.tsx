@@ -15,6 +15,7 @@ import { Color } from '@tiptap/extension-color';
 import TextAlign from '@tiptap/extension-text-align';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { NoNewline } from '../extensions/NoNewline';
+import { SingleLineKeyboardNav } from '../extensions/SingleLineKeyboardNav';
 import {
   stringToSingleLineDoc, singleLineDocToString, alignFromDoc,
   type Align,
@@ -71,7 +72,9 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
       Link.configure({ openOnClick: false }),
       NoNewline,
       TextAlign.configure({ types: ['paragraph'], alignments: ['left', 'center', 'right'] }),
-      ...(mode === 'edit' ? [UndoRedo] : []),
+      ...(mode === 'edit'
+        ? [UndoRedo, SingleLineKeyboardNav.configure({ field: fieldKey })]
+        : []),
     ],
     content: initialDoc,
     editable: mode === 'edit',

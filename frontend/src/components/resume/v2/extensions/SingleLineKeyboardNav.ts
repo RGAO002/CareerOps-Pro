@@ -1,0 +1,278 @@
+// frontend/src/components/resume/v2/extensions/SingleLineKeyboardNav.ts
+import { Extension } from '@tiptap/core';
+import type { Editor } from '@tiptap/core';
+import { atomFocusManager } from '../interaction/AtomFocusManager';
+import {
+  insertBullet, insertEntry, insertContactLine,
+} from '../store/actions/insertBlock';
+import {
+  deleteEntry, deleteSection, deleteContactLine,
+} from '../store/actions/deleteBlock';
+import { useResumeStore } from '../store/useResumeStore';
+import { makeOrigin } from '../store/source-of-truth';
+import type { BlockId, EditableField } from '../types';
+
+export interface SingleLineKeyboardNavOptions {
+  /** The field this extension instance is mounted on. Used to disambiguate
+   *  Enter / Backspace structural intent. */
+  field: EditableField;
+}
+
+declare module '@tiptap/core' {
+  interface EditorOptions {
+    fieldKey?: EditableField;
+  }
+}
+
+const EMPTY_BULLET_DOC = {
+  type: 'doc' as const,
+  content: [{ type: 'paragraph' as const }] as [
+    { type: 'paragraph'; content?: undefined },
+  ],
+};
+
+/** Shared "is the cursor at start of an empty single-line doc?" predicate. */
+function isAtStartOfEmpty(editor: Editor): boolean {
+  const { from, to } = editor.state.selection;
+  if (from !== to) return false;
+  if (from > 1) return false;
+  return editor.state.doc.textContent.trim() === '';
+}
+
+/** Find the section + entry that owns the given entryId. */
+function findEntry(entryId: BlockId): {
+  sectionId: BlockId;
+  entryId: BlockId;
+  bulletsCount: number;
+  metaText: string;
+  bulletsAllEmpty: boolean;
+} | null {
+  const r = useResumeStore.getState().resume;
+  if (!r) return null;
+  for (const s of r.sections) {
+    const e = s.entries.find(x => x.id === entryId);
+    if (!e) continue;
+    const bulletsAllEmpty = e.bullets.every(b => {
+      const para = b.content.content?.[0];
+      const text = (para?.content ?? [])
+        .map(n => (n.type === 'text' ? n.text : ''))
+        .join('');
+      return text.trim() === '';
+    });
+    return {
+      sectionId: s.id,
+      entryId: e.id,
+      bulletsCount: e.bullets.length,
+      metaText: e.meta ?? '',
+      bulletsAllEmpty,
+    };
+  }
+  return null;
+}
+
+/** For section.heading: identify the section and check if it has entries. */
+function findSection(sectionId: BlockId): {
+  sectionId: BlockId;
+  entriesCount: number;
+} | null {
+  const r = useResumeStore.getState().resume;
+  if (!r) return null;
+  const s = r.sections.find(x => x.id === sectionId);
+  if (!s) return null;
+  return { sectionId: s.id, entriesCount: s.entries.length };
+}
+
+/** Build the field that should receive focus AFTER deleting / leaving the
+ *  given field. Used by Backspace handlers to fall back to the previous
+ *  visual row. Returns null when there is no previous row (e.g. header.name). */
+function previousFieldFor(field: EditableField): EditableField | null {
+  const r = useResumeStore.getState().resume;
+  if (!r) return null;
+  switch (field.kind) {
+    case 'header.name':
+      return null;
+    case 'header.contact':
+      if (field.index > 0) return { kind: 'header.contact', index: field.index - 1 };
+      return { kind: 'header.name' };
+    case 'section.heading': {
+      // Previous = last bullet of last entry of previous section, OR
+      // last contact line, OR header.name.
+      const idx = r.sections.findIndex(s => s.id === field.id);
+      if (idx > 0) {
+        const prev = r.sections[idx - 1];
+        const lastEntry = prev.entries[prev.entries.length - 1];
+        if (lastEntry) {
+          const lastBullet = lastEntry.bullets[lastEntry.bullets.length - 1];
+          if (lastBullet) return { kind: 'bullet.content', id: lastBullet.id };
+          return { kind: 'entry.meta', id: lastEntry.id };
+        }
+        return { kind: 'section.heading', id: prev.id };
+      }
+      // First section → fall back into header
+      const lines = r.header.contact_lines;
+      if (lines.length > 0) {
+        return { kind: 'header.contact', index: lines.length - 1 };
+      }
+      return { kind: 'header.name' };
+    }
+    case 'entry.title': {
+      // Previous = previous entry's last bullet (or its meta/title), or the
+      // owning section's heading.
+      for (const s of r.sections) {
+        const i = s.entries.findIndex(e => e.id === field.id);
+        if (i < 0) continue;
+        if (i > 0) {
+          const prev = s.entries[i - 1];
+          const lastBullet = prev.bullets[prev.bullets.length - 1];
+          if (lastBullet) return { kind: 'bullet.content', id: lastBullet.id };
+          return { kind: 'entry.meta', id: prev.id };
+        }
+        return { kind: 'section.heading', id: s.id };
+      }
+      return null;
+    }
+    case 'entry.meta':
+      return { kind: 'entry.title', id: field.id };
+    case 'bullet.content':
+      // SingleLineKeyboardNav doesn't run on bullets; AtomKeyboardNav owns them.
+      return null;
+  }
+}
+
+export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptions>({
+  name: 'singleLineKeyboardNav',
+  // Higher than NoNewline (default 100) so this owns Enter / Shift-Enter for
+  // single-line fields when both extensions are loaded.
+  priority: 200,
+
+  addOptions() {
+    return { field: { kind: 'header.name' } };
+  },
+
+  addKeyboardShortcuts() {
+    const opts = this.options;
+    const field = opts.field;
+
+    const handleEnter = (): boolean => {
+      const origin = makeOrigin('tiptap');
+
+      switch (field.kind) {
+        case 'header.name': {
+          const r = useResumeStore.getState().resume;
+          if (!r) return true;
+          if (r.header.contact_lines.length === 0) {
+            insertContactLine(0, origin);
+          }
+          // Always focus the (possibly newly inserted) first contact line.
+          atomFocusManager.focusFieldWhenReady({ kind: 'header.contact', index: 0 });
+          return true;
+        }
+        case 'header.contact': {
+          const newIndex = field.index + 1;
+          insertContactLine(newIndex, origin);
+          atomFocusManager.focusFieldWhenReady({ kind: 'header.contact', index: newIndex });
+          return true;
+        }
+        case 'section.heading': {
+          // Insert a new entry at the START of this section's entries, then
+          // focus its first bullet.
+          const { entryId: _newEntryId, firstBulletId } = insertEntry(
+            field.id, 0, origin,
+          );
+          // Reference the entry id to keep TS happy and document intent.
+          void _newEntryId;
+          atomFocusManager.focusFieldWhenReady({
+            kind: 'bullet.content', id: firstBulletId,
+          });
+          return true;
+        }
+        case 'entry.title':
+        case 'entry.meta': {
+          const newId = insertBullet(
+            field.id, 0,
+            EMPTY_BULLET_DOC,
+            origin,
+          );
+          atomFocusManager.focusFieldWhenReady({ kind: 'bullet.content', id: newId });
+          return true;
+        }
+        case 'bullet.content':
+          // Should never get here — bullets use AtomKeyboardNav.
+          return false;
+      }
+    };
+
+    const handleBackspace = (editor: Editor): boolean => {
+      // Mid-text or with selection: let TipTap delete normally.
+      if (!isAtStartOfEmpty(editor)) return false;
+
+      switch (field.kind) {
+        case 'header.name':
+          // Nothing previous to merge into; do nothing (no-op).
+          return false;
+        case 'header.contact': {
+          const prev = previousFieldFor(field);
+          deleteContactLine(field.index, makeOrigin('tiptap'));
+          if (prev) atomFocusManager.focusFieldEnd(prev);
+          return true;
+        }
+        case 'section.heading': {
+          const sec = findSection(field.id);
+          if (!sec) return false;
+          if (sec.entriesCount > 0) return true; // refuse to delete non-empty section
+          const prev = previousFieldFor(field);
+          deleteSection(field.id, makeOrigin('tiptap'));
+          if (prev) atomFocusManager.focusFieldEnd(prev);
+          return true;
+        }
+        case 'entry.title': {
+          const info = findEntry(field.id);
+          if (!info) return false;
+          const prev = previousFieldFor(field);
+          const canDelete =
+            info.metaText.trim() === '' &&
+            (info.bulletsCount === 0 || info.bulletsAllEmpty);
+          if (canDelete) {
+            deleteEntry(field.id, makeOrigin('tiptap'));
+          }
+          if (prev) atomFocusManager.focusFieldEnd(prev);
+          return true;
+        }
+        case 'entry.meta': {
+          // Notion-like merge into previous, but since both are single-line
+          // we just shift focus to entry.title (no content merge).
+          const prev = previousFieldFor(field);
+          if (prev) atomFocusManager.focusFieldEnd(prev);
+          return true;
+        }
+        case 'bullet.content':
+          return false;
+      }
+    };
+
+    return {
+      Enter: () => handleEnter(),
+      'Mod-Enter': () => handleEnter(),
+      // Shift-Enter is intentionally NOT mapped here — NoNewline still
+      // suppresses hard breaks for these single-line fields.
+      Backspace: () => handleBackspace(this.editor),
+      ArrowUp: () => {
+        const { from } = this.editor.state.selection;
+        if (from <= 1) {
+          atomFocusManager.focusPrevious(field);
+          return true;
+        }
+        return false;
+      },
+      ArrowDown: () => {
+        const { from } = this.editor.state.selection;
+        const docSize = this.editor.state.doc.content.size;
+        if (from >= docSize - 1) {
+          atomFocusManager.focusNext(field);
+          return true;
+        }
+        return false;
+      },
+    };
+  },
+});

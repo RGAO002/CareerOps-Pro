@@ -1,7 +1,7 @@
 // frontend/src/components/resume/v2/store/actions/insertBlock.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
 import type {
-  BlockId, BulletBlock, EntryBlock, SectionBlock, SectionRole, UpdateOrigin,
+  BlockId, BulletBlock, ContactItem, EntryBlock, SectionBlock, SectionRole, UpdateOrigin,
 } from '../../types';
 
 function newId(): BlockId {
@@ -33,19 +33,22 @@ export function insertBullet(
   return newBullet.id;
 }
 
+export type InsertEntryResult = { entryId: BlockId; firstBulletId: BlockId };
+
 export function insertEntry(
   sectionId: BlockId,
   indexInSection: number,
   origin: UpdateOrigin,
-): BlockId {
+): InsertEntryResult {
   const r = useResumeStore.getState().resume;
   if (!r) throw new Error('No resume hydrated');
   _pushUndo('insertEntry');
+  const firstBulletId = newId();
   const newEntry: EntryBlock = {
     id: newId(),
     title: '',
     meta: '',
-    bullets: [{ id: newId(), content: { type: 'doc', content: [{ type: 'paragraph' }] } }],
+    bullets: [{ id: firstBulletId, content: { type: 'doc', content: [{ type: 'paragraph' }] } }],
   };
   const next = r.sections.map(s => {
     if (s.id !== sectionId) return s;
@@ -56,7 +59,34 @@ export function insertEntry(
   useResumeStore.setState({
     resume: { ...r, sections: next, metadata: { ...r.metadata, updated_at: new Date().toISOString() } },
   });
-  return newEntry.id;
+  return { entryId: newEntry.id, firstBulletId };
+}
+
+/**
+ * Insert a new contact line (initially blank text) at the given index in
+ * `header.contact_lines`. Index is clamped to `[0, contact_lines.length]`.
+ * Returns the index of the newly inserted line (which equals the requested
+ * index after clamping).
+ */
+export function insertContactLine(
+  index: number,
+  origin: UpdateOrigin,
+): number {
+  const r = useResumeStore.getState().resume;
+  if (!r) throw new Error('No resume hydrated');
+  _pushUndo('insertContactLine');
+  const lines = [...r.header.contact_lines];
+  const clamped = Math.max(0, Math.min(index, lines.length));
+  const newItem: ContactItem = { type: 'text', value: '' };
+  lines.splice(clamped, 0, newItem);
+  useResumeStore.setState({
+    resume: {
+      ...r,
+      header: { ...r.header, contact_lines: lines },
+      metadata: { ...r.metadata, updated_at: new Date().toISOString() },
+    },
+  });
+  return clamped;
 }
 
 export function insertSection(

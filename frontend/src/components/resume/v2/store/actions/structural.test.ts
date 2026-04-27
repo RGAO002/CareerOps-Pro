@@ -5,8 +5,12 @@ import { makeOrigin, _resetTransactionCounter } from '../source-of-truth';
 import { moveSection } from './moveSection';
 import { moveEntry } from './moveEntry';
 import { moveBullet } from './moveBullet';
-import { insertBullet, insertEntry, insertSection } from './insertBlock';
-import { deleteBullet, deleteEntry, deleteSection } from './deleteBlock';
+import {
+  insertBullet, insertEntry, insertSection, insertContactLine,
+} from './insertBlock';
+import {
+  deleteBullet, deleteEntry, deleteSection, deleteContactLine,
+} from './deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from './duplicateBlock';
 import type { ResumeDoc } from '../../types';
 
@@ -54,7 +58,7 @@ describe('move actions', () => {
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].id).toBe(newBulletId);
   });
   it('moveBullet into a valid blank entry preserves source content', () => {
-    const blankEntryId = insertEntry('s2', 0, makeOrigin('paste'));
+    const { entryId: blankEntryId } = insertEntry('s2', 0, makeOrigin('paste'));
     moveBullet('b1', blankEntryId, 0, makeOrigin('drag-reorder'));
     const resume = useResumeStore.getState().resume!;
     const sourceEntry = resume.sections[0].entries[0];
@@ -75,10 +79,12 @@ describe('insert actions', () => {
     expect(useResumeStore.getState().resume!.sections.map(s => s.role))
       .toEqual(['experience', 'skills', 'education']);
   });
-  it('insertEntry assigns a new uuid', () => {
-    const id = insertEntry('s1', 0, makeOrigin('tiptap'));
-    expect(id).toBeTruthy();
-    expect(useResumeStore.getState().resume!.sections[0].entries[0].id).toBe(id);
+  it('insertEntry assigns a new uuid and returns the first bullet id', () => {
+    const { entryId, firstBulletId } = insertEntry('s1', 0, makeOrigin('tiptap'));
+    expect(entryId).toBeTruthy();
+    expect(firstBulletId).toBeTruthy();
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].id).toBe(entryId);
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].id).toBe(firstBulletId);
   });
   it('insertBullet at index', () => {
     insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
@@ -98,6 +104,89 @@ describe('delete actions', () => {
   it('deleteBullet removes by id', () => {
     deleteBullet('b1', makeOrigin('tiptap'));
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets).toEqual([]);
+  });
+});
+
+describe('contact_lines actions', () => {
+  it('insertContactLine adds a blank text item at index, shifting following items', () => {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        header: {
+          id: 'h', name: 'A',
+          contact_lines: [{ type: 'text', value: 'a' }, { type: 'text', value: 'b' }],
+        },
+      },
+      bulletMeta: {},
+    });
+    const i = insertContactLine(1, makeOrigin('tiptap'));
+    expect(i).toBe(1);
+    const lines = useResumeStore.getState().resume!.header.contact_lines;
+    expect(lines.map(l => (l.type === 'text' ? l.value : l.label)))
+      .toEqual(['a', '', 'b']);
+  });
+
+  it('insertContactLine clamps the index when out of range', () => {
+    const i = insertContactLine(99, makeOrigin('tiptap'));
+    expect(i).toBe(0);
+    expect(useResumeStore.getState().resume!.header.contact_lines).toHaveLength(1);
+  });
+
+  it('deleteContactLine removes the item at the given index', () => {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        header: {
+          id: 'h', name: 'A',
+          contact_lines: [
+            { type: 'text', value: 'a' },
+            { type: 'text', value: 'b' },
+            { type: 'text', value: 'c' },
+          ],
+        },
+      },
+      bulletMeta: {},
+    });
+    deleteContactLine(1, makeOrigin('tiptap'));
+    const lines = useResumeStore.getState().resume!.header.contact_lines;
+    expect(lines.map(l => (l.type === 'text' ? l.value : l.label)))
+      .toEqual(['a', 'c']);
+  });
+
+  it('deleteContactLine no-ops on out-of-range index', () => {
+    deleteContactLine(99, makeOrigin('tiptap'));
+    // The default RESUME has zero contact lines.
+    expect(useResumeStore.getState().resume!.header.contact_lines).toEqual([]);
+  });
+
+  it('deleteContactLine shifts header.contact alignment keys down', () => {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        header: {
+          id: 'h', name: 'A',
+          contact_lines: [
+            { type: 'text', value: 'a' },
+            { type: 'text', value: 'b' },
+            { type: 'text', value: 'c' },
+          ],
+        },
+        alignments: {
+          'header.contact:0': 'right',
+          'header.contact:1': 'center',
+          'header.contact:2': 'right',
+          'header.name': 'center',
+        },
+      },
+      bulletMeta: {},
+    });
+    deleteContactLine(1, makeOrigin('tiptap'));
+    const a = useResumeStore.getState().resume!.alignments;
+    expect(a).toEqual({
+      'header.contact:0': 'right',
+      'header.contact:1': 'right',
+      'header.name': 'center',
+    });
   });
 });
 
