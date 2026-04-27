@@ -10,6 +10,12 @@ import {
   subscribeDragPreview,
   type DragPreview,
 } from '../interaction/drag-preview-state';
+import { atomFocusManager } from '../interaction/AtomFocusManager';
+import {
+  isMetaForced,
+  subscribeMetaVisibility,
+  unforceShowMeta,
+} from '../interaction/meta-visibility';
 import { useResumeStore } from '../store/useResumeStore';
 import type { Align } from '../fields/single-line-adapter';
 import type { BlockId, CanvasMode, EntryBlock } from '../types';
@@ -67,6 +73,35 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     s => s.resume?.alignments?.[`entry.meta:${entry.id}`],
   ) as Align | undefined;
 
+  // Visibility state for entry.meta:
+  //  - Always render when there's actual meta text to show.
+  //  - Render while focused (so the user can keep typing into a freshly tabbed
+  //    meta even though it's still empty).
+  //  - Render when "force-shown" via Tab from entry.title (covers the brief
+  //    window between forceShowMeta() and the new editor receiving focus).
+  // Otherwise the meta editor is DOM-absent so the empty row + missing drag
+  // handle can't appear.
+  const [metaForced, setMetaForced] = useState<boolean>(() => isMetaForced(entry.id));
+  useEffect(() => {
+    return subscribeMetaVisibility((id, forced) => {
+      if (id === entry.id) setMetaForced(forced);
+    });
+  }, [entry.id]);
+
+  const [metaFocused, setMetaFocused] = useState(false);
+  useEffect(() => {
+    return atomFocusManager.subscribe(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const inMeta = !!el?.closest?.(`[data-field-key="entry.meta:${entry.id}"]`);
+      setMetaFocused(inMeta);
+    });
+  }, [entry.id]);
+
+  const showMeta =
+    metaForced ||
+    metaFocused ||
+    (entry.meta?.trim().length ?? 0) > 0;
+
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
       <PlainTextField
@@ -77,14 +112,24 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
         className="resume-entry-title"
         placeholder="Title (e.g. Software Engineer @ Acme)"
       />
-      <PlainTextField
-        fieldKey={{ kind: 'entry.meta', id: entry.id }}
-        value={entry.meta}
-        align={metaAlign}
-        mode={mode}
-        className="resume-entry-meta"
-        placeholder="Date · Location"
-      />
+      {showMeta && (
+        <PlainTextField
+          fieldKey={{ kind: 'entry.meta', id: entry.id }}
+          value={entry.meta}
+          align={metaAlign}
+          mode={mode}
+          className="resume-entry-meta"
+          placeholder="Date · Location"
+          onBlur={(ed) => {
+            // When meta blurs and is still empty, drop the force-show flag so
+            // the row hides again on the next render. Non-empty meta keeps
+            // rendering naturally via the entry.meta.trim() condition.
+            if (ed.state.doc.textContent.trim() === '') {
+              unforceShowMeta(entry.id);
+            }
+          }}
+        />
+      )}
       <ul className="resume-entry-bullets">
         {entry.bullets.map((b, idx) => {
           const dragged = draggedBulletId === b.id;

@@ -2,6 +2,7 @@
 import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
+import { forceShowMeta } from '../interaction/meta-visibility';
 import {
   insertBullet, insertEntry, insertContactLine,
 } from '../store/actions/insertBlock';
@@ -39,23 +40,47 @@ function isAtStartOfEmpty(editor: Editor): boolean {
   return editor.state.doc.textContent.trim() === '';
 }
 
-/** Verify an entry with this id exists. Returns the section id or null. */
-function findEntry(entryId: BlockId): { sectionId: BlockId } | null {
+/** Find the section + entry that owns the given entryId. */
+function findEntry(entryId: BlockId): {
+  sectionId: BlockId;
+  entryId: BlockId;
+  bulletsCount: number;
+  metaText: string;
+  bulletsAllEmpty: boolean;
+} | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
   for (const s of r.sections) {
-    if (s.entries.some(x => x.id === entryId)) return { sectionId: s.id };
+    const e = s.entries.find(x => x.id === entryId);
+    if (!e) continue;
+    const bulletsAllEmpty = e.bullets.every(b => {
+      const para = b.content.content?.[0];
+      const text = (para?.content ?? [])
+        .map(n => (n.type === 'text' ? n.text : ''))
+        .join('');
+      return text.trim() === '';
+    });
+    return {
+      sectionId: s.id,
+      entryId: e.id,
+      bulletsCount: e.bullets.length,
+      metaText: e.meta ?? '',
+      bulletsAllEmpty,
+    };
   }
   return null;
 }
 
-/** Verify a section with this id exists. */
-function findSection(sectionId: BlockId): { sectionId: BlockId } | null {
+/** For section.heading: identify the section and check if it has entries. */
+function findSection(sectionId: BlockId): {
+  sectionId: BlockId;
+  entriesCount: number;
+} | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
   const s = r.sections.find(x => x.id === sectionId);
   if (!s) return null;
-  return { sectionId: s.id };
+  return { sectionId: s.id, entriesCount: s.entries.length };
 }
 
 /** Build the field that should receive focus AFTER deleting / leaving the
@@ -195,9 +220,14 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
         case 'section.heading': {
           const sec = findSection(field.id);
           if (!sec) return false;
-          // Per UX rule: empty single-line + Backspace ALWAYS deletes the
-          // structural unit (cascades to all entries + bullets). Undo is the
-          // safety net.
+          // Conservative rule: only delete an empty section. If it still has
+          // entries, just move focus — undo wouldn't help users who don't
+          // notice the destruction of real content.
+          if (sec.entriesCount > 0) {
+            const prev = previousFieldFor(field);
+            if (prev) atomFocusManager.focusFieldEnd(prev);
+            return true;
+          }
           const prev = previousFieldFor(field);
           deleteSection(field.id, makeOrigin('tiptap'));
           if (prev) atomFocusManager.focusFieldEnd(prev);
@@ -206,11 +236,17 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
         case 'entry.title': {
           const info = findEntry(field.id);
           if (!info) return false;
-          // Per UX rule: empty single-line + Backspace ALWAYS deletes the
-          // structural unit (cascades to meta + all bullets). Undo is the
-          // safety net.
           const prev = previousFieldFor(field);
-          deleteEntry(field.id, makeOrigin('tiptap'));
+          // Only delete the entry when it's TRULY EMPTY end-to-end. If user
+          // has any bullet content or meta text, just move focus — don't blow
+          // away their work. Undo wouldn't help if they don't notice the
+          // destruction.
+          const canDelete =
+            info.metaText.trim() === '' &&
+            (info.bulletsCount === 0 || info.bulletsAllEmpty);
+          if (canDelete) {
+            deleteEntry(field.id, makeOrigin('tiptap'));
+          }
           if (prev) atomFocusManager.focusFieldEnd(prev);
           return true;
         }
@@ -232,6 +268,19 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
       // Shift-Enter is intentionally NOT mapped here — NoNewline still
       // suppresses hard breaks for these single-line fields.
       Backspace: () => handleBackspace(this.editor),
+      Tab: () => {
+        // From entry.title, jump to the entry's meta — even when meta is
+        // currently hidden because empty. We force-render the meta via the
+        // meta-visibility pub/sub so EntryAtomRenderer mounts the editor on
+        // the next render, then focusFieldWhenReady polls until the editor
+        // registers and we land in it.
+        if (field.kind === 'entry.title') {
+          forceShowMeta(field.id);
+          atomFocusManager.focusFieldWhenReady({ kind: 'entry.meta', id: field.id });
+          return true;
+        }
+        return false;
+      },
       ArrowUp: () => {
         const { from } = this.editor.state.selection;
         if (from <= 1) {

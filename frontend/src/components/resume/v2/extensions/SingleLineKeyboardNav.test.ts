@@ -17,6 +17,7 @@ const {
   setOrder, register, unregister,
   insertBulletMock, insertEntryMock, insertContactLineMock,
   deleteSectionMock, deleteEntryMock, deleteContactLineMock,
+  forceShowMetaMock, unforceShowMetaMock,
 } = vi.hoisted(() => ({
   focusFieldWhenReady: vi.fn(),
   focusFieldEnd: vi.fn().mockReturnValue(true),
@@ -33,6 +34,8 @@ const {
   deleteSectionMock: vi.fn(),
   deleteEntryMock: vi.fn(),
   deleteContactLineMock: vi.fn(),
+  forceShowMetaMock: vi.fn(),
+  unforceShowMetaMock: vi.fn(),
 }));
 
 vi.mock('../interaction/AtomFocusManager', () => ({
@@ -41,6 +44,13 @@ vi.mock('../interaction/AtomFocusManager', () => ({
     focusNext, focusPrevious,
     focusFieldWhenReady, focusFieldEnd,
   },
+}));
+
+vi.mock('../interaction/meta-visibility', () => ({
+  forceShowMeta: (...args: unknown[]) => forceShowMetaMock(...args),
+  unforceShowMeta: (...args: unknown[]) => unforceShowMetaMock(...args),
+  isMetaForced: () => false,
+  subscribeMetaVisibility: () => () => {},
 }));
 
 vi.mock('../store/actions/insertBlock', () => ({
@@ -140,6 +150,8 @@ beforeEach(() => {
   focusFieldEnd.mockReturnValue(true);
   focusNext.mockClear();
   focusPrevious.mockClear();
+  forceShowMetaMock.mockClear();
+  unforceShowMetaMock.mockClear();
 });
 
 // ─── Enter ────────────────────────────────────────────────────────────────
@@ -342,10 +354,10 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty entry.title (entry has non-empty bullets) ALWAYS deletes the entry (cascades); focuses prev end', () => {
-    // Notion-strict rule: every empty single-line field must be removable by
-    // Backspace. Non-empty bullets are no longer a refusal reason — the user
-    // explicitly chose to delete; undo is the safety net.
+  it('Backspace on empty entry.title (entry has non-empty bullets) does NOT delete; just focuses prev end', () => {
+    // Conservative rule: the entry has real bullet content the user might not
+    // notice losing, so Backspace on the title only moves focus. Undo is a
+    // weak safety net users won't reach for if they don't see the destruction.
     useResumeStore.setState({
       resume: buildResume({
         sections: [{ id: 's1', heading: 'Exp', entries: [
@@ -358,9 +370,7 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).toHaveBeenCalledTimes(1);
-    const delCall = deleteEntryMock.mock.calls[0] as unknown as [string, unknown];
-    expect(delCall[0]).toBe('e1');
+    expect(deleteEntryMock).not.toHaveBeenCalled();
     // Previous of entry.title (first entry of section) = section.heading
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'section.heading', id: 's1',
@@ -451,10 +461,9 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty section.heading (section has entries) ALWAYS deletes the section (cascades)', () => {
-    // Notion-strict rule: every empty single-line field must be removable by
-    // Backspace. Non-empty entries are no longer a refusal reason — the user
-    // explicitly chose to delete; undo is the safety net.
+  it('Backspace on empty section.heading (section has entries) is a no-op (no delete); just focuses prev end', () => {
+    // Conservative rule: a section with entries holds real user content. We
+    // refuse to nuke it on a single Backspace and only move focus instead.
     useResumeStore.setState({
       resume: buildResume({
         sections: [
@@ -470,9 +479,7 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'section.heading', id: 's1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteSectionMock).toHaveBeenCalledTimes(1);
-    const delCall = deleteSectionMock.mock.calls[0] as unknown as [string, unknown];
-    expect(delCall[0]).toBe('s1');
+    expect(deleteSectionMock).not.toHaveBeenCalled();
     // Previous section had no entries → fall back to its own heading
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'section.heading', id: 's0',
@@ -517,6 +524,30 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     fireKey(editor, 'Backspace');
     expect(deleteEntryMock).not.toHaveBeenCalled();
     expect(focusFieldEnd).not.toHaveBeenCalled();
+    editor.destroy();
+  });
+});
+
+// ─── Tab ──────────────────────────────────────────────────────────────────
+describe('SingleLineKeyboardNav — Tab', () => {
+  it('Tab from entry.title calls forceShowMeta and focusFieldWhenReady on entry.meta', () => {
+    useResumeStore.setState({
+      resume: buildResume({
+        sections: [{ id: 's1', heading: 'Exp', entries: [
+          { id: 'e1', title: 'Acme', meta: '', bullets: [] },
+        ]}],
+      }),
+      bulletMeta: {},
+    });
+    _resetTransactionCounter();
+    const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc('Acme'));
+
+    expect(fireKey(editor, 'Tab')).toBe(true);
+    expect(forceShowMetaMock).toHaveBeenCalledTimes(1);
+    expect(forceShowMetaMock).toHaveBeenCalledWith('e1');
+    expect(focusFieldWhenReady).toHaveBeenCalledWith({
+      kind: 'entry.meta', id: 'e1',
+    });
     editor.destroy();
   });
 });

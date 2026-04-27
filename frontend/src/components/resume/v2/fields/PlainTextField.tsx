@@ -1,6 +1,7 @@
 // frontend/src/components/resume/v2/fields/PlainTextField.tsx
 'use client';
 import { useEffect, useMemo, useRef } from 'react';
+import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { UndoRedo } from '@tiptap/extensions';
 import Text from '@tiptap/extension-text';
@@ -39,6 +40,9 @@ interface Props {
   mode: CanvasMode;
   placeholder?: string;
   className?: string;
+  /** Optional TipTap blur handler. Wired only in edit mode. Used by
+   *  EntryAtomRenderer to hide entry.meta again when it blurs empty. */
+  onBlur?: (editor: Editor) => void;
 }
 
 let _editorIdCounter = 0;
@@ -49,7 +53,7 @@ function nextEditorId(): EditorId {
 
 type SyncProps = { value: string; align: Align | undefined };
 
-export function PlainTextField({ fieldKey, value, align, mode, placeholder, className }: Props) {
+export function PlainTextField({ fieldKey, value, align, mode, placeholder, className, onBlur }: Props) {
   const editorIdRef = useRef<EditorId>(nextEditorId());
   // Build initial doc once — measure-mode sync below keeps it fresh.
   const initialDoc = useMemo(
@@ -104,6 +108,15 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
     atomFocusManager.register(fieldKey, editor);
     return () => atomFocusManager.unregister(fieldKey);
   }, [mode, editor, fieldKey]);
+
+  // Edit mode: optional TipTap blur callback for parents that need to react
+  // (e.g. EntryAtomRenderer hides entry.meta when blurred empty).
+  useEffect(() => {
+    if (mode !== 'edit' || !editor || !onBlur) return;
+    const handler = () => onBlur(editor);
+    editor.on('blur', handler);
+    return () => { editor.off('blur', handler); };
+  }, [mode, editor, onBlur]);
 
   return (
     <EditorContent

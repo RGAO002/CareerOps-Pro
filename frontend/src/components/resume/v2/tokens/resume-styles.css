@@ -147,24 +147,50 @@
    most browsers, so we hardcode the text per class instead of trying to
    pipe data-placeholder through. */
 
-[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror p:first-child:empty::before,
-[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror p:first-child:empty::before {
+/* TipTap inserts a `<br class="ProseMirror-trailingBreak">` into empty
+   paragraphs so the cursor has somewhere to land. That means `p:empty` never
+   matches an empty editor — we have to match either a literally empty <p> OR
+   a <p> whose only child is the trailing <br>. We use :has() (Chrome 105+,
+   Firefox 121+, Safari 15.4+ — fine for our targets). */
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
   pointer-events: none;
   font-style: italic;
   color: #9ca3af;          /* neutral-400 */
   opacity: 0.7;
-  /* Make sure the placeholder doesn't push real content around. */
-  height: 0;
-  display: inline-block;
+  /* Float the placeholder out of the layout so it doesn't push real content. */
+  position: absolute;
 }
 
-[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror p:first-child:empty::before { content: "Your name"; }
-[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror p:first-child:empty::before { content: "email | phone | location"; }
-[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before { content: "Section heading — Backspace deletes section"; }
-[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before { content: "Title — Backspace deletes entry"; }
-[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror p:first-child:empty::before { content: "Date · Location"; }
-[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror p:first-child:empty::before { content: "Empty bullet — type, or Backspace to remove"; }
+/* Each editor wrapper needs to be a positioning context for the absolute placeholder. */
+[data-canvas-root][data-mode="edit"] .resume-name,
+[data-canvas-root][data-mode="edit"] .resume-contact-line,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text,
+[data-canvas-root][data-mode="edit"] .resume-entry-title,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content {
+  position: relative;
+}
+
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Your name"; }
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "email | phone | location"; }
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Section heading"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Title (e.g. Software Engineer @ Acme)"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Date · Location"; }
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before { content: "Empty bullet — type, or Backspace to remove"; }
