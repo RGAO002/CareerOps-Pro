@@ -101,7 +101,7 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
     },
     onUpdate: mode === 'edit'
       ? ({ editor }) => {
-          const next = editor.getJSON() as ProseMirrorBulletDoc;
+          const next = editor.getJSON() as unknown as ProseMirrorBulletDoc;
           useResumeStore.getState().updateBullet(
             bulletId, next, makeOrigin('tiptap', editorIdRef.current),
           );
