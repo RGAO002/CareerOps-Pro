@@ -82,3 +82,44 @@ def delete(resume_id: str) -> None:
     path = _path_for(resume_id)
     if path.exists():
         path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# v2 schema helpers — version-aware load + dict-shaped save.
+#
+# load_dict() returns the raw v2-shaped dict regardless of on-disk version.
+# v1 docs are auto-migrated through migration_v1_to_v2.migrate_one_dict()
+# (lazy import to avoid a circular pull at module load).
+# ---------------------------------------------------------------------------
+
+
+def load_dict(resume_id: str) -> dict:
+    """Load a resume as a dict, auto-migrating v1 → v2 on read.
+
+    Used by code that wants the v2 shape regardless of what the file currently
+    holds on disk. The original file is NOT rewritten — the on-disk version is
+    only changed by an explicit save (CLI migration or save_v2_dict).
+    """
+    _validate_id(resume_id)
+    path = _path_for(resume_id)
+    if not path.exists():
+        raise FileNotFoundError(f"Resume {resume_id} not found")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    version = raw.get("schema_version", 1)
+    if version == 2:
+        return raw
+    # Lazy import: migration module may import from here in the future.
+    from api.services.migration_v1_to_v2 import migrate_one_dict
+    return migrate_one_dict(raw)
+
+
+def save_v2_dict(resume_v2: dict) -> None:
+    """Write a v2-shaped resume dict to disk."""
+    if "id" not in resume_v2:
+        raise ValueError("missing id")
+    _validate_id(resume_v2["id"])
+    _ensure_dir()
+    _path_for(resume_v2["id"]).write_text(
+        json.dumps(resume_v2, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )

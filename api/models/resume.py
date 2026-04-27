@@ -1,6 +1,6 @@
 # api/models/resume.py
 """Pydantic models for the Resume Editor v1 API."""
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -56,3 +56,84 @@ class ToolResult(BaseModel):
     success: bool
     data: Optional[dict[str, Any]] = None
     error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Resume v2 schema (additive — keep v1 Resume model intact for back-compat).
+#
+# v2 replaces the freeform ProseMirror `doc` blob with a typed domain model:
+#   ResumeV2 -> { header, sections[ -> entries[ -> bullets[ ProseMirrorDoc ] ] ] }
+# Bullets still carry ProseMirror content for inline rich text, but everything
+# above bullet level is structured. See docs for the migration story.
+# ---------------------------------------------------------------------------
+
+
+class ContactItemText(BaseModel):
+    type: Literal["text"]
+    value: str
+
+
+class ContactItemLink(BaseModel):
+    type: Literal["link"]
+    label: str
+    url: str
+
+
+ContactItem = Union[ContactItemText, ContactItemLink]
+
+
+class HeaderBlockV2(BaseModel):
+    id: str
+    name: str
+    contact_lines: List[ContactItem] = Field(default_factory=list)
+
+
+class BulletBlockV2(BaseModel):
+    id: str
+    content: dict[str, Any]  # ProseMirrorBulletDoc — structure enforced by frontend
+    tags: Optional[List[str]] = None
+    evidence_refs: Optional[List[str]] = None
+
+
+class EntryBlockV2(BaseModel):
+    id: str
+    title: str = ""
+    meta: str = ""
+    bullets: List[BulletBlockV2] = Field(default_factory=list)
+
+
+SectionRole = Literal[
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "awards",
+    "publications",
+    "custom",
+]
+
+
+class SectionBlockV2(BaseModel):
+    id: str
+    role: SectionRole
+    heading: str = ""
+    entries: List[EntryBlockV2] = Field(default_factory=list)
+
+
+class ResumeMetadataV2(BaseModel):
+    created_at: str
+    updated_at: str
+    target_company: Optional[str] = None
+    target_role: Optional[str] = None
+    parent_id: Optional[str] = None
+
+
+class ResumeV2(BaseModel):
+    schema_version: Literal[2] = 2
+    id: str
+    title: str
+    template_id: str = "minimal-single-column"
+    header: HeaderBlockV2
+    sections: List[SectionBlockV2] = Field(default_factory=list)
+    metadata: ResumeMetadataV2
