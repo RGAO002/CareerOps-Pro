@@ -15,7 +15,7 @@ import re
 import shutil
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
 
@@ -146,7 +146,7 @@ def migrate_one_dict(v1: dict) -> dict:
         for n in content
         if isinstance(n, dict) and n.get("type") == "resumeSection"
     ]
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "schema_version": 2,
         "id": v1.get("id", str(uuid.uuid4())),
@@ -188,7 +188,7 @@ def migrate_one_file(v1_path: Path) -> Tuple[dict, dict]:
         for n in content
         if isinstance(n, dict) and n.get("type") == "resumeSection"
     ]
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     v2 = {
         "schema_version": 2,
         "id": v1.get("id", str(uuid.uuid4())),
@@ -251,7 +251,7 @@ def main() -> None:
                 json.dumps(
                     {
                         "from_schema_version": 1,
-                        "migrated_at": datetime.utcnow().isoformat() + "Z",
+                        "migrated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                         "id_map": id_map,
                     },
                     indent=2,
