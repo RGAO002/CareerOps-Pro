@@ -1,11 +1,13 @@
 // frontend/src/components/resume/v2/interaction/DragController.ts
-import type { BlockId, SelectableBlock, UpdateOrigin } from '../types';
+import type { BlockId, LayoutAtom, SelectableBlock, UpdateOrigin } from '../types';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import { moveSection } from '../store/actions/moveSection';
 import { moveEntry } from '../store/actions/moveEntry';
 import { moveBullet } from '../store/actions/moveBullet';
+import { projectAtoms } from '../layout/atoms-projection';
 import { selectionManager } from './SelectionManager';
+import { setDragPreview } from './drag-preview-state';
 import { makeDragGhost } from './DragGhost';
 
 /** Document-order block id list (sections, entries, bullets) — used as the
@@ -145,6 +147,40 @@ export function findNearestDropTarget(
   return candidates[0].target;
 }
 
+/** Map a DropTarget back to an atom-list index (the position where the
+ *  preview should "open up" a slot). Bullet drops return null because
+ *  bullets aren't atoms — no atom-level preview animation for them. */
+function dropTargetToAtomIndex(target: DropTarget, atoms: LayoutAtom[]): number | null {
+  if (target.kind === 'section-slot') {
+    if (target.insertBeforeSectionId === null) return atoms.length;
+    const idx = atoms.findIndex(
+      a => a.kind === 'section-heading' && a.sourceBlockId === target.insertBeforeSectionId,
+    );
+    return idx >= 0 ? idx : null;
+  }
+  if (target.kind === 'entry-slot') {
+    const sectionAtomIdx = atoms.findIndex(
+      a => a.kind === 'section-heading' && a.sourceBlockId === target.sectionId,
+    );
+    if (sectionAtomIdx < 0) return null;
+    let entryCount = 0;
+    for (let i = sectionAtomIdx + 1; i < atoms.length; i++) {
+      if (atoms[i].kind === 'section-heading') return i;  // before the next section heading
+      if (atoms[i].kind === 'entry') {
+        if (entryCount === target.insertAtIndex) return i;
+        entryCount++;
+      }
+    }
+    return atoms.length;
+  }
+  return null;  // bullet-slot — no atom-level preview
+}
+
+function currentAtoms(): LayoutAtom[] {
+  const r = useResumeStore.getState().resume;
+  return r ? projectAtoms(r) : [];
+}
+
 export type DropIndicatorPayload = { target: DropTarget; y: number } | null;
 
 export type DragSession = { cancel(): void };
@@ -159,6 +195,7 @@ export function startDrag(
   const startX = e.clientX, startY = e.clientY;
   let dragStarted = false;
   let ghost: HTMLElement | null = null;
+  let draggedHeight = 0;
   const validTargets = getDropTargetsFor(block);
 
   const onMove = (ev: PointerEvent) => {
@@ -168,6 +205,10 @@ export function startDrag(
       ghost = makeDragGhost(block.id);
       if (ghost) document.body.appendChild(ghost);
       document.body.style.cursor = 'grabbing';
+      // Measure the dragged atom's rendered height so AtomContentLayer can
+      // shift everything below the drop target by exactly that amount.
+      const blockEl = document.querySelector(`[data-block-id="${block.id}"]`) as HTMLElement | null;
+      draggedHeight = blockEl ? blockEl.getBoundingClientRect().height : 0;
     }
     if (ghost) {
       ghost.style.left = ev.clientX + 'px';
@@ -177,6 +218,20 @@ export function startDrag(
     if (ev.clientY > window.innerHeight - SCROLL_EDGE_PX) window.scrollBy({ top: 10 });
     const target = findNearestDropTarget(ev.clientY, block, validTargets);
     onDropIndicator(target ? { target, y: ev.clientY } : null);
+    // Publish drag-preview state so AtomContentLayer can animate atoms below
+    // the drop point downward. Bullet drops yield insertAtAtomIndex=null —
+    // we still publish (so the dragged atom fades) but no shift happens.
+    if (target) {
+      const atoms = currentAtoms();
+      const insertAtAtomIndex = dropTargetToAtomIndex(target, atoms);
+      setDragPreview({
+        draggedAtomId: block.id,
+        draggedHeight,
+        insertAtAtomIndex,
+      });
+    } else {
+      setDragPreview(null);
+    }
   };
 
   const onUp = (ev: PointerEvent) => {
@@ -206,6 +261,7 @@ export function startDrag(
     if (ghost) ghost.remove();
     document.body.style.cursor = '';
     onDropIndicator(null);
+    setDragPreview(null);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onCancel);
