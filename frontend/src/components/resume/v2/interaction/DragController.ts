@@ -5,7 +5,24 @@ import { makeOrigin } from '../store/source-of-truth';
 import { moveSection } from '../store/actions/moveSection';
 import { moveEntry } from '../store/actions/moveEntry';
 import { moveBullet } from '../store/actions/moveBullet';
+import { selectionManager } from './SelectionManager';
 import { makeDragGhost } from './DragGhost';
+
+/** Document-order block id list (sections, entries, bullets) — used as the
+ *  range for shift-click selection extension. */
+function allBlockIdsInDocOrder(): BlockId[] {
+  const r = useResumeStore.getState().resume;
+  if (!r) return [];
+  const ids: BlockId[] = [];
+  for (const s of r.sections) {
+    ids.push(s.id);
+    for (const e of s.entries) {
+      ids.push(e.id);
+      for (const b of e.bullets) ids.push(b.id);
+    }
+  }
+  return ids;
+}
 
 export type DropTarget =
   | { kind: 'section-slot'; insertBeforeSectionId: BlockId | null }
@@ -164,7 +181,19 @@ export function startDrag(
 
   const onUp = (ev: PointerEvent) => {
     cleanup();
-    if (!dragStarted) return;
+    if (!dragStarted) {
+      // Click-without-drag on the ⋮⋮ handle → block selection.
+      // Mirrors the modifier semantics that used to live on the (now-deleted)
+      // select dot: shift extends a range, cmd/ctrl toggles, plain selects.
+      if (ev.shiftKey) {
+        selectionManager.extendBlockSelection(block.id, allBlockIdsInDocOrder());
+      } else if (ev.metaKey || ev.ctrlKey) {
+        selectionManager.toggleBlock(block.id);
+      } else {
+        selectionManager.selectSingleBlock(block.id);
+      }
+      return;
+    }
     const target = findNearestDropTarget(ev.clientY, block, validTargets);
     if (target) commitDrop(block, target, makeOrigin('drag-reorder'));
   };
