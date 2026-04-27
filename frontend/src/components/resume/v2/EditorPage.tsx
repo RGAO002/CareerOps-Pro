@@ -15,6 +15,7 @@ interface Props {
 export function EditorPage({ initialResume }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const [hideInteraction, setHideInteraction] = useState(false);
+  const [pageCount, setPageCount] = useState(1);
   const resume = useResumeStore(s => s.resume);
 
   useEffect(() => {
@@ -37,13 +38,14 @@ export function EditorPage({ initialResume }: Props) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
-      <EditorTopBar resumeId={resume.id} pageCount={1} />
+      <EditorTopBar resumeId={resume.id} pageCount={pageCount} />
       <div style={{ padding: '24px 0' }}>
         <ResumeDocumentCanvas
           resume={resume}
           template={template}
           mode="edit"
           hideInteractionLayer={hideInteraction}
+          onPageCountChange={setPageCount}
         />
       </div>
     </div>

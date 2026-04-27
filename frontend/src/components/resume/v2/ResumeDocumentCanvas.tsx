@@ -22,13 +22,22 @@ interface Props {
   template: TemplateConfig;
   mode: CanvasMode;
   hideInteractionLayer?: boolean;
+  /** Fires whenever the layout engine recomputes the page count. Used by
+   * EditorTopBar to display "Page X of Y" with the live total. */
+  onPageCountChange?: (count: number) => void;
 }
 
-export function ResumeDocumentCanvas({ resume, template, mode, hideInteractionLayer = false }: Props) {
+export function ResumeDocumentCanvas({ resume, template, mode, hideInteractionLayer = false, onPageCountChange }: Props) {
   const norm = useMemo(() => normalizeTemplate(template), [template]);
   const atoms = useMemo<LayoutAtom[]>(() => projectAtoms(resume), [resume]);
 
   const [layout, setLayout] = useState<LayoutResult>({ atomLayouts: new Map(), pageCount: 1 });
+
+  // Notify the parent whenever the page count changes. Effect (not inline) so
+  // we don't call setState on the parent during this component's render.
+  useEffect(() => {
+    onPageCountChange?.(layout.pageCount);
+  }, [layout.pageCount, onPageCountChange]);
   const heightsRef = useRef(new Map<AtomId, number>());
   const engineRef = useRef<LayoutEngine | null>(null);
   const registryRef = useRef<AtomElementRegistry | null>(null);
