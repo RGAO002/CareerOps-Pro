@@ -119,12 +119,67 @@ describe('findNearestDropTarget hysteresis', () => {
     expect(second).toEqual(expect.objectContaining({ insertAtIndex: 0 }));
   });
 
-  it('switches when cursor crosses past midline by HYSTERESIS_PX (≥9 px)', () => {
+  it('switches when cursor crosses past midline by HYSTERESIS_PX (≥13 px)', () => {
     const block = { kind: 'bullet' as const, id: 'b1', entryId: 'e1' };
     const targets: DropTarget[] = getDropTargetsFor(block);
     findNearestDropTarget(145, block, targets);  // sticks index=0
-    // Cursor at 160 → index=0 dist=60, index=1 dist=40 → delta = 20 > 8 → switch.
-    const switched = findNearestDropTarget(160, block, targets);
+    // Cursor at 165 → index=0 dist=65, index=1 dist=35 → delta = 30 > 12 → switch.
+    const switched = findNearestDropTarget(165, block, targets);
     expect(switched).toEqual(expect.objectContaining({ insertAtIndex: 1 }));
+  });
+
+  /* ─── Snapshot-based stickiness (Issue 1 root-cause regression test) ─────
+   *
+   * The real bug behind "adjacent-bullet jitter" wasn't insufficient
+   * hysteresis — it was that the preview's translateY shifts moved the very
+   * elements `findNearestDropTarget` was measuring. As the cursor sat still,
+   * the targets oscillated around the cursor and "nearest" flipped on every
+   * frame.
+   *
+   * Fix: snapshot every target's Y at drag start; reuse the snapshot. These
+   * tests prove that even if the live DOM reports moved positions (simulating
+   * the preview shift), the snapshot keeps the chosen target stable.
+   */
+  it('uses snapshot Y over live DOM Y (target stays anchored under preview shift)', async () => {
+    const { snapshotDropTargetYs } = await import('./DragController');
+    const block = { kind: 'bullet' as const, id: 'b1', entryId: 'e1' };
+    const targets = getDropTargetsFor(block);
+    // Snapshot Ys NOW: before-b1 → 100, after-b1 → 200 (b2 top).
+    const snap = snapshotDropTargetYs(targets);
+    // Simulate the preview shifting b2 up by 30 px (would normally happen
+    // when the user is "opening a slot" before b2 — exactly the scenario
+    // that caused the jitter loop).
+    (document.querySelector('[data-block-id="b2"]') as HTMLElement)
+      .getBoundingClientRect = () => ({
+        x: 0, y: 170, top: 170, left: 0, right: 100, bottom: 190,
+        width: 100, height: 20, toJSON: () => ({}),
+      } as DOMRect);
+
+    // Without snapshot: the live before-b2 slot moved from 200 → 170, so
+    // cursor at 175 would now be "nearest" to it (dist 5) over before-b1
+    // (dist 75) → flip. With snapshot: before-b2 stays at 200 (snapped),
+    // cursor at 175 is still nearest to before-b1 (dist 75 < dist 25? no:
+    // 75 vs 25 → snap shows index 1 nearest). Pick a cursor that the
+    // snapshot keeps anchored: 145 → snap distances: 45 vs 55 → index 0.
+    // Without snap: distances 45 vs 25 → index 1. Snapshot must win.
+    const target = findNearestDropTarget(145, block, targets, snap);
+    expect(target).toEqual(expect.objectContaining({ insertAtIndex: 0 }));
+  });
+
+  it('snapshot + hysteresis kills jitter for noisy mouse over a stable boundary', async () => {
+    const { snapshotDropTargetYs } = await import('./DragController');
+    const block = { kind: 'bullet' as const, id: 'b1', entryId: 'e1' };
+    const targets = getDropTargetsFor(block);
+    const snap = snapshotDropTargetYs(targets);
+    // Simulate 5 noisy mouse moves around the boundary midline (150).
+    // Sequence: 145, 152, 148, 156, 144. Without snap+hysteresis at 12 px,
+    // the result would oscillate between insertAtIndex 0 and 1. With both,
+    // it must stay at 0 the whole time.
+    const seen = new Set<number>();
+    for (const y of [145, 152, 148, 156, 144]) {
+      const t = findNearestDropTarget(y, block, targets, snap);
+      if (t && t.kind === 'bullet-slot') seen.add(t.insertAtIndex);
+    }
+    expect([...seen]).toEqual([0]);
   });
 });

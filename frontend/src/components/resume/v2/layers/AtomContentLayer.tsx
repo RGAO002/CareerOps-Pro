@@ -1,6 +1,6 @@
 // frontend/src/components/resume/v2/layers/AtomContentLayer.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AtomRenderer } from '../atoms/AtomRenderer';
 import { getAtomAbsoluteCoord, gapForMode } from '../layout/coords';
 import {
@@ -27,6 +27,37 @@ interface Props {
 // downstream atoms — gives the user a clear "slot" to drop into.
 const DROP_SLOT_GAP_PX = 12;
 
+/**
+ * Build a CSS `clip-path: path('…')` string that's the UNION of every page
+ * card rect (with inter-page gaps EXCLUDED). When the AtomContentLayer wrapper
+ * carries this clip, an atom can `transform: translateY(...)` linearly through
+ * inter-page-gap Y values without ever rendering inside the gap — the clip
+ * makes those Y rows invisible. This is what unlocks a smooth cross-page drag
+ * preview without the previous fade-out/snap/fade-in keyframe (which felt
+ * teleporty).
+ *
+ * SVG path with multiple closed sub-paths gets unioned by the default
+ * non-zero fill rule (each rect is wound the same direction, so they all paint
+ * "inside"). Modern Chrome/Firefox/Safari support `clip-path: path(...)`.
+ *
+ * Pure function — exported for testing.
+ */
+export function buildPageClipPath(
+  pageCount: number,
+  pageHeightPx: number,
+  pageStridePx: number,
+): string {
+  if (pageCount <= 0) return 'none';
+  const subPaths: string[] = [];
+  for (let i = 0; i < pageCount; i++) {
+    const top = i * pageStridePx;
+    const bottom = top + pageHeightPx;
+    // Use 0% / 100% for X so the clip auto-stretches with the wrapper's width.
+    subPaths.push(`M0 ${top} L100% ${top} L100% ${bottom} L0 ${bottom} Z`);
+  }
+  return `path('${subPaths.join(' ')}')`;
+}
+
 export function AtomContentLayer({ atoms, layouts, resume, mode, template, registry }: Props) {
   const [preview, setPreview] = useState<DragPreview>(getDragPreview());
   const [recentlyDroppedId, setRecentlyDroppedIdState] = useState<BlockId | null>(getRecentlyDroppedId());
@@ -34,13 +65,23 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
   useEffect(() => subscribeDragPreview(setPreview), []);
   useEffect(() => subscribeRecentlyDropped(setRecentlyDroppedIdState), []);
 
-  // Which page card a given absolute Y lives on (counting the inter-page gap
-  // as belonging to the page above — i.e., the gap and the previous page card
-  // are treated as one "row" for the purpose of cross-page detection).
+  // Page-card clip path: the wrapper masks out inter-page gap rows so atoms
+  // can translate freely across page boundaries during drag preview without
+  // becoming visible in the gap. Memoize on inputs that affect the geometry.
   const pageStride = template.page.heightPx + gapForMode(mode);
-  function pageOf(absoluteTop: number): number {
-    return Math.floor(absoluteTop / pageStride);
-  }
+  // Derive page count from atom layouts (max pageIndex + 1). This avoids
+  // threading pageCount through props — layouts already encode it.
+  const pageCount = useMemo(() => {
+    let max = 0;
+    for (const l of layouts.values()) {
+      if (l.pageIndex > max) max = l.pageIndex;
+    }
+    return max + 1;
+  }, [layouts]);
+  const pageClipPath = useMemo(
+    () => buildPageClipPath(pageCount, template.page.heightPx, pageStride),
+    [pageCount, template.page.heightPx, pageStride],
+  );
 
   /**
    * Compute the shift offset for atom at `atomIndex`, simulating the post-move
@@ -150,7 +191,16 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
   return (
     <div
       className="atom-content-layer"
-      style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 1,
+        pointerEvents: 'none',
+        // Mask out inter-page gap rows so cross-page atom transforms don't
+        // bleed into the gray strip between page cards. See buildPageClipPath.
+        clipPath: pageClipPath,
+        WebkitClipPath: pageClipPath,
+      }}
     >
       {atoms.map((atom, idx) => {
         const layout = layouts.get(atom.id);
@@ -159,48 +209,18 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
         const dragged = isDragged(atom.id);
         const shift = shiftFor(atom.id, idx);
         const justDropped = recentlyDroppedId === atom.id;
-        // Cross-page shifts: a linear CSS transform transition would visually
-        // drag the atom through the inter-page gap (gray strip), making it
-        // look like it's floating between pages mid-animation. Use a
-        // fade-out / snap / fade-in keyframe instead so the user never sees
-        // the atom inside the gap.
-        //
-        // With layout-aware preview (preview.previewLayouts present), the
-        // shift is the TRUE post-drop delta — atoms whose final destination
-        // is on another page get a numerically large shift that necessarily
-        // crosses the gap. The keyframe still hides the gap-traversal
-        // artifact correctly because it fades out → snaps → fades in.
-        const crossesPageBoundary = shift !== 0
-          && pageOf(coord.top) !== pageOf(coord.top + shift);
-        let animationStyle: React.CSSProperties;
-        if (crossesPageBoundary) {
-          animationStyle = {
-            animation: 'atom-cross-page-shift 0.24s ease-out',
-            transition: 'visibility 0s',
-            ['--atom-shift-to' as string]: `${shift}px`,
-          };
-        } else if (justDropped) {
-          // Fade the freshly-dropped atom in (opacity 0 → 1) while the ghost
-          // glides to its final rect. animateSoftDrop in DragController runs
-          // for ~180ms, so we match that here.
-          animationStyle = {
-            transition: 'opacity 0.18s ease-out, transform 0.18s ease-out',
-          };
-        } else {
-          animationStyle = {
-            transition: 'transform 0.18s ease-out, opacity 0.12s ease-out, visibility 0s',
-          };
-        }
-        // Opacity priority:
-        //   - dragged: hidden (ghost is the visible proxy)
-        //   - justDropped: fade in from 0 (soft-landing)
-        //   - else: visible
-        const opacity = dragged ? 0 : (justDropped ? 1 : 1);
-        // For justDropped atoms, set the START opacity (0) so the transition
-        // animates 0 → 1. We do this by toggling a key on the recently-dropped
-        // marker — but to avoid forcing a remount, use animation instead.
-        const startOpacityStyle: React.CSSProperties = justDropped
-          ? { animation: 'atom-soft-drop-fade-in 0.18s ease-out' }
+        // Single transition handles both same-page and cross-page shifts —
+        // the wrapper's clip-path hides any traversal of the inter-page gap.
+        // No more keyframe / cross-page detection needed.
+        const animationStyle: React.CSSProperties = {
+          transition: 'transform 0.18s ease-out, opacity 0.12s ease-out, visibility 0s',
+        };
+        // Settle: a freshly-dropped atom plays atom-settle (opacity 0 → 1)
+        // at its final position. Pairs with the ghost fading out in place
+        // at the cursor → "the slot caught the drop here", not "the item
+        // flew somewhere".
+        const settleStyle: React.CSSProperties = justDropped
+          ? { animation: 'atom-settle 0.18s ease-out' }
           : {};
         return (
           <div
@@ -215,12 +235,12 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
               // smoothly between values.
               transform: `translateY(${shift}px)`,
               ...animationStyle,
-              ...startOpacityStyle,
+              ...settleStyle,
               // Hide the dragged atom completely — the floating ghost shows
               // where it's headed. visibility: hidden keeps the slot in
               // layout (so subscribers' getBoundingClientRect stays stable)
               // but no pixels render.
-              opacity,
+              opacity: dragged ? 0 : 1,
               visibility: dragged ? 'hidden' : 'visible',
               willChange: (preview || justDropped) ? 'transform, opacity' : undefined,
             }}

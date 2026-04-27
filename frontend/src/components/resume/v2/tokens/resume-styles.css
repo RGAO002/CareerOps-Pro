@@ -203,12 +203,11 @@
   content: var(--resume-placeholder, "");
 }
 
-/* Cross-page drag-preview shift: fade out at start position, snap, fade in at
-   end position. Used by AtomContentLayer when an atom would otherwise have to
-   linearly translate through the inter-page gap region (which would render the
-   atom inside the gray gap mid-animation). The `--atom-shift-to` CSS var is
-   set per-element to the final translateY pixels; same keyframes serve every
-   shift magnitude / direction. */
+/* Cross-page drag-preview shift: superseded by clip-path on AtomContentLayer's
+   wrapper (see AtomContentLayer.tsx — pageClipPath useMemo). The wrapper now
+   carries clip-path = union of page card rects, so an atom can transform
+   linearly through inter-page gap Y values without ever being visible there.
+   This keyframe is left as documentation; nothing references it. */
 @keyframes atom-cross-page-shift {
   0%   { opacity: 1; transform: translateY(0); }
   40%  { opacity: 0; transform: translateY(0); }
@@ -216,11 +215,20 @@
   100% { opacity: 1; transform: translateY(var(--atom-shift-to, 0)); }
 }
 
-/* Soft-drop fade-in: a freshly-dropped atom (recentlyDroppedId in
-   drag-preview-state) animates opacity 0 → 1 over 180ms while the floating
-   ghost simultaneously glides to the atom's final bounding rect (see
-   animateSoftDrop in DragController). The cross-fade replaces the previous
-   "ghost vanishes, atom blinks" jolt with a continuous landing motion. */
+/* Settle: a freshly-dropped atom (recentlyDroppedId in drag-preview-state)
+   fades in at its final position. Paired with the ghost fading out in place
+   at the cursor → reads as "the slot caught the drop" rather than the old
+   "ghost flies to slot" pattern (which felt teleporty).
+   Opacity-only on purpose: the wrapper carries an inline `transform:
+   translateY(...)` for layout, so a transform animation here would clobber
+   it. The opacity fade alone is enough to feel like "appearing in place". */
+@keyframes atom-settle {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Legacy alias — keep until call sites are migrated. Same keyframes as
+   atom-settle so behavior is identical. */
 @keyframes atom-soft-drop-fade-in {
   0%   { opacity: 0; }
   100% { opacity: 1; }

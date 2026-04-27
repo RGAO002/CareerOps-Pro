@@ -40,12 +40,11 @@ const SCROLL_EDGE_PX = 30;
  * the boundary between two adjacent rows — without hysteresis, the displaced
  * row visibly flips back and forth on each pointermove of a noisy mouse.
  *
- * Empirically 8px is enough to absorb mouse jitter without making target
- * switching feel sluggish. Tested adjacent-bullet swap (the worst-case Problem 1
- * scenario) — at 8px, micro-movements stay sticky; at the next dst's midline
- * crossing the switch is still snappy.
+ * Bumped from 8 → 12 px. Even with the live-DOM-vs-snapshot fix below, a noisy
+ * trackpad can spam pointermoves over a 5–8 px arc; 12 px is comfortably outside
+ * that band but still small enough to feel responsive on a deliberate move.
  */
-const HYSTERESIS_PX = 8;
+const HYSTERESIS_PX = 12;
 
 /**
  * Per-drag-session state for hysteresis. We DON'T put this on a closure inside
@@ -54,7 +53,7 @@ const HYSTERESIS_PX = 8;
  */
 let _stickyTargetKey: string | null = null;
 
-function targetKey(t: DropTarget): string {
+export function targetKey(t: DropTarget): string {
   if (t.kind === 'section-slot') return `s:${t.insertBeforeSectionId ?? '*'}`;
   if (t.kind === 'entry-slot') return `e:${t.sectionId}:${t.insertAtIndex}`;
   return `b:${t.entryId}:${t.insertAtIndex}`;
@@ -62,6 +61,33 @@ function targetKey(t: DropTarget): string {
 
 export function resetDropTargetHysteresis(): void {
   _stickyTargetKey = null;
+}
+
+/**
+ * Snapshot every drop target's Y coordinate ONCE at drag start, before any
+ * preview transforms touch the DOM.
+ *
+ * Why: Issue 1 — adjacent-bullet jitter — was *not* a hysteresis bug. The
+ * preview animation translates sibling bullets/atoms via CSS `translateY` to
+ * "open a slot". `getBoundingClientRect` reflects those transforms, so reading
+ * a target's Y on every pointermove gives a value that *moves with the
+ * preview itself*. As the cursor sits still near a boundary, the preview
+ * shifts → the target's Y moves → distance recomputes → "nearest" flips →
+ * preview re-shifts. Classic feedback loop. Hysteresis (added in 36c783b)
+ * couldn't break it because the candidates' positions were oscillating, not
+ * just the cursor's distance to them.
+ *
+ * Fix: capture target Ys ONCE, before any preview applies, and reuse the
+ * snapshot for the whole drag. Targets stay anchored regardless of what the
+ * preview does to the DOM.
+ */
+export function snapshotDropTargetYs(targets: DropTarget[]): Map<string, number> {
+  const snap = new Map<string, number>();
+  for (const t of targets) {
+    const y = getDropTargetY(t);
+    if (y !== null) snap.set(targetKey(t), y);
+  }
+  return snap;
 }
 
 export function getDropTargetsFor(block: SelectableBlock): DropTarget[] {
@@ -230,12 +256,16 @@ export function findNearestDropTarget(
   cursorY: number,
   _block: SelectableBlock,
   validTargets: DropTarget[],
+  ySnapshot?: Map<string, number>,
 ): DropTarget | null {
   if (validTargets.length === 0) return null;
   type Candidate = { target: DropTarget; y: number };
   const candidates: Candidate[] = [];
   for (const t of validTargets) {
-    const y = getDropTargetY(t);
+    // Prefer snapshot Y (immune to preview's translateY shifts on siblings) —
+    // see snapshotDropTargetYs comment. Fall back to live DOM read for tests
+    // and for the no-snapshot legacy call shape.
+    const y = ySnapshot?.get(targetKey(t)) ?? getDropTargetY(t);
     if (y !== null) candidates.push({ target: t, y });
   }
   if (candidates.length === 0) return null;
@@ -344,42 +374,22 @@ export type DropIndicatorPayload = { target: DropTarget; y: number } | null;
 export type DragSession = { cancel(): void };
 
 /**
- * After commitDrop, glide the ghost from its current cursor-anchored position
- * to the dropped atom's final bounding rect, then fade it out. Runs in sync
- * with the dropped atom's opacity 0 → 1 fade-in (driven by recentlyDroppedId
- * in drag-preview-state). Net effect: the ghost looks like it lands and
- * dissolves into the atom — no more "ghost vanishes, atom blinks" jolt.
+ * After commitDrop, fade the ghost out IN PLACE at the cursor (no flight) and
+ * let the dropped atom play its own "settle" animation at its final position
+ * (driven by recentlyDroppedId → AtomContentLayer reads it and applies the
+ * `atom-settle` keyframe).
  *
- * Two rAFs to wait for React commit + layout engine repaginate so the dropped
- * atom's new bounding rect is correct. If the element can't be found (e.g.
- * scrolled off-screen, deleted between commit and animate), we just fade the
- * ghost in place.
+ * Why not glide the ghost to the atom rect? It read as "the item flew away" —
+ * users felt the drop happened *somewhere else*, not where they let go. The
+ * settle pattern gives the opposite feel: "the slot caught the drop right
+ * here". The two halves run simultaneously so total perceived motion is ~180
+ * ms with no teleport seam.
  */
-function animateSoftDrop(ghost: HTMLElement | null, droppedBlockId: BlockId): void {
+function animateSoftDrop(ghost: HTMLElement | null): void {
   if (!ghost) return;
-  // Stop the cursor-tracking position updates by removing event listeners
-  // BEFORE we animate (cursor updates would fight our transition).
-  // The ghost element has no listeners of its own — startDrag's onMove was
-  // removed by cleanup() — so we just animate the inline styles directly.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const droppedEl = document.querySelector(
-        `[data-block-id="${droppedBlockId}"]`,
-      ) as HTMLElement | null;
-      if (droppedEl) {
-        const r = droppedEl.getBoundingClientRect();
-        ghost.style.transition = 'left 0.18s ease-out, top 0.18s ease-out, opacity 0.15s ease-out 0.05s';
-        ghost.style.left = `${r.left + r.width / 2}px`;
-        ghost.style.top = `${r.top + r.height / 2}px`;
-        ghost.style.opacity = '0';
-      } else {
-        // Fallback: just fade in place over 150ms.
-        ghost.style.transition = 'opacity 0.15s ease-out';
-        ghost.style.opacity = '0';
-      }
-      setTimeout(() => ghost.remove(), 220);
-    });
-  });
+  ghost.style.transition = 'opacity 0.15s ease-out';
+  ghost.style.opacity = '0';
+  setTimeout(() => ghost.remove(), 160);
 }
 
 export function startDrag(
@@ -395,6 +405,9 @@ export function startDrag(
   let bulletDraggedHeight = 0;  // only used for bullet drags (atom drags compute their own group height)
   const validTargets = getDropTargetsFor(block);
   resetDropTargetHysteresis();
+  // Snapshot target Ys NOW, before any preview transforms run. See
+  // snapshotDropTargetYs comment for why this is critical to kill jitter.
+  const targetYs = snapshotDropTargetYs(validTargets);
 
   const onMove = (ev: PointerEvent) => {
     if (!dragStarted) {
@@ -431,7 +444,7 @@ export function startDrag(
     }
     if (ev.clientY < SCROLL_EDGE_PX) window.scrollBy({ top: -10 });
     if (ev.clientY > window.innerHeight - SCROLL_EDGE_PX) window.scrollBy({ top: 10 });
-    const target = findNearestDropTarget(ev.clientY, block, validTargets);
+    const target = findNearestDropTarget(ev.clientY, block, validTargets, targetYs);
     onDropIndicator(target ? { target, y: ev.clientY } : null);
 
     if (!target) {
@@ -502,14 +515,16 @@ export function startDrag(
       }
       return;
     }
-    const target = findNearestDropTarget(ev.clientY, block, validTargets);
+    const target = findNearestDropTarget(ev.clientY, block, validTargets, targetYs);
     if (target) {
-      // SOFT DROP: hold the ghost, glide it to the dropped atom's final
-      // bounding rect, fade in the dropped atom in sync. Without this, the
-      // ghost vanishes instantly and the atom blinks at its new position.
-      animateSoftDrop(ghost, block.id);
+      // SOFT DROP — "settle in place" pattern:
+      //   - Ghost fades out at the cursor (no flight). Reads as "I let go."
+      //   - The dropped atom plays the `atom-settle` keyframe at its final
+      //     position (opacity 0 → 1). Reads as "the slot caught it here."
+      // The two run in parallel ~180 ms total, no teleport seam.
+      animateSoftDrop(ghost);
       ghost = null;  // ownership transferred to animateSoftDrop
-      // Mark dropped atom so AtomContentLayer fades it in (opacity 0 → 1).
+      // Mark dropped atom so AtomContentLayer plays atom-settle on it.
       setRecentlyDroppedId(block.id);
       setTimeout(() => {
         // Clear only if it's still us (defensive — another drop could have started)

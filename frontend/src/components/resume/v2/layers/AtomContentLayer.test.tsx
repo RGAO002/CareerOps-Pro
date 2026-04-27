@@ -9,9 +9,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
-import { AtomContentLayer } from './AtomContentLayer';
+import { AtomContentLayer, buildPageClipPath } from './AtomContentLayer';
 import { normalizeTemplate } from '../layout/normalize-template';
-import { setDragPreview } from '../interaction/drag-preview-state';
+import { setDragPreview, setRecentlyDroppedId } from '../interaction/drag-preview-state';
 import type { LayoutAtom, AtomLayout, AtomId, ResumeDoc } from '../types';
 
 const TEMPLATE = normalizeTemplate({
@@ -138,5 +138,66 @@ describe('AtomContentLayer layout-aware drag preview', () => {
     });
     const e2Wrapper = container.querySelector('[data-atom-id="e2"]')!.parentElement!;
     expect(e2Wrapper.style.transform).toBe('translateY(-112px)');
+  });
+});
+
+describe('buildPageClipPath', () => {
+  it('returns "none" when there are no pages', () => {
+    expect(buildPageClipPath(0, 1056, 1080)).toBe('none');
+  });
+
+  it('builds a single rect for a one-page document', () => {
+    // page heightPx=1056, stride=1080 (24 px gap)
+    const path = buildPageClipPath(1, 1056, 1080);
+    expect(path).toBe("path('M0 0 L100% 0 L100% 1056 L0 1056 Z')");
+  });
+
+  it('builds a union of disjoint rects (one per page card, gaps EXCLUDED)', () => {
+    // 3 pages: each 1056 tall, stride 1080. Gap rows [1056, 1080], [2136, 2160]
+    // are NOT in the path → atoms there are clipped invisible.
+    const path = buildPageClipPath(3, 1056, 1080);
+    expect(path).toBe(
+      "path('M0 0 L100% 0 L100% 1056 L0 1056 Z " +
+      'M0 1080 L100% 1080 L100% 2136 L0 2136 Z ' +
+      "M0 2160 L100% 2160 L100% 3216 L0 3216 Z')",
+    );
+  });
+});
+
+describe('AtomContentLayer settle animation on drop', () => {
+  beforeEach(() => {
+    setDragPreview(null);
+    setRecentlyDroppedId(null);
+  });
+  afterEach(() => {
+    setDragPreview(null);
+    setRecentlyDroppedId(null);
+  });
+
+  it('plays atom-settle animation on the recently-dropped atom only', () => {
+    const layouts = new Map<AtomId, AtomLayout>([
+      ['h',  layoutAt(0, 0)],
+      ['s1', layoutAt(0, 100)],
+      ['e1', layoutAt(0, 200)],
+      ['e2', layoutAt(0, 400)],
+    ]);
+    let container!: HTMLElement;
+    act(() => {
+      ({ container } = render(
+        <AtomContentLayer
+          atoms={ATOMS}
+          layouts={layouts}
+          resume={RESUME}
+          mode="edit"
+          template={TEMPLATE}
+        />,
+      ));
+    });
+    act(() => setRecentlyDroppedId('e1'));
+    const e1Wrapper = container.querySelector('[data-atom-id="e1"]')!.parentElement!;
+    expect(e1Wrapper.style.animation).toContain('atom-settle');
+    // A non-dropped atom doesn't get the settle animation.
+    const e2Wrapper = container.querySelector('[data-atom-id="e2"]')!.parentElement!;
+    expect(e2Wrapper.style.animation).toBe('');
   });
 });
