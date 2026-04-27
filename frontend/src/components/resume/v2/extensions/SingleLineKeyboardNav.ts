@@ -39,47 +39,23 @@ function isAtStartOfEmpty(editor: Editor): boolean {
   return editor.state.doc.textContent.trim() === '';
 }
 
-/** Find the section + entry that owns the given entryId. */
-function findEntry(entryId: BlockId): {
-  sectionId: BlockId;
-  entryId: BlockId;
-  bulletsCount: number;
-  metaText: string;
-  bulletsAllEmpty: boolean;
-} | null {
+/** Verify an entry with this id exists. Returns the section id or null. */
+function findEntry(entryId: BlockId): { sectionId: BlockId } | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
   for (const s of r.sections) {
-    const e = s.entries.find(x => x.id === entryId);
-    if (!e) continue;
-    const bulletsAllEmpty = e.bullets.every(b => {
-      const para = b.content.content?.[0];
-      const text = (para?.content ?? [])
-        .map(n => (n.type === 'text' ? n.text : ''))
-        .join('');
-      return text.trim() === '';
-    });
-    return {
-      sectionId: s.id,
-      entryId: e.id,
-      bulletsCount: e.bullets.length,
-      metaText: e.meta ?? '',
-      bulletsAllEmpty,
-    };
+    if (s.entries.some(x => x.id === entryId)) return { sectionId: s.id };
   }
   return null;
 }
 
-/** For section.heading: identify the section and check if it has entries. */
-function findSection(sectionId: BlockId): {
-  sectionId: BlockId;
-  entriesCount: number;
-} | null {
+/** Verify a section with this id exists. */
+function findSection(sectionId: BlockId): { sectionId: BlockId } | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
   const s = r.sections.find(x => x.id === sectionId);
   if (!s) return null;
-  return { sectionId: s.id, entriesCount: s.entries.length };
+  return { sectionId: s.id };
 }
 
 /** Build the field that should receive focus AFTER deleting / leaving the
@@ -219,7 +195,9 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
         case 'section.heading': {
           const sec = findSection(field.id);
           if (!sec) return false;
-          if (sec.entriesCount > 0) return true; // refuse to delete non-empty section
+          // Per UX rule: empty single-line + Backspace ALWAYS deletes the
+          // structural unit (cascades to all entries + bullets). Undo is the
+          // safety net.
           const prev = previousFieldFor(field);
           deleteSection(field.id, makeOrigin('tiptap'));
           if (prev) atomFocusManager.focusFieldEnd(prev);
@@ -228,13 +206,11 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
         case 'entry.title': {
           const info = findEntry(field.id);
           if (!info) return false;
+          // Per UX rule: empty single-line + Backspace ALWAYS deletes the
+          // structural unit (cascades to meta + all bullets). Undo is the
+          // safety net.
           const prev = previousFieldFor(field);
-          const canDelete =
-            info.metaText.trim() === '' &&
-            (info.bulletsCount === 0 || info.bulletsAllEmpty);
-          if (canDelete) {
-            deleteEntry(field.id, makeOrigin('tiptap'));
-          }
+          deleteEntry(field.id, makeOrigin('tiptap'));
           if (prev) atomFocusManager.focusFieldEnd(prev);
           return true;
         }

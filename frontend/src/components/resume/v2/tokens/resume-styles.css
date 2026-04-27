@@ -164,7 +164,7 @@
 
 [data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror p:first-child:empty::before { content: "Your name"; }
 [data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror p:first-child:empty::before { content: "email | phone | location"; }
-[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before { content: "Section heading"; }
-[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before { content: "Title (e.g. Software Engineer @ Acme)"; }
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror p:first-child:empty::before { content: "Section heading — Backspace deletes section"; }
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror p:first-child:empty::before { content: "Title — Backspace deletes entry"; }
 [data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror p:first-child:empty::before { content: "Date · Location"; }
 [data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror p:first-child:empty::before { content: "Empty bullet — type, or Backspace to remove"; }

@@ -342,7 +342,10 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty entry.title (entry has non-empty bullets) does NOT delete; just focuses prev end', () => {
+  it('Backspace on empty entry.title (entry has non-empty bullets) ALWAYS deletes the entry (cascades); focuses prev end', () => {
+    // Notion-strict rule: every empty single-line field must be removable by
+    // Backspace. Non-empty bullets are no longer a refusal reason — the user
+    // explicitly chose to delete; undo is the safety net.
     useResumeStore.setState({
       resume: buildResume({
         sections: [{ id: 's1', heading: 'Exp', entries: [
@@ -355,7 +358,9 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'entry.title', id: 'e1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteEntryMock).not.toHaveBeenCalled();
+    expect(deleteEntryMock).toHaveBeenCalledTimes(1);
+    const delCall = deleteEntryMock.mock.calls[0] as unknown as [string, unknown];
+    expect(delCall[0]).toBe('e1');
     // Previous of entry.title (first entry of section) = section.heading
     expect(focusFieldEnd).toHaveBeenCalledWith({
       kind: 'section.heading', id: 's1',
@@ -446,12 +451,18 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     editor.destroy();
   });
 
-  it('Backspace on empty section.heading (section has entries) is a no-op (no delete)', () => {
+  it('Backspace on empty section.heading (section has entries) ALWAYS deletes the section (cascades)', () => {
+    // Notion-strict rule: every empty single-line field must be removable by
+    // Backspace. Non-empty entries are no longer a refusal reason — the user
+    // explicitly chose to delete; undo is the safety net.
     useResumeStore.setState({
       resume: buildResume({
-        sections: [{ id: 's1', heading: '', entries: [
-          { id: 'e1', title: 'X', meta: '', bullets: [] },
-        ]}],
+        sections: [
+          { id: 's0', heading: 'First', entries: [] },
+          { id: 's1', heading: '', entries: [
+            { id: 'e1', title: 'X', meta: '', bullets: [] },
+          ] },
+        ],
       }),
       bulletMeta: {},
     });
@@ -459,8 +470,13 @@ describe('SingleLineKeyboardNav — Backspace', () => {
     const editor = makeEditor({ kind: 'section.heading', id: 's1' }, makeDoc(''));
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
-    expect(deleteSectionMock).not.toHaveBeenCalled();
-    expect(focusFieldEnd).not.toHaveBeenCalled();
+    expect(deleteSectionMock).toHaveBeenCalledTimes(1);
+    const delCall = deleteSectionMock.mock.calls[0] as unknown as [string, unknown];
+    expect(delCall[0]).toBe('s1');
+    // Previous section had no entries → fall back to its own heading
+    expect(focusFieldEnd).toHaveBeenCalledWith({
+      kind: 'section.heading', id: 's0',
+    });
     editor.destroy();
   });
 
