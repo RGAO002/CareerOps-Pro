@@ -246,7 +246,22 @@ export function startDrag(
     if (!dragStarted) {
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
       dragStarted = true;
-      ghost = makeDragGhost(block.id);
+      // For section drag, the ghost includes the section heading + all its
+      // entry atoms (so the user sees the whole section being lifted).
+      // For entry / bullet drag the ghost is a single block.
+      let ghostIds: BlockId[] = [block.id];
+      if (block.kind === 'section') {
+        const atoms = currentAtoms();
+        const group = atomGroupForBlock(block, atoms);
+        if (group.ids.length > 0) {
+          // group.ids are atom ids; for atoms, id === sourceBlockId, so
+          // [data-block-id="${id}"] resolves to the right element.
+          ghostIds = atoms
+            .slice(group.startIdx, group.endIdx)
+            .map(a => a.sourceBlockId);
+        }
+      }
+      ghost = makeDragGhost(ghostIds);
       if (ghost) document.body.appendChild(ghost);
       document.body.style.cursor = 'grabbing';
       // Measure dragged element height for bullet drags (atom drags compute
