@@ -15,6 +15,7 @@ import type { ResumeDoc, CanvasMode, LayoutAtom, AtomId, EditableField } from '.
 import type { TemplateConfig } from './layout/normalize-template';
 
 import './tokens/canvas.css';
+import './tokens/resume-styles.css';
 import './canvas-print.css';
 
 interface Props {

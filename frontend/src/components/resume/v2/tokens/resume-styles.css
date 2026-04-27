@@ -1,0 +1,123 @@
+/* frontend/src/components/resume/v2/tokens/resume-styles.css
+   Resume typography rules ported from v1 (resume-editor.css), scoped under
+   [data-canvas-root] so they only apply to the v2 canvas — v1's `.resume-canvas`
+   wrapper is gone in v2 and v1's @media print rules are handled by canvas-print.css. */
+
+/* Body font on all atom content inside the v2 canvas */
+[data-canvas-root] {
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+[data-canvas-root] .resume-header {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+[data-canvas-root] .resume-name {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+[data-canvas-root] .resume-contact-line {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+/* ── Sections ───────────────────────────────────────── */
+[data-canvas-root] .resume-section {
+  margin-top: 1.1rem;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+[data-canvas-root] .resume-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* ── Entries ────────────────────────────────────────── */
+[data-canvas-root] .resume-entry {
+  margin-bottom: 0.85rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+[data-canvas-root] .resume-entry-title {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+[data-canvas-root] .resume-entry-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+}
+
+/* ── Bullets ────────────────────────────────────────── */
+[data-canvas-root] .resume-entry-bullets {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+[data-canvas-root] .resume-bullet {
+  position: relative;
+  padding-left: 1rem;
+  margin-bottom: 0.25rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+[data-canvas-root] .resume-bullet::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+/* ── Inline marks ───────────────────────────────────── */
+[data-canvas-root] strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+[data-canvas-root] em {
+  font-style: italic;
+}
+
+[data-canvas-root] u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-canvas-root] a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
