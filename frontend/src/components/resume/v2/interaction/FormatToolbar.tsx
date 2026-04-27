@@ -1,25 +1,36 @@
 // frontend/src/components/resume/v2/interaction/FormatToolbar.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bold, Italic, Link as LinkIcon, Undo2, Redo2 } from 'lucide-react';
 import type { Editor } from '@tiptap/core';
 import { atomFocusManager } from './AtomFocusManager';
 
 /**
  * Persistent format toolbar (v2 port of v1 FormatToolbar).
- * Operates on whichever TipTap field is currently focused (via AtomFocusManager).
- * Re-renders on focus / selection / transaction events.
+ * Operates on whichever TipTap field was last focused (via AtomFocusManager).
  *
- * Single-line fields (PlainTextField / ContactLinesField) only support Link;
- * Bold / Italic only fire when a Bullet field is focused. Undo / Redo always
- * route to the focused editor (or the v2 store undo, which is wired in
- * keyboard-router; the toolbar buttons mirror the editor-local TipTap.history).
+ * Critical UX: when a toolbar button is clicked, native focus moves OUT of the
+ * editable field and INTO the button. ProseMirror's selection collapses on
+ * blur, so by the time the click handler runs, there's nothing to apply the
+ * mark to. We work around this two ways:
+ *  1. `onMouseDown={e => e.preventDefault()}` — keeps native focus in the
+ *     editor (button never receives it).
+ *  2. We cache the "last focused editor" in a ref so even if focus has briefly
+ *     left, we can still operate on the right one.
  */
 export function FormatToolbar() {
   const [, force] = useState(0);
-  useEffect(() => atomFocusManager.subscribe(() => force(n => n + 1)), []);
+  const lastEditorRef = useRef<Editor | null>(null);
 
-  const editor: Editor | null = atomFocusManager.currentEditor();
+  useEffect(() => atomFocusManager.subscribe(() => {
+    const ed = atomFocusManager.currentEditor();
+    if (ed) lastEditorRef.current = ed;
+    force(n => n + 1);
+  }), []);
+
+  const liveEditor = atomFocusManager.currentEditor();
+  const editor: Editor | null = liveEditor ?? lastEditorRef.current;
+
   const isActive = (mark: string) => !!editor && editor.isActive(mark);
   const has = (mark: string) => !!editor && mark in editor.schema.marks;
   const canUndo = !!editor && editor.can().undo();
@@ -34,12 +45,17 @@ export function FormatToolbar() {
           : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
     }`;
 
+  // Stop the toolbar button from stealing focus from the editor.
+  // Without this, ProseMirror sees a blur and collapses the selection.
+  const noStealFocus = (e: React.MouseEvent) => e.preventDefault();
+
   return (
     <div className="flex items-center gap-0.5 rounded-lg border border-neutral-200 bg-white/70 p-0.5">
       <button
         type="button"
         aria-label="Undo"
         title="Undo (⌘Z)"
+        onMouseDown={noStealFocus}
         onClick={() => editor?.chain().focus().undo().run()}
         disabled={!canUndo}
         className={btn(false, !canUndo)}
@@ -50,6 +66,7 @@ export function FormatToolbar() {
         type="button"
         aria-label="Redo"
         title="Redo (⌘⇧Z)"
+        onMouseDown={noStealFocus}
         onClick={() => editor?.chain().focus().redo().run()}
         disabled={!canRedo}
         className={btn(false, !canRedo)}
@@ -63,6 +80,7 @@ export function FormatToolbar() {
         type="button"
         aria-label="Bold"
         title="Bold (⌘B)"
+        onMouseDown={noStealFocus}
         onClick={() => editor?.chain().focus().toggleBold().run()}
         disabled={!has('bold')}
         className={btn(isActive('bold'), !has('bold'))}
@@ -73,6 +91,7 @@ export function FormatToolbar() {
         type="button"
         aria-label="Italic"
         title="Italic (⌘I)"
+        onMouseDown={noStealFocus}
         onClick={() => editor?.chain().focus().toggleItalic().run()}
         disabled={!has('italic')}
         className={btn(isActive('italic'), !has('italic'))}
@@ -86,6 +105,7 @@ export function FormatToolbar() {
         type="button"
         aria-label="Link"
         title="Link"
+        onMouseDown={noStealFocus}
         onClick={() => {
           if (!editor) return;
           const prev = editor.getAttributes('link').href as string | undefined;
