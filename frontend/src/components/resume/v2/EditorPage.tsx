@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { AppShell } from '@/components/layout/AppShell';
 import { ResumeDocumentCanvas } from './ResumeDocumentCanvas';
 import { EditorTopBar } from './EditorTopBar';
 import { useResumeStore } from './store/useResumeStore';
@@ -23,8 +24,6 @@ export function EditorPage({ initialResume }: Props) {
     setSaveBackend(defaultBackendSave);
     const stopSave = startAutoSave();
     const stopKbd = installKeyboardRouter();
-    // Detect ?hideInteractionLayer=1 URL query (used by e2e tests).
-    // Read from window.location to avoid Next's useSearchParams Suspense requirement.
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       setHideInteraction(params.get('hideInteractionLayer') === '1');
@@ -33,13 +32,19 @@ export function EditorPage({ initialResume }: Props) {
     return () => { stopSave(); stopKbd(); };
   }, [initialResume]);
 
-  if (!hydrated || !resume) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (!hydrated || !resume) {
+    return (
+      <AppShell>
+        <div className="p-6 text-neutral-500">Loading editor…</div>
+      </AppShell>
+    );
+  }
   const template = getTemplate(resume.template_id);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f3f4f6' }}>
+    <AppShell>
       <EditorTopBar resumeId={resume.id} pageCount={pageCount} />
-      <div style={{ padding: '24px 0' }}>
+      <div className="bg-neutral-100 py-6">
         <ResumeDocumentCanvas
           resume={resume}
           template={template}
@@ -48,6 +53,6 @@ export function EditorPage({ initialResume }: Props) {
           onPageCountChange={setPageCount}
         />
       </div>
-    </div>
+    </AppShell>
   );
 }

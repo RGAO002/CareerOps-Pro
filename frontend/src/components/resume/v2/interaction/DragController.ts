@@ -52,6 +52,16 @@ export function commitDrop(block: SelectableBlock, target: DropTarget, origin: U
   } else if (target.kind === 'bullet-slot' && block.kind === 'bullet') {
     moveBullet(block.id, target.entryId, target.insertAtIndex, origin);
   }
+  // Scroll the moved block into view after the layout engine reflows.
+  // Two rAFs: one for React commit, one for layout engine repaginate.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-block-id="${block.id}"]`);
+      if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  });
 }
 
 function getDropTargetY(target: DropTarget): number | null {

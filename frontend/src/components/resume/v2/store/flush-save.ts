@@ -4,6 +4,8 @@ import type { ResumeDoc } from '../types';
 
 const DEBOUNCE_MS = 1500;
 
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 type FlushController = {
   pendingTimer: ReturnType<typeof setTimeout> | null;
   inflight: Promise<void> | null;
@@ -11,6 +13,9 @@ type FlushController = {
   lastSavedDocSnapshot: string;     // JSON string for cheap equality
   // version of resume currently dirty (changed since last ACK)
   dirtyDocSnapshot: string;
+  status: SaveStatus;
+  lastSavedAt: number | null;
+  listeners: Set<(s: SaveStatus) => void>;
 };
 
 const ctrl: FlushController = {
@@ -18,7 +23,24 @@ const ctrl: FlushController = {
   inflight: null,
   lastSavedDocSnapshot: '',
   dirtyDocSnapshot: '',
+  status: 'idle',
+  lastSavedAt: null,
+  listeners: new Set(),
 };
+
+function setStatus(next: SaveStatus): void {
+  if (ctrl.status === next) return;
+  ctrl.status = next;
+  for (const l of ctrl.listeners) l(next);
+}
+
+export function getSaveStatus(): SaveStatus { return ctrl.status; }
+export function getLastSavedAt(): number | null { return ctrl.lastSavedAt; }
+
+export function subscribeSaveStatus(listener: (s: SaveStatus) => void): () => void {
+  ctrl.listeners.add(listener);
+  return () => { ctrl.listeners.delete(listener); };
+}
 
 export type SaveBackend = (doc: ResumeDoc) => Promise<void>;
 
@@ -68,9 +90,17 @@ async function runSave(): Promise<void> {
   const resume = useResumeStore.getState().resume;
   if (!resume) return;
   const snapshot = JSON.stringify(resume);
+  setStatus('saving');
   ctrl.inflight = (async () => {
-    await _backend(resume);
-    ctrl.lastSavedDocSnapshot = snapshot;
+    try {
+      await _backend(resume);
+      ctrl.lastSavedDocSnapshot = snapshot;
+      ctrl.lastSavedAt = Date.now();
+      setStatus('saved');
+    } catch (err) {
+      setStatus('error');
+      throw err;
+    }
   })();
   try { await ctrl.inflight; }
   finally { ctrl.inflight = null; }
@@ -103,4 +133,7 @@ export function _resetFlushController(): void {
   ctrl.inflight = null;
   ctrl.lastSavedDocSnapshot = '';
   ctrl.dirtyDocSnapshot = '';
+  ctrl.status = 'idle';
+  ctrl.lastSavedAt = null;
+  ctrl.listeners.clear();
 }
