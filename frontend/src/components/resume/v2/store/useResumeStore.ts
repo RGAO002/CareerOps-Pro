@@ -7,6 +7,8 @@ import type {
 } from '../types';
 import { UndoStack } from './undo-stack';
 
+export type Align = 'left' | 'center' | 'right';
+
 export type StoredBullet = {
   block: BulletBlock;
   lastUpdateOrigin: UpdateOrigin;
@@ -25,9 +27,37 @@ export type ResumeStoreActions = {
   hydrate: (resume: ResumeDoc) => void;
   updateBullet: (id: BlockId, content: ProseMirrorBulletDoc, origin: UpdateOrigin) => void;
   updateField: (field: EditableField, value: string, origin: UpdateOrigin) => void;
+  setFieldAlign: (field: EditableField, align: Align | undefined, origin: UpdateOrigin) => void;
   undo: () => void;
   redo: () => void;
 };
+
+/**
+ * Serialize an EditableField to the string key used in `resume.alignments`.
+ * Mirrors AtomFocusManager's internal fieldKey() so both sides agree.
+ */
+export function fieldKeyToStr(f: EditableField): string {
+  switch (f.kind) {
+    case 'header.name': return 'header.name';
+    case 'header.contact': return `header.contact:${f.index}`;
+    case 'section.heading': return `section.heading:${f.id}`;
+    case 'entry.title': return `entry.title:${f.id}`;
+    case 'entry.meta': return `entry.meta:${f.id}`;
+    case 'bullet.content': return `bullet.content:${f.id}`;
+  }
+}
+
+/** Read the persisted alignment for a field. Returns undefined for the
+ *  default ('left'). Components can call this from a selector. */
+export function getFieldAlign(
+  resume: ResumeDoc | null,
+  field: EditableField,
+): Align | undefined {
+  if (!resume?.alignments) return undefined;
+  const v = resume.alignments[fieldKeyToStr(field)];
+  if (v === 'center' || v === 'right') return v;
+  return undefined;
+}
 
 export const useResumeStore = create<ResumeStoreState & ResumeStoreActions>()(
   subscribeWithSelector((set, get) => ({
@@ -69,6 +99,31 @@ export const useResumeStore = create<ResumeStoreState & ResumeStoreActions>()(
       const next = applyFieldUpdate(r, field, value);
       set({ resume: next });
       // Also no undo push — TipTap.history per-field handles single-line undo
+    },
+
+    setFieldAlign: (field, align, _origin) => {
+      const r = get().resume;
+      if (!r) return;
+      // Bullet alignment lives inside the bullet's ProseMirror doc — don't
+      // double-store it in the alignments map.
+      if (field.kind === 'bullet.content') return;
+      const key = fieldKeyToStr(field);
+      const current = r.alignments ?? {};
+      const prev = current[key];
+      // Default 'left' (or undefined) → omit from the map to keep JSON clean.
+      const wantOmit = align === undefined || align === 'left';
+      if (wantOmit && prev === undefined) return; // no-op
+      if (!wantOmit && prev === align) return;    // no-op
+      const next: Record<string, Align> = { ...current };
+      if (wantOmit) delete next[key];
+      else next[key] = align;
+      set({
+        resume: {
+          ...r,
+          alignments: Object.keys(next).length > 0 ? next : undefined,
+          metadata: { ...r.metadata, updated_at: new Date().toISOString() },
+        },
+      });
     },
 
     undo: () => {

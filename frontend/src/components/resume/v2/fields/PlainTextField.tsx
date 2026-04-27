@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { UndoRedo } from '@tiptap/extensions';
 import Text from '@tiptap/extension-text';
+import Paragraph from '@tiptap/extension-paragraph';
 import Bold from '@tiptap/extension-bold';
 import Italic from '@tiptap/extension-italic';
 import Underline from '@tiptap/extension-underline';
@@ -11,9 +12,13 @@ import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
+import TextAlign from '@tiptap/extension-text-align';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { NoNewline } from '../extensions/NoNewline';
-import { stringToSingleLineDoc, singleLineDocToString } from './single-line-adapter';
+import {
+  stringToSingleLineDoc, singleLineDocToString, alignFromDoc,
+  type Align,
+} from './single-line-adapter';
 import { useMeasureModeSync } from './useMeasureModeSync';
 import { useResumeStore } from '../store/useResumeStore';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
@@ -29,6 +34,7 @@ declare module '@tiptap/core' {
 interface Props {
   fieldKey: EditableField;
   value: string;
+  align?: Align;
   mode: CanvasMode;
   placeholder?: string;
   className?: string;
@@ -40,15 +46,23 @@ function nextEditorId(): EditorId {
   return `pt-${_editorIdCounter}`;
 }
 
-export function PlainTextField({ fieldKey, value, mode, placeholder, className }: Props) {
+type SyncProps = { value: string; align: Align | undefined };
+
+export function PlainTextField({ fieldKey, value, align, mode, placeholder, className }: Props) {
   const editorIdRef = useRef<EditorId>(nextEditorId());
-  const initialDoc = useMemo(() => stringToSingleLineDoc(value), []);
+  // Build initial doc once — measure-mode sync below keeps it fresh.
+  const initialDoc = useMemo(
+    () => stringToSingleLineDoc(value, align),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const editor = useEditor({
     extensions: [
       SingleLineDocument,
+      Paragraph,            // required because the schema content is now 'paragraph'
       Text,
-      TextStyle,           // required by Color
+      TextStyle,            // required by Color
       Bold,
       Italic,
       Underline,
@@ -56,6 +70,7 @@ export function PlainTextField({ fieldKey, value, mode, placeholder, className }
       Highlight.configure({ multicolor: true }),
       Link.configure({ openOnClick: false }),
       NoNewline,
+      TextAlign.configure({ types: ['paragraph'], alignments: ['left', 'center', 'right'] }),
       ...(mode === 'edit' ? [UndoRedo] : []),
     ],
     content: initialDoc,
@@ -66,12 +81,19 @@ export function PlainTextField({ fieldKey, value, mode, placeholder, className }
     onUpdate: mode === 'edit'
       ? ({ editor }) => {
           const next = singleLineDocToString(editor);
-          useResumeStore.getState().updateField(fieldKey, next, makeOrigin('tiptap', editorIdRef.current));
+          const nextAlign = alignFromDoc(editor);
+          const origin = makeOrigin('tiptap', editorIdRef.current);
+          useResumeStore.getState().updateField(fieldKey, next, origin);
+          useResumeStore.getState().setFieldAlign(fieldKey, nextAlign, origin);
         }
       : undefined,
   });
 
-  useMeasureModeSync(mode, editor, value, stringToSingleLineDoc);
+  const syncProps: SyncProps = useMemo(() => ({ value, align }), [value, align]);
+  useMeasureModeSync<SyncProps>(
+    mode, editor, syncProps,
+    (p) => stringToSingleLineDoc(p.value, p.align),
+  );
 
   // Edit mode: register with focus manager
   useEffect(() => {

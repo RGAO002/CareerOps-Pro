@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { Editor } from '@tiptap/core';
 import Text from '@tiptap/extension-text';
+import Paragraph from '@tiptap/extension-paragraph';
 import Link from '@tiptap/extension-link';
 import { SingleLineWithMarksDocument } from '../extensions/SingleLineWithMarksDocument';
 import { contactItemsToDoc, docToContactItems } from './contact-lines-adapter';
@@ -15,12 +16,26 @@ describe('contactItemsToDoc', () => {
     ];
     const doc = contactItemsToDoc(items);
     expect(doc.type).toBe('doc');
-    // first segment text, separator, then link mark on Github
-    expect(doc.content[0]).toMatchObject({ type: 'text', text: 'a@b.com' });
-    expect(doc.content[2]).toMatchObject({
+    const para = doc.content[0];
+    expect(para.type).toBe('paragraph');
+    const inline = para.content!;
+    expect(inline[0]).toMatchObject({ type: 'text', text: 'a@b.com' });
+    expect(inline[2]).toMatchObject({
       type: 'text', text: 'Github',
       marks: [{ type: 'link', attrs: { href: 'https://github.com/a' } }],
     });
+  });
+
+  it('stamps textAlign on the wrapping paragraph when align is provided', () => {
+    const items: ContactItem[] = [{ type: 'text', value: 'hello' }];
+    const doc = contactItemsToDoc(items, 'right');
+    expect(doc.content[0].attrs).toEqual({ textAlign: 'right' });
+  });
+
+  it('omits attrs when align is left (default)', () => {
+    const items: ContactItem[] = [{ type: 'text', value: 'hello' }];
+    const doc = contactItemsToDoc(items, 'left');
+    expect(doc.content[0].attrs).toBeUndefined();
   });
 });
 
@@ -31,7 +46,7 @@ describe('docToContactItems roundtrip', () => {
       { type: 'link', label: 'GH', url: 'https://x.com' },
     ];
     const editor = new Editor({
-      extensions: [SingleLineWithMarksDocument, Text, Link],
+      extensions: [SingleLineWithMarksDocument, Paragraph, Text, Link],
       content: contactItemsToDoc(items),
     });
     const out = docToContactItems(editor);

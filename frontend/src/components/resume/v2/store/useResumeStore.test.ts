@@ -65,6 +65,49 @@ describe('useResumeStore', () => {
     unsub();
   });
 
+  it('setFieldAlign writes center to alignments map', () => {
+    useResumeStore.getState().hydrate(RESUME);
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'header.name' }, 'center', makeOrigin('tiptap', 'ed-A'),
+    );
+    expect(useResumeStore.getState().resume?.alignments).toEqual({ 'header.name': 'center' });
+  });
+
+  it('setFieldAlign omits left (default) and removes existing entry', () => {
+    useResumeStore.getState().hydrate(RESUME);
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'header.name' }, 'right', makeOrigin('tiptap', 'ed-A'),
+    );
+    expect(useResumeStore.getState().resume?.alignments).toEqual({ 'header.name': 'right' });
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'header.name' }, 'left', makeOrigin('tiptap', 'ed-A'),
+    );
+    // Map became empty → store collapses it back to undefined for clean JSON
+    expect(useResumeStore.getState().resume?.alignments).toBeUndefined();
+  });
+
+  it('setFieldAlign ignores bullet.content (bullet align lives in PM doc)', () => {
+    useResumeStore.getState().hydrate(RESUME);
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'bullet.content', id: 'b1' }, 'center', makeOrigin('tiptap', 'ed-A'),
+    );
+    expect(useResumeStore.getState().resume?.alignments).toBeUndefined();
+  });
+
+  it('setFieldAlign uses unique keys per field id', () => {
+    useResumeStore.getState().hydrate(RESUME);
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'entry.title', id: 'e1' }, 'center', makeOrigin('tiptap', 'ed-A'),
+    );
+    useResumeStore.getState().setFieldAlign(
+      { kind: 'entry.meta', id: 'e1' }, 'right', makeOrigin('tiptap', 'ed-A'),
+    );
+    expect(useResumeStore.getState().resume?.alignments).toEqual({
+      'entry.title:e1': 'center',
+      'entry.meta:e1': 'right',
+    });
+  });
+
   it('undo restores previous resume snapshot', () => {
     useResumeStore.getState().hydrate(RESUME);
     _pushUndo('test');

@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import Text from '@tiptap/extension-text';
+import Paragraph from '@tiptap/extension-paragraph';
 import { useMeasureModeSync } from './useMeasureModeSync';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { stringToSingleLineDoc } from './single-line-adapter';
 
 function TestField({ value, mode }: { value: string; mode: 'edit' | 'export' | 'measure' }) {
   const editor = useEditor({
-    extensions: [SingleLineDocument, Text],
+    extensions: [SingleLineDocument, Paragraph, Text],
     content: stringToSingleLineDoc(value),
     immediatelyRender: false,
     editable: mode === 'edit',

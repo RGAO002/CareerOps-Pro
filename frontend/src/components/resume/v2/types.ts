@@ -65,6 +65,14 @@ export type ResumeDoc = {
   header: HeaderBlock;
   sections: SectionBlock[];
   metadata: ResumeMetadata;
+  /**
+   * Per-field text alignment for single-line fields (name, contact line,
+   * section heading, entry title, entry meta). Keys are serialized
+   * EditableField identifiers (e.g. "header.name", "section.heading:{id}").
+   * Bullet alignment lives inside each bullet's ProseMirrorBulletDoc and is
+   * NOT mirrored here.
+   */
+  alignments?: Record<string, 'left' | 'center' | 'right'>;
 };
 
 // ─────────── ProseMirror shapes ───────────
@@ -80,6 +88,7 @@ export type ProseMirrorInline = {
 
 export type ProseMirrorParagraph = {
   type: 'paragraph';
+  attrs?: { textAlign?: 'left' | 'center' | 'right' };
   content?: ProseMirrorInline[];
 };
 
@@ -90,7 +99,7 @@ export type ProseMirrorBulletDoc = {
 
 export type SingleLineDoc = {
   type: 'doc';
-  content: ProseMirrorInline[];
+  content: [ProseMirrorParagraph];   // exactly 1 paragraph wrapping the inline content
 };
 
 // ─────────── LayoutAtom (pagination unit) ───────────

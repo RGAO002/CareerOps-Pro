@@ -1,10 +1,11 @@
 // frontend/src/components/resume/v2/fields/contact-lines-adapter.ts
 import type { Editor } from '@tiptap/core';
 import type { ContactItem, SingleLineDoc, ProseMirrorInline } from '../types';
+import type { Align } from './single-line-adapter';
 
 const SEPARATOR = '  |  ';   // double-space pipe double-space visual
 
-export function contactItemsToDoc(items: ContactItem[]): SingleLineDoc {
+export function contactItemsToDoc(items: ContactItem[], align?: Align): SingleLineDoc {
   const inline: ProseMirrorInline[] = [];
   items.forEach((item, i) => {
     if (i > 0) inline.push({ type: 'text', text: SEPARATOR });
@@ -18,18 +19,26 @@ export function contactItemsToDoc(items: ContactItem[]): SingleLineDoc {
       });
     }
   });
-  return { type: 'doc', content: inline };
+  const paragraph: SingleLineDoc['content'][0] = { type: 'paragraph' };
+  if (align && align !== 'left') paragraph.attrs = { textAlign: align };
+  if (inline.length > 0) paragraph.content = inline;
+  return { type: 'doc', content: [paragraph] };
 }
 
 /**
  * Walk editor JSON and rebuild ContactItem[]. Text nodes with link mark
  * become {type:'link'}; bare text becomes {type:'text'}.
  * Splits on the SEPARATOR (resilient to user editing it).
+ *
+ * Reads the inline children of the (single) wrapping paragraph.
  */
 export function docToContactItems(editor: Editor): ContactItem[] {
-  const doc = editor.getJSON();
+  const doc = editor.getJSON() as {
+    content?: Array<{ type: string; content?: ProseMirrorInline[] }>;
+  };
   const items: ContactItem[] = [];
-  const nodes = (doc.content as unknown as ProseMirrorInline[]) ?? [];
+  const para = doc.content?.[0];
+  const nodes: ProseMirrorInline[] = (para?.content as ProseMirrorInline[] | undefined) ?? [];
 
   // Concatenate all text nodes preserving link mark per-segment, then split on SEPARATOR
   type Segment = { text: string; href?: string };

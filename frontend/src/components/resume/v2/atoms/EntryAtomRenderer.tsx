@@ -10,6 +10,8 @@ import {
   subscribeDragPreview,
   type DragPreview,
 } from '../interaction/drag-preview-state';
+import { useResumeStore } from '../store/useResumeStore';
+import type { Align } from '../fields/single-line-adapter';
 import type { BlockId, CanvasMode, EntryBlock } from '../types';
 
 interface Props {
@@ -58,11 +60,19 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
     return 0;
   }
 
+  const titleAlign = useResumeStore(
+    s => s.resume?.alignments?.[`entry.title:${entry.id}`],
+  ) as Align | undefined;
+  const metaAlign = useResumeStore(
+    s => s.resume?.alignments?.[`entry.meta:${entry.id}`],
+  ) as Align | undefined;
+
   return (
     <div className="resume-entry" data-block-id={entry.id} data-atom-content>
       <PlainTextField
         fieldKey={{ kind: 'entry.title', id: entry.id }}
         value={entry.title}
+        align={titleAlign}
         mode={mode}
         className="resume-entry-title"
         placeholder="Title (e.g. Software Engineer @ Acme)"
@@ -70,6 +80,7 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
       <PlainTextField
         fieldKey={{ kind: 'entry.meta', id: entry.id }}
         value={entry.meta}
+        align={metaAlign}
         mode={mode}
         className="resume-entry-meta"
         placeholder="Date · Location"

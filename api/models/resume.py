@@ -1,6 +1,6 @@
 # api/models/resume.py
 """Pydantic models for the Resume Editor v1 API."""
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -137,3 +137,9 @@ class ResumeV2(BaseModel):
     header: HeaderBlockV2
     sections: List[SectionBlockV2] = Field(default_factory=list)
     metadata: ResumeMetadataV2
+    # Per-field alignment for single-line fields. Keys are serialized
+    # EditableField identifiers (e.g. "header.name", "section.heading:{id}").
+    # Values are 'left' | 'center' | 'right' — but stored loosely as str so
+    # additional alignment values can be added later without a migration.
+    # Bullet alignment lives inside each bullet's ProseMirror doc, not here.
+    alignments: Optional[Dict[str, str]] = None
