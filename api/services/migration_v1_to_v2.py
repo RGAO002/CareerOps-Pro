@@ -119,15 +119,42 @@ def migrate_section(node: dict, id_map: dict) -> dict:
 
 
 def migrate_header(node, id_map: dict) -> dict:
+    """v1 ResumeHeaderNode shape:
+      - name: stored as text node(s) in node.content
+      - contacts: stored as attrs.contacts (List[str], with optional markdown links)
+    Older v1 files may have used attrs.name / attrs.contact (singular string).
+    Both shapes are accepted.
+    """
     header_id = str(uuid.uuid4())
     id_map["header"] = header_id
     if not node:
         return {"id": header_id, "name": "", "contact_lines": []}
     attrs = node.get("attrs", {}) or {}
+
+    # Name: prefer attrs.name (legacy), then text content
+    name = attrs.get("name", "") or ""
+    if not name:
+        for child in (node.get("content") or []):
+            if isinstance(child, dict) and child.get("type") == "text":
+                name = child.get("text", "") or ""
+                if name:
+                    break
+
+    # Contacts: prefer attrs.contacts (List[str]), fall back to attrs.contact (str)
+    contact_lines: list = []
+    contacts_attr = attrs.get("contacts")
+    if isinstance(contacts_attr, list):
+        for entry in contacts_attr:
+            if not isinstance(entry, str):
+                continue
+            contact_lines.extend(parse_contact_lines(entry))
+    else:
+        contact_lines = parse_contact_lines(attrs.get("contact", "") or "")
+
     return {
         "id": header_id,
-        "name": attrs.get("name", "") or "",
-        "contact_lines": parse_contact_lines(attrs.get("contact", "") or ""),
+        "name": name,
+        "contact_lines": contact_lines,
     }
 
 

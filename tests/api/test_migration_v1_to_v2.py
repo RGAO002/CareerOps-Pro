@@ -103,3 +103,33 @@ def test_migrate_handles_empty_doc():
     v2 = migrate_one_dict(v1)
     assert v2["sections"] == []
     assert v2["header"]["name"] == ""
+
+
+def test_migrate_header_real_v1_shape():
+    """v1 ResumeHeaderNode stored name as text content + contacts as attrs.contacts (list)."""
+    v1 = {
+        "id": "real",
+        "doc": {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "resumeHeader",
+                    "attrs": {
+                        "contacts": [
+                            "rgao002@gmail.com",
+                            "(555) 555-5555",
+                            "[GitHub](https://github.com/rgao002)",
+                        ],
+                    },
+                    "content": [{"type": "text", "text": "Ruoping Gao"}],
+                },
+            ],
+        },
+    }
+    v2 = migrate_one_dict(v1)
+    assert v2["header"]["name"] == "Ruoping Gao"
+    assert len(v2["header"]["contact_lines"]) == 3
+    assert v2["header"]["contact_lines"][0] == {"type": "text", "value": "rgao002@gmail.com"}
+    assert v2["header"]["contact_lines"][2] == {
+        "type": "link", "label": "GitHub", "url": "https://github.com/rgao002"
+    }
