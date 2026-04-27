@@ -2,6 +2,7 @@
 'use client';
 import { PlainTextField } from '../fields/PlainTextField';
 import { BulletField } from '../fields/BulletField';
+import { BulletInteractionOverlay } from './BulletInteractionOverlay';
 import type { CanvasMode, EntryBlock } from '../types';
 
 interface Props {
@@ -28,7 +29,15 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
       />
       <ul className="resume-entry-bullets">
         {entry.bullets.map(b => (
-          <li key={b.id} className="resume-bullet" data-block-id={b.id}>
+          <li
+            key={b.id}
+            className="resume-bullet"
+            data-block-id={b.id}
+            style={{ position: 'relative' }}
+          >
+            {mode === 'edit' && (
+              <BulletInteractionOverlay bulletId={b.id} entryId={entry.id} />
+            )}
             <BulletField bulletId={b.id} entryId={entry.id} content={b.content} mode={mode} />
           </li>
         ))}
