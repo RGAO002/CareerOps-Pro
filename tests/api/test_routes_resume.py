@@ -126,13 +126,25 @@ def test_put_rejects_v1_payload(client):
 
 
 def test_post_creates_blank_resume(client):
+    """POST creates a v2-shaped resume directly (no legacy v1 round-trip)."""
     resp = client.post("/api/resume/", json={"title": "Empty"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["title"] == "Empty"
     assert body["id"]
-    assert body["doc"]["type"] == "doc"
-    assert resume_store.get(body["id"]) is not None
+    assert body["schema_version"] == 2
+    assert body["template_id"] == "minimal-single-column"
+    assert "header" in body and body["header"]["name"] == ""
+    assert body["header"]["contact_lines"] == []
+    assert body["sections"] == []
+    meta = body["metadata"]
+    assert meta["created_at"] and meta["updated_at"]
+    assert meta["parent_id"] is None
+    # Round-trip: GET returns the same v2 doc.
+    got = client.get(f"/api/resume/{body['id']}")
+    assert got.status_code == 200
+    assert got.json()["schema_version"] == 2
+    assert got.json()["id"] == body["id"]
 
 
 # --- /parse tests ---

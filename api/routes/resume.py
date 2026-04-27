@@ -117,30 +117,37 @@ def _now_ms() -> int:
 
 
 @router.post("/")
-async def create_blank_resume(body: CreateResumeRequest) -> Resume:
-    """Create a new blank resume."""
+async def create_blank_resume(body: CreateResumeRequest) -> dict:
+    """Create a new blank v2 resume.
+
+    Writes a v2-shaped doc directly via ``save_v2_dict`` so freshly-created
+    resumes never enter the legacy v1 → v2 migration path on first read.
+    """
+    from datetime import datetime, timezone
+
     rid = str(uuid.uuid4())
-    now = _now_ms()
-    blank_doc = {
-        "type": "doc",
-        "content": [
-            {"type": "resumeHeader", "attrs": {"contacts": []}, "content": []},
-            {
-                "type": "resumeSection",
-                "attrs": {"heading": "Experience"},
-                "content": [
-                    {
-                        "type": "entry",
-                        "attrs": {"title": "", "meta": ""},
-                        "content": [{"type": "bullet", "content": []}],
-                    }
-                ],
-            },
-        ],
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    v2_doc = {
+        "schema_version": 2,
+        "id": rid,
+        "title": body.title,
+        "template_id": "minimal-single-column",
+        "header": {
+            "id": str(uuid.uuid4()),
+            "name": "",
+            "contact_lines": [],
+        },
+        "sections": [],
+        "metadata": {
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "target_company": None,
+            "target_role": None,
+            "parent_id": None,
+        },
     }
-    r = Resume(id=rid, title=body.title, created_at=now, updated_at=now, doc=blank_doc)
-    resume_store.save(r)
-    return r
+    resume_store.save_v2_dict(v2_doc)
+    return v2_doc
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
