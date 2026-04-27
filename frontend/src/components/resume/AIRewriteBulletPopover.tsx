@@ -1,4 +1,11 @@
 // frontend/src/components/resume/AIRewriteBulletPopover.tsx
+//
+// DEPRECATED (v2 cutover, 2026-04-26): wired to v1 TipTap editor ref +
+// `resume:rewrite-bullet` window event from v1 BulletNodeView. Neither is
+// rendered in v2. The backend `rewrite_bullet` tool (api/services/ai_tools.py)
+// still accepts plain bullet_text and works fine — only the UI glue is v1.
+// Rebuilding this on v2 (BulletField + bulletId-keyed selection) is deferred
+// to v2.1. Kept for 1-week rollback fallback per spec § 7.5.
 "use client";
 
 import type { Editor } from "@tiptap/core";

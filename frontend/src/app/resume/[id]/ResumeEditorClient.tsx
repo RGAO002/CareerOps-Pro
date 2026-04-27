@@ -1,4 +1,11 @@
 // frontend/src/app/resume/[id]/ResumeEditorClient.tsx
+//
+// DEPRECATED (v2 cutover, 2026-04-26): no longer imported by any route.
+// app/resume/[id]/page.tsx now imports EditorPage from v2/ directly.
+// This file (and ResumeEditor.tsx + AIRewriteBulletPopover.tsx) is kept
+// for 1-week rollback fallback per spec § 7.5, then deletable in a
+// separate cleanup commit. AIRewriteBulletPopover is wired to v1 TipTap
+// schema; rebuilding it on v2 schema is deferred to v2.1.
 "use client";
 
 import dynamic from "next/dynamic";
