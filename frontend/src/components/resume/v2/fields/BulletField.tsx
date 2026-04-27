@@ -12,6 +12,7 @@ import { UndoRedo } from '@tiptap/extensions';   // TipTap 3 history
 import { BulletDocument } from '../extensions/BulletDocument';
 import { AtomKeyboardNav } from '../extensions/AtomKeyboardNav';
 import { SlashCommand } from '../extensions/SlashCommand';
+import { MarkdownInputRules } from '../extensions/MarkdownInputRules';
 import { showSlashMenu, hideSlashMenu } from '../interaction/SlashMenu';
 import { useMeasureModeSync } from './useMeasureModeSync';
 import {
@@ -69,6 +70,7 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
           onShowMenu: showSlashMenu,
           onHideMenu: hideSlashMenu,
         }),
+        MarkdownInputRules,
       ] : []),
     ],
     content,
