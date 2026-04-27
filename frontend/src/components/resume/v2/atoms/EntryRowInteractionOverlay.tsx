@@ -52,6 +52,21 @@ export function EntryRowInteractionOverlay({
         opacity: hovered ? 1 : 0,
         transition: 'opacity 0.15s',
         pointerEvents: hovered ? 'auto' : 'none',
+        // Explicit zIndex is load-bearing. The sibling PlainTextField wrapper
+        // (`.resume-entry-title` / `.resume-entry-meta`) is `position: relative`
+        // in edit mode (resume-styles.css gives it a positioning context for
+        // the empty-state placeholder ::before). Two positioned siblings with
+        // no z-index → CSS paints the LATER one on top (the contenteditable),
+        // and the contenteditable's hit area extends to the wrapper's full
+        // width. Even though the gutter (left:-28) is visually outside that
+        // wrapper's box, browsers route pointerdown to whichever positioned
+        // sibling is on top within the parent's stacking context — so without
+        // an explicit zIndex the editor swallows the click and startDrag never
+        // fires. Bumping the overlay above the editor restores the gutter as
+        // a clickable handle. (BulletInteractionOverlay doesn't hit this
+        // because the parent <li> has `transform: translateY(0)` which makes
+        // its own stacking context — the entry-row wrapper does not.)
+        zIndex: 5,
       }}
     >
       <DragHandle block={block} onDropIndicator={onDropIndicator ?? (() => {})} />
