@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bold, Italic, Link as LinkIcon, Undo2, Redo2 } from 'lucide-react';
 import type { Editor } from '@tiptap/core';
 import { atomFocusManager } from './AtomFocusManager';
+import { useResumeStore } from '../store/useResumeStore';
 
 /**
  * Persistent format toolbar (v2 port of v1 FormatToolbar).
@@ -28,13 +29,33 @@ export function FormatToolbar() {
     force(n => n + 1);
   }), []);
 
+  // Store changes (drag/insert/delete/duplicate) also affect undo availability,
+  // so the buttons need to re-render when the store moves.
+  useEffect(() => useResumeStore.subscribe(s => s.resume, () => force(n => n + 1)), []);
+
   const liveEditor = atomFocusManager.currentEditor();
   const editor: Editor | null = liveEditor ?? lastEditorRef.current;
 
   const isActive = (mark: string) => !!editor && editor.isActive(mark);
   const has = (mark: string) => !!editor && mark in editor.schema.marks;
-  const canUndo = !!editor && editor.can().undo();
-  const canRedo = !!editor && editor.can().redo();
+
+  // Undo/redo route: focused TipTap (bullet typing) wins; falls back to
+  // store undo (structural ops — drag, insert, delete, duplicate).
+  const tiptapCanUndo = !!liveEditor && liveEditor.can().undo();
+  const tiptapCanRedo = !!liveEditor && liveEditor.can().redo();
+  const storeCanUndo = useResumeStore.getState()._undo.canUndo();
+  const storeCanRedo = useResumeStore.getState()._undo.canRedo();
+  const canUndo = tiptapCanUndo || storeCanUndo;
+  const canRedo = tiptapCanRedo || storeCanRedo;
+
+  const doUndo = () => {
+    if (tiptapCanUndo) liveEditor!.chain().focus().undo().run();
+    else if (storeCanUndo) useResumeStore.getState().undo();
+  };
+  const doRedo = () => {
+    if (tiptapCanRedo) liveEditor!.chain().focus().redo().run();
+    else if (storeCanRedo) useResumeStore.getState().redo();
+  };
 
   const btn = (active: boolean, disabled = false) =>
     `flex size-7 items-center justify-center rounded-md transition-colors ${
@@ -56,7 +77,7 @@ export function FormatToolbar() {
         aria-label="Undo"
         title="Undo (⌘Z)"
         onMouseDown={noStealFocus}
-        onClick={() => editor?.chain().focus().undo().run()}
+        onClick={doUndo}
         disabled={!canUndo}
         className={btn(false, !canUndo)}
       >
@@ -67,7 +88,7 @@ export function FormatToolbar() {
         aria-label="Redo"
         title="Redo (⌘⇧Z)"
         onMouseDown={noStealFocus}
-        onClick={() => editor?.chain().focus().redo().run()}
+        onClick={doRedo}
         disabled={!canRedo}
         className={btn(false, !canRedo)}
       >
