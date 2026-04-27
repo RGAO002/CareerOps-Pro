@@ -448,21 +448,33 @@ def test_get_snapshots_lists_newest_first(client):
 
 
 def test_restore_replaces_doc_and_creates_pre_restore_snapshot(client):
-    _seed_resume("r3", "T")
-    r = resume_store.get("r3")
-    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "v1"}]}]}
-    resume_store.save(r)
+    """Restore writes the snapshot back as a v2 file and pre-snaps the current state.
+
+    Post-fix C-1: routes operate in v2-dict space. The snapshot's full v2 dict
+    is round-tripped via save_v2_dict, and we verify the on-disk file is v2.
+    """
+    # Seed a v2 resume with one section so we can detect the restored title.
+    v2_v1 = _v2_payload("r3", "title-before")
+    client.put("/api/resume/r3", json=v2_v1)
+
     snap_resp = client.post("/api/resume/r3/snapshot", json={"trigger": "checkpoint", "label": "before"})
+    assert snap_resp.status_code == 200
     snap_id = snap_resp.json()["id"]
 
-    r = resume_store.get("r3")
-    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "v2"}]}]}
-    resume_store.save(r)
+    # Mutate the resume to a different title.
+    v2_v2 = _v2_payload("r3", "title-after")
+    client.put("/api/resume/r3", json=v2_v2)
 
-    restore_resp = client.post(f"/api/resume/r3/restore", json={"snapshot_id": snap_id})
+    restore_resp = client.post("/api/resume/r3/restore", json={"snapshot_id": snap_id})
     assert restore_resp.status_code == 200
-    restored = resume_store.get("r3")
-    assert restored.doc["content"][0]["content"][0]["text"] == "v1"
+    body = restore_resp.json()
+    assert body["schema_version"] == 2
+    assert body["title"] == "title-before"
+
+    # Verify on disk via load_dict (the v2-aware loader).
+    restored = resume_store.load_dict("r3")
+    assert restored["schema_version"] == 2
+    assert restored["title"] == "title-before"
 
     snaps = client.get("/api/resume/r3/snapshots").json()["snapshots"]
     pre_restore = [s for s in snaps if s.get("diff_summary", "").startswith("Pre-restore")]
@@ -471,10 +483,21 @@ def test_restore_replaces_doc_and_creates_pre_restore_snapshot(client):
 
 
 def test_variant_forks_a_new_independent_copy(client):
-    _seed_resume("base1", "Base")
-    r = resume_store.get("base1")
-    r.doc = {"type": "doc", "content": [{"type": "resumeHeader", "attrs": {"contacts": []}, "content": [{"type": "text", "text": "Base name"}]}]}
-    resume_store.save(r)
+    """Variant copies a v2 resume to a new id with parent_id linkage.
+
+    Post-fix C-1: routes work in v2-dict space; the parent file remains
+    untouched when the variant is later mutated.
+    """
+    payload = _v2_payload("base1", "Base")
+    payload["sections"] = [
+        {
+            "id": "sec-1",
+            "role": "experience",
+            "heading": "Experience",
+            "entries": [],
+        }
+    ]
+    client.put("/api/resume/base1", json=payload)
 
     resp = client.post("/api/resume/base1/variant", json={
         "title": "Stripe Backend",
@@ -489,11 +512,12 @@ def test_variant_forks_a_new_independent_copy(client):
     assert body["is_base"] is False
     assert body["target_company"] == "Stripe"
 
-    variant = resume_store.get(body["id"])
-    variant.doc = {"type": "doc", "content": []}
-    resume_store.save(variant)
-    base = resume_store.get("base1")
-    assert len(base.doc["content"]) == 1
+    # Mutate the variant on disk and confirm the parent is still intact.
+    variant = resume_store.load_dict(body["id"])
+    variant["sections"] = []
+    resume_store.save_v2_dict(variant)
+    base = resume_store.load_dict("base1")
+    assert len(base["sections"]) == 1
 
 
 def test_rewrite_bullet_endpoint(client, monkeypatch):

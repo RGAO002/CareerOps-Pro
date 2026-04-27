@@ -123,3 +123,34 @@ def save_v2_dict(resume_v2: dict) -> None:
         json.dumps(resume_v2, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def list_all_dict() -> list[dict]:
+    """List all resumes as v2-shaped dicts, newest updated_at first.
+
+    Both v1 and v2 files on disk are returned in v2 shape (v1 is auto-migrated
+    via load_dict). Files that fail to load are silently skipped.
+
+    Sort key prefers v2 ``metadata.updated_at`` (ISO string) when present and
+    falls back to v1 ``updated_at`` (epoch ms) — comparable lexically for ISO
+    strings; falls back gracefully when types mix.
+    """
+    _ensure_dir()
+    resumes: list[dict] = []
+    for f in RESUMES_DIR.glob("*.json"):
+        if f.parent != RESUMES_DIR:
+            continue  # skip snapshots subdir
+        try:
+            rid = f.stem
+            _validate_id(rid)
+            resumes.append(load_dict(rid))
+        except (json.JSONDecodeError, ValueError, FileNotFoundError):
+            continue
+
+    def _key(r: dict):
+        meta = r.get("metadata") or {}
+        ua = meta.get("updated_at")
+        # Stringify so heterogenous types (ISO strings vs epoch ints) still sort.
+        return str(ua) if ua is not None else ""
+
+    return sorted(resumes, key=_key, reverse=True)

@@ -46,22 +46,28 @@ class CreateResumeRequest(BaseModel):
 
 @router.get("/")
 async def list_resumes() -> dict:
-    """List the current user's resumes (summary view, no doc)."""
-    resumes = resume_store.list_all()
-    return {
-        "resumes": [
-            {
-                "id": r.id,
-                "title": r.title,
-                "parent_id": r.parent_id,
-                "is_base": r.is_base,
-                "target_company": r.target_company,
-                "target_role": r.target_role,
-                "updated_at": r.updated_at,
-            }
-            for r in resumes
-        ],
-    }
+    """List the current user's resumes (summary view, no doc/sections).
+
+    Uses ``list_all_dict`` so v1 files (auto-migrated on read) and freshly-
+    saved v2 files both appear. Previously called ``list_all`` which silently
+    dropped v2 files.
+    """
+    resumes = resume_store.list_all_dict()
+    out = []
+    for r in resumes:
+        meta = r.get("metadata") or {}
+        out.append({
+            "id": r.get("id"),
+            "title": r.get("title"),
+            "parent_id": meta.get("parent_id"),
+            # v2 dropped is_base from the schema; default to True so the field
+            # remains in the API contract for the frontend list view.
+            "is_base": meta.get("parent_id") is None,
+            "target_company": meta.get("target_company"),
+            "target_role": meta.get("target_role"),
+            "updated_at": meta.get("updated_at"),
+        })
+    return {"resumes": out}
 
 
 @router.get("/{resume_id}")
@@ -216,9 +222,13 @@ class SnapshotRequest(BaseModel):
 @router.post("/{resume_id}/snapshot")
 async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapshot:
     _ensure_valid_id(resume_id)
-    r = resume_store.get(resume_id)
-    if r is None:
+    try:
+        r = resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
+    # Snapshot ``doc`` field carries the entire v2 resume dict so restore can
+    # round-trip it back through save_v2_dict. (For v1 files on disk, load_dict
+    # already migrated to v2 in-memory.)
     snap = ResumeSnapshot(
         id=str(uuid.uuid4()),
         resume_id=resume_id,
@@ -227,7 +237,7 @@ async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapsh
         label=body.label,
         diff_summary=body.diff_summary,
         ai_message_id=body.ai_message_id,
-        doc=r.doc,
+        doc=r,
     )
     snapshot_store.save(snap)
     snapshot_store.enforce_retention(resume_id)
@@ -246,7 +256,7 @@ class RestoreRequest(BaseModel):
 
 
 @router.post("/{resume_id}/restore")
-async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
+async def restore_snapshot(resume_id: str, body: RestoreRequest) -> dict:
     _ensure_valid_id(resume_id)
     _ensure_valid_id(body.snapshot_id)
     snap = snapshot_store.get(body.snapshot_id)
@@ -255,8 +265,9 @@ async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
 
     # Re-read the resume right before mutating so an autosave that landed
     # between request arrival and now is captured by the pre-restore checkpoint.
-    r = resume_store.get(resume_id)
-    if r is None:
+    try:
+        current = resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
 
     pre = ResumeSnapshot(
@@ -266,15 +277,36 @@ async def restore_snapshot(resume_id: str, body: RestoreRequest) -> Resume:
         trigger="checkpoint",  # was "auto" — preserve forever so users can recover
         label=f"Pre-restore (snap {body.snapshot_id[:8]})",
         diff_summary=f"Pre-restore checkpoint (restored to {body.snapshot_id})",
-        doc=r.doc,
+        doc=current,
     )
     snapshot_store.save(pre)
 
-    r.doc = snap.doc
-    r.updated_at = _now_ms()
-    resume_store.save(r)
+    # snap.doc may be a full v2 resume dict (post-fix C-1) or a legacy v1
+    # ProseMirror doc (pre-fix snapshots on disk). If it's v2-shaped, write
+    # it back wholesale; otherwise auto-migrate via migrate_one_dict.
+    snap_doc = snap.doc or {}
+    if snap_doc.get("schema_version") == 2:
+        restored = dict(snap_doc)
+    else:
+        # Legacy snapshot: synthesize a v1-shaped dict and migrate it.
+        from api.services.migration_v1_to_v2 import migrate_one_dict
+        legacy_v1 = {
+            "id": resume_id,
+            "title": current.get("title", "Untitled"),
+            "doc": snap_doc,
+            "created_at": current.get("metadata", {}).get("created_at"),
+            "updated_at": current.get("metadata", {}).get("updated_at"),
+        }
+        restored = migrate_one_dict(legacy_v1)
+
+    # URL id always wins.
+    restored["id"] = resume_id
+    meta = restored.setdefault("metadata", {})
+    from datetime import datetime, timezone
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    resume_store.save_v2_dict(restored)
     snapshot_store.enforce_retention(resume_id)
-    return r
+    return restored
 
 
 class VariantRequest(BaseModel):
@@ -285,30 +317,46 @@ class VariantRequest(BaseModel):
 
 
 @router.post("/{resume_id}/variant")
-async def create_variant(resume_id: str, body: VariantRequest) -> Resume:
+async def create_variant(resume_id: str, body: VariantRequest) -> dict:
     _ensure_valid_id(resume_id)
-    parent = resume_store.get(resume_id)
-    if parent is None:
+    try:
+        parent = resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Parent resume not found")
 
     new_id = str(uuid.uuid4())
-    now = _now_ms()
-    variant = Resume(
-        id=new_id,
-        user_id=parent.user_id,
-        parent_id=parent.id,
-        is_base=False,
-        title=body.title,
-        schema_version=parent.schema_version,
-        created_at=now,
-        updated_at=now,
-        target_company=body.target_company,
-        target_company_domain=body.target_company_domain,
-        target_role=body.target_role,
-        doc=copy.deepcopy(parent.doc),
-    )
-    resume_store.save(variant)
-    return variant
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    variant = copy.deepcopy(parent)
+    variant["id"] = new_id
+    variant["title"] = body.title
+    meta = variant.setdefault("metadata", {})
+    meta["parent_id"] = parent["id"]
+    meta["created_at"] = now_iso
+    meta["updated_at"] = now_iso
+    if body.target_company is not None:
+        meta["target_company"] = body.target_company
+    if body.target_role is not None:
+        meta["target_role"] = body.target_role
+    # target_company_domain isn't part of v2 ResumeMetadataV2; preserve under
+    # metadata for forward-compat (the model permits unknown keys when loaded
+    # as a dict).
+    if body.target_company_domain is not None:
+        meta["target_company_domain"] = body.target_company_domain
+
+    resume_store.save_v2_dict(variant)
+
+    # Preserve the legacy contract field ``parent_id`` / ``is_base`` at the
+    # top level for the response so the frontend list view (which still keys
+    # off them) keeps working.
+    response = dict(variant)
+    response["parent_id"] = parent["id"]
+    response["is_base"] = False
+    response["target_company"] = meta.get("target_company")
+    response["target_company_domain"] = meta.get("target_company_domain")
+    response["target_role"] = meta.get("target_role")
+    return response
 
 
 @router.get("/{resume_id}/pdf")
@@ -326,8 +374,9 @@ async def export_pdf(resume_id: str):
     download — no JS, no preview window, no print dialog.
     """
     _ensure_valid_id(resume_id)
-    r = resume_store.get(resume_id)
-    if r is None:
+    try:
+        r = resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
 
     # The frontend URL Playwright will load. CAREEROPS_FRONTEND_BASE lets
@@ -342,7 +391,8 @@ async def export_pdf(resume_id: str):
     from fastapi import Response
 
     # Use the resume title as the download filename, sanitized.
-    safe = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in r.title).strip()
+    title = r.get("title") or "resume"
+    safe = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title).strip()
     filename = (safe or "resume") + ".pdf"
     return Response(
         content=pdf_bytes,
