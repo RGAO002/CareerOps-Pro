@@ -1,0 +1,19 @@
+/* frontend/src/components/resume/v2/canvas-print.css */
+
+@page {
+  size: 8.5in 11in;
+  margin: 0;
+}
+
+@media print {
+  body { margin: 0; }
+  .interaction-layer,
+  [data-edit-only] {
+    display: none !important;
+  }
+  .page-card,
+  .print-page-placeholder {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
