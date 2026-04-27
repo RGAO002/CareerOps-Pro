@@ -17,6 +17,7 @@ export function moveEntry(
     if (found) { entry = found; sourceSectionId = s.id; break; }
   }
   if (!entry) return;
+  if (!r.sections.some(s => s.id === targetSectionId)) return;
   _pushUndo('moveEntry');
   const next = r.sections.map(s => {
     if (s.id === sourceSectionId && s.id !== targetSectionId) {

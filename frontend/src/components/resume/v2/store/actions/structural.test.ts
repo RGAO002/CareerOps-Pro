@@ -40,12 +40,32 @@ describe('move actions', () => {
     expect(useResumeStore.getState().resume!.sections[0].entries).toHaveLength(0);
     expect(useResumeStore.getState().resume!.sections[1].entries[0].id).toBe('e1');
   });
+  it('moveEntry to an invalid blank target does not delete source content', () => {
+    moveEntry('e1', 'missing-section', 0, makeOrigin('drag-reorder'));
+    const resume = useResumeStore.getState().resume!;
+    expect(resume.sections[0].entries.map(e => e.id)).toEqual(['e1']);
+    expect(resume.sections[0].entries[0].title).toBe('E1');
+  });
   it('moveBullet within entry preserves order semantics', () => {
     insertBullet('e1', 1, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
     const r = useResumeStore.getState().resume!;
     const newBulletId = r.sections[0].entries[0].bullets[1].id;
     moveBullet(newBulletId, 'e1', 0, makeOrigin('drag-reorder'));
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].id).toBe(newBulletId);
+  });
+  it('moveBullet into a valid blank entry preserves source content', () => {
+    const blankEntryId = insertEntry('s2', 0, makeOrigin('paste'));
+    moveBullet('b1', blankEntryId, 0, makeOrigin('drag-reorder'));
+    const resume = useResumeStore.getState().resume!;
+    const sourceEntry = resume.sections[0].entries[0];
+    const targetEntry = resume.sections[1].entries.find(e => e.id === blankEntryId)!;
+    expect(sourceEntry.bullets.map(b => b.id)).toEqual([]);
+    expect(targetEntry.bullets[0].id).toBe('b1');
+  });
+  it('moveBullet to an invalid blank target does not delete source content', () => {
+    moveBullet('b1', 'missing-entry', 0, makeOrigin('drag-reorder'));
+    const resume = useResumeStore.getState().resume!;
+    expect(resume.sections[0].entries[0].bullets.map(b => b.id)).toEqual(['b1']);
   });
 });
 

@@ -7,6 +7,7 @@ import { HoverAffordance } from '../interaction/HoverAffordance';
 import { SlashMenu } from '../interaction/SlashMenu';
 import { selectionManager } from '../interaction/SelectionManager';
 import type { DropIndicatorPayload } from '../interaction/DragController';
+import { setHoverState } from '../interaction/hover-state';
 import { getAtomAbsoluteCoord } from '../layout/coords';
 import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
@@ -70,15 +71,31 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       const rootRect = root.getBoundingClientRect();
       const cursorY = e.clientY - rootRect.top;
       // Find the atom whose layout band contains cursorY.
-      let hit: AtomId | null = null;
+      let atomHit: AtomId | null = null;
       for (const [id, layout] of layouts.entries()) {
         const top = getAtomAbsoluteCoord(layout, 'edit', template).top;
         const bottom = top + layout.height;
-        if (cursorY >= top && cursorY <= bottom) { hit = id; break; }
+        if (cursorY >= top && cursorY <= bottom) { atomHit = id; break; }
       }
-      setHoveredAtomId(prev => (prev === hit ? prev : hit));
+      setHoveredAtomId(prev => (prev === atomHit ? prev : atomHit));
+
+      // Bullet hover: scan all rendered .resume-bullet <li>s for Y-band match.
+      // Cheap because there are typically <50 bullets per resume.
+      let bulletHit: BlockId | null = null;
+      const bulletEls = document.querySelectorAll('li.resume-bullet[data-block-id]');
+      for (const el of Array.from(bulletEls)) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) {
+          bulletHit = (el as HTMLElement).getAttribute('data-block-id') as BlockId;
+          break;
+        }
+      }
+      setHoverState({ atomId: atomHit, bulletId: bulletHit });
     };
-    const onLeaveRoot = () => setHoveredAtomId(null);
+    const onLeaveRoot = () => {
+      setHoveredAtomId(null);
+      setHoverState({ atomId: null, bulletId: null });
+    };
     root.addEventListener('mousemove', onMove);
     root.addEventListener('mouseleave', onLeaveRoot);
     return () => {

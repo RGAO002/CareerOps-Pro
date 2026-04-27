@@ -20,6 +20,7 @@ export function moveBullet(
     if (bullet) break;
   }
   if (!bullet) return;
+  if (!r.sections.some(s => s.entries.some(e => e.id === targetEntryId))) return;
   _pushUndo('moveBullet');
   const next = r.sections.map(s => ({
     ...s,

@@ -218,20 +218,36 @@ export function startDrag(
     if (ev.clientY > window.innerHeight - SCROLL_EDGE_PX) window.scrollBy({ top: 10 });
     const target = findNearestDropTarget(ev.clientY, block, validTargets);
     onDropIndicator(target ? { target, y: ev.clientY } : null);
-    // Publish drag-preview state so AtomContentLayer can animate atoms below
-    // the drop point downward. Bullet drops yield insertAtAtomIndex=null —
-    // we still publish (so the dragged atom fades) but no shift happens.
-    if (target) {
-      const atoms = currentAtoms();
-      const insertAtAtomIndex = dropTargetToAtomIndex(target, atoms);
-      setDragPreview({
-        draggedAtomId: block.id,
-        draggedHeight,
-        insertAtAtomIndex,
-      });
-    } else {
+
+    if (!target) {
       setDragPreview(null);
+      return;
     }
+
+    if (target.kind === 'bullet-slot' && block.kind === 'bullet') {
+      // Bullet-level preview: shift bullets within the target entry.
+      setDragPreview({
+        kind: 'bullet',
+        draggedBulletId: block.id,
+        draggedHeight,
+        srcEntryId: block.entryId,
+        dstEntryId: target.entryId,
+        dstBulletIndex: target.insertAtIndex,
+      });
+      return;
+    }
+
+    // Atom-level preview (section / entry).
+    const atoms = currentAtoms();
+    const srcAtomIndex = atoms.findIndex(a => a.sourceBlockId === block.id);
+    const dstAtomIndex = dropTargetToAtomIndex(target, atoms);
+    setDragPreview({
+      kind: 'atom',
+      draggedAtomId: block.id,
+      draggedHeight,
+      srcAtomIndex,
+      dstAtomIndex,
+    });
   };
 
   const onUp = (ev: PointerEvent) => {

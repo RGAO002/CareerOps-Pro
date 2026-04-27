@@ -10,13 +10,30 @@
 // null), so the canvas does not animate when reordering bullets within an
 // entry — bullets aren't atoms.
 
-import type { AtomId } from '../types';
+import type { AtomId, BlockId } from '../types';
 
-export type DragPreview = {
-  draggedAtomId: AtomId;             // which atom is being dragged
-  draggedHeight: number;             // its height in px (measured at drag start)
-  insertAtAtomIndex: number | null;  // atom index where it would land (or null)
-} | null;
+/**
+ * Drag preview can describe either an atom-level drag (header / section /
+ * entry — drives AtomContentLayer animation) or a bullet-level drag inside
+ * an entry (drives EntryAtomRenderer's local bullet shift).
+ */
+export type DragPreview =
+  | {
+      kind: 'atom';
+      draggedAtomId: AtomId;
+      draggedHeight: number;
+      srcAtomIndex: number;             // current index in atom list
+      dstAtomIndex: number | null;       // where it would land, or null
+    }
+  | {
+      kind: 'bullet';
+      draggedBulletId: BlockId;
+      draggedHeight: number;
+      srcEntryId: BlockId;
+      dstEntryId: BlockId;
+      dstBulletIndex: number;            // index within target entry's bullets
+    }
+  | null;
 
 let _state: DragPreview = null;
 const _listeners = new Set<(s: DragPreview) => void>();

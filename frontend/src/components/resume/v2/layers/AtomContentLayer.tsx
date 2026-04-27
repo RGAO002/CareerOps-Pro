@@ -30,16 +30,39 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
 
   useEffect(() => subscribeDragPreview(setPreview), []);
 
-  /** How many pixels to translate this atom down to "make room" at the
-   *  drop position. The dragged atom itself never shifts (it fades). */
+  /**
+   * Compute the shift offset for atom at `atomIndex`, simulating the post-move
+   * layout so atoms slide cleanly without the dragged atom's faded ghost
+   * staying behind.
+   *
+   * Algorithm (Notion-style):
+   *   - If srcIdx < dstIdx (moving DOWN): atoms in (srcIdx, dstIdx) shift UP
+   *     by H to close the source gap. Atoms ≥ dstIdx and atoms < srcIdx stay.
+   *     Net result: a slot opens at the new position; old position closes.
+   *   - If srcIdx > dstIdx (moving UP): atoms in [dstIdx, srcIdx) shift DOWN
+   *     by H to open the target slot.
+   *   - The dragged atom itself is hidden (opacity 0 + visibility hidden) —
+   *     the floating ghost shows where it's headed.
+   */
   function shiftFor(atomId: AtomId, atomIndex: number): number {
-    if (!preview) return 0;
+    if (!preview || preview.kind !== 'atom') return 0;
     if (preview.draggedAtomId === atomId) return 0;
-    if (preview.insertAtAtomIndex === null) return 0;
-    if (atomIndex >= preview.insertAtAtomIndex) {
-      return preview.draggedHeight + DROP_SLOT_GAP_PX;
+    if (preview.dstAtomIndex === null) return 0;
+    const src = preview.srcAtomIndex;
+    const dst = preview.dstAtomIndex;
+    const H = preview.draggedHeight + DROP_SLOT_GAP_PX;
+    if (src < dst) {
+      // moving down: atoms strictly between src and dst slide up
+      if (atomIndex > src && atomIndex < dst) return -H;
+    } else if (src > dst) {
+      // moving up: atoms in [dst, src) slide down
+      if (atomIndex >= dst && atomIndex < src) return H;
     }
     return 0;
+  }
+
+  function isDragged(atomId: AtomId): boolean {
+    return preview?.kind === 'atom' && preview.draggedAtomId === atomId;
   }
 
   return (
@@ -51,7 +74,7 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
         const layout = layouts.get(atom.id);
         if (!layout) return null;
         const coord = getAtomAbsoluteCoord(layout, mode, template);
-        const isDragging = preview?.draggedAtomId === atom.id;
+        const dragged = isDragged(atom.id);
         const shift = shiftFor(atom.id, idx);
         return (
           <div
@@ -61,13 +84,17 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
               top: coord.top,
               left: coord.left,
               width: layout.width,
-              pointerEvents: 'auto',
+              pointerEvents: dragged ? 'none' : 'auto',
               // Always set transform (even at 0px) so CSS can transition
-              // smoothly between values. Going from translateY(60px) → undefined
-              // doesn't animate consistently across browsers.
+              // smoothly between values.
               transform: `translateY(${shift}px)`,
-              transition: 'transform 0.18s ease-out, opacity 0.18s ease-out',
-              opacity: isDragging ? 0.3 : 1,
+              transition: 'transform 0.18s ease-out, opacity 0.12s ease-out, visibility 0s',
+              // Hide the dragged atom completely — the floating ghost shows
+              // where it's headed. visibility: hidden keeps the slot in
+              // layout (so subscribers' getBoundingClientRect stays stable)
+              // but no pixels render.
+              opacity: dragged ? 0 : 1,
+              visibility: dragged ? 'hidden' : 'visible',
               willChange: preview ? 'transform, opacity' : undefined,
             }}
           >
