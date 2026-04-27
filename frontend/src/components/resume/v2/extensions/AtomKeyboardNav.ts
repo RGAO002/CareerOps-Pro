@@ -56,12 +56,18 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         return true;
       },
       Backspace: () => {
-        // If at start of bullet AND bullet content is empty → merge with previous
+        // Notion behavior:
+        //   - cursor in middle / end → let TipTap delete previous char
+        //   - cursor at start of NON-empty bullet → no-op (don't lose content;
+        //     true "merge into previous bullet" is v2.1 territory)
+        //   - cursor at start of EMPTY bullet → delete the bullet, focus previous field
         const { from, to } = this.editor.state.selection;
-        if (from !== to) return false;
+        if (from !== to) return false;       // selection — let TipTap handle
         const isAtStart = from <= 1;
-        if (!isAtStart) return false;
-        // Delete this bullet, focus previous field
+        if (!isAtStart) return false;        // not at start — TipTap deletes char
+        const isEmpty = this.editor.state.doc.textContent.trim() === '';
+        if (!isEmpty) return false;          // non-empty + at start — preserve content
+        // Empty bullet → delete it, jump cursor to previous field
         atomFocusManager.focusPrevious(opts.field);
         deleteBullet(opts.bulletId, makeOrigin('tiptap'));
         return true;
