@@ -13,11 +13,19 @@ export function insertBullet(
   indexInEntry: number,
   contentDoc: BulletBlock['content'],
   origin: UpdateOrigin,
+  /**
+   * Optional kind for the new bullet. Defaults to 'bullet'. We only set the
+   * field on the new BulletBlock when kind === 'plain' so the default-bullet
+   * case keeps JSON minimal (and the consumer treats absence as 'bullet').
+   */
+  kind: 'bullet' | 'plain' = 'bullet',
 ): BlockId {
   const r = useResumeStore.getState().resume;
   if (!r) throw new Error('No resume hydrated');
   _pushUndo('insertBullet');
-  const newBullet: BulletBlock = { id: newId(), content: contentDoc };
+  const newBullet: BulletBlock = kind === 'plain'
+    ? { id: newId(), content: contentDoc, kind: 'plain' }
+    : { id: newId(), content: contentDoc };
   const next = r.sections.map(s => ({
     ...s,
     entries: s.entries.map(e => {

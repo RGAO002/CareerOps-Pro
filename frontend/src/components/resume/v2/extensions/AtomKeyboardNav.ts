@@ -5,6 +5,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { atomFocusManager } from '../interaction/AtomFocusManager';
 import { insertBullet } from '../store/actions/insertBlock';
 import { deleteBullet } from '../store/actions/deleteBlock';
+import { setBulletKind } from '../store/actions/setBulletKind';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin } from '../store/source-of-truth';
 import type {
@@ -78,6 +79,21 @@ function previousFieldForBackspace(
   return { kind: 'entry.meta', id: entryId };
 }
 
+/** Read the BulletBlock.kind for `bulletId`. Treats absence as 'bullet'.
+ *  Returns 'bullet' if the bullet can't be found (safe default). */
+function readBulletKind(bulletId: BlockId): 'bullet' | 'plain' {
+  const r = useResumeStore.getState().resume;
+  if (!r) return 'bullet';
+  for (const s of r.sections) {
+    for (const e of s.entries) {
+      for (const b of e.bullets) {
+        if (b.id === bulletId) return b.kind ?? 'bullet';
+      }
+    }
+  }
+  return 'bullet';
+}
+
 export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
   name: 'atomKeyboardNav',
   addOptions() {
@@ -112,8 +128,11 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         content: [suffixPara],
       };
 
+      // Propagate the current bullet's kind so Enter creates a row of the
+      // same kind (bullet stays bullet, plain stays plain).
+      const currentKind = readBulletKind(opts.bulletId);
       const newId = insertBullet(
-        opts.entryId, idx + 1, newDoc, makeOrigin('tiptap'),
+        opts.entryId, idx + 1, newDoc, makeOrigin('tiptap'), currentKind,
       );
 
       // The new bullet's editor instance won't exist until React commits
@@ -130,12 +149,14 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         return true;
       },
       Backspace: () => {
-        // Notion behavior:
+        // Notion-style outdent + delete:
         //   - cursor in middle / end → let TipTap delete previous char
         //   - cursor at start of NON-empty bullet → no-op (don't lose content;
         //     true "merge into previous bullet" is v2.1 territory)
-        //   - cursor at start of EMPTY bullet → delete the bullet, focus
-        //     END of previous field
+        //   - cursor at start of EMPTY 'bullet'-kind row → outdent to 'plain'
+        //     (cancel the marker, keep the row, keep the cursor)
+        //   - cursor at start of EMPTY 'plain'-kind row → delete the row,
+        //     focus END of previous field
         const { from, to } = this.editor.state.selection;
         if (from !== to) return false;       // selection — let TipTap handle
         const isAtStart = from <= 1;
@@ -143,8 +164,17 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         const isEmpty = this.editor.state.doc.textContent.trim() === '';
         if (!isEmpty) return false;          // non-empty + at start — preserve content
 
-        // Empty bullet → compute the previous field BEFORE deleting (the
-        // store mutation invalidates indices).
+        const kind = readBulletKind(opts.bulletId);
+        if (kind === 'bullet') {
+          // Outdent: flip to 'plain'. Don't delete, don't move focus —
+          // the cursor stays in the now-marker-less row.
+          setBulletKind(opts.bulletId, 'plain', makeOrigin('tiptap'));
+          return true;
+        }
+
+        // kind === 'plain' → empty plain row + Backspace = delete the row
+        // and land at END of the previous field. Compute previous BEFORE
+        // delete (store mutation invalidates indices).
         const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
         deleteBullet(opts.bulletId, makeOrigin('tiptap'));
         if (prev) atomFocusManager.focusFieldEnd(prev);

@@ -94,6 +94,7 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
               key={b.id}
               className="resume-bullet"
               data-block-id={b.id}
+              data-kind={b.kind ?? 'bullet'}
               style={{
                 position: 'relative',
                 transform: `translateY(${shift}px)`,

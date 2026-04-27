@@ -91,6 +91,12 @@ class HeaderBlockV2(BaseModel):
 class BulletBlockV2(BaseModel):
     id: str
     content: dict[str, Any]  # ProseMirrorBulletDoc — structure enforced by frontend
+    # 'bullet' (or None, the back-compat default) renders the standard marker;
+    # 'plain' suppresses it. Notion-style Backspace on an empty bullet flips
+    # 'bullet' → 'plain' as an outdent step before deletion. Stored as Optional
+    # so legacy v2 docs (kind absent) still parse cleanly and serialize back
+    # without a kind field.
+    kind: Optional[Literal["bullet", "plain"]] = None
     tags: Optional[List[str]] = None
     evidence_refs: Optional[List[str]] = None
 

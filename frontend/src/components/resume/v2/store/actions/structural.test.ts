@@ -12,6 +12,7 @@ import {
   deleteBullet, deleteEntry, deleteSection, deleteContactLine,
 } from './deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from './duplicateBlock';
+import { setBulletKind } from './setBulletKind';
 import type { ResumeDoc } from '../../types';
 
 const RESUME: ResumeDoc = {
@@ -89,6 +90,24 @@ describe('insert actions', () => {
   it('insertBullet at index', () => {
     insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets).toHaveLength(2);
+  });
+
+  it('insertBullet without kind defaults to bullet (kind field absent)', () => {
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
+    const newBullet = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(newBullet.kind).toBeUndefined();
+  });
+
+  it('insertBullet with kind="plain" produces a plain bullet', () => {
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'), 'plain');
+    const newBullet = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(newBullet.kind).toBe('plain');
+  });
+
+  it('insertBullet with kind="bullet" omits the kind field (back-compat default)', () => {
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'), 'bullet');
+    const newBullet = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(newBullet.kind).toBeUndefined();
   });
 });
 
@@ -212,5 +231,39 @@ describe('duplicate actions reassign all ids', () => {
     expect(sections[1].id).toBe(newSectionId);
     expect(sections[1].entries[0].id).not.toBe('e1');
     expect(sections[1].entries[0].bullets[0].id).not.toBe('b1');
+  });
+});
+
+describe('setBulletKind', () => {
+  it('flips an absent-kind bullet to plain (sets the kind field)', () => {
+    setBulletKind('b1', 'plain', makeOrigin('tiptap'));
+    const b = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(b.kind).toBe('plain');
+  });
+
+  it('flips a plain bullet back to bullet (drops the kind field for clean JSON)', () => {
+    setBulletKind('b1', 'plain', makeOrigin('tiptap'));
+    setBulletKind('b1', 'bullet', makeOrigin('tiptap'));
+    const b = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(b.kind).toBeUndefined();
+  });
+
+  it('is undoable: undo restores the previous kind', () => {
+    setBulletKind('b1', 'plain', makeOrigin('tiptap'));
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].kind).toBe('plain');
+    useResumeStore.getState().undo();
+    const b = useResumeStore.getState().resume!.sections[0].entries[0].bullets[0];
+    expect(b.kind).toBeUndefined();
+  });
+
+  it('no-ops when the bullet already has the requested kind', () => {
+    // Initial kind is absent → 'bullet' default. setBulletKind('bullet')
+    // should not modify the bullet (no undo entry created — undo would
+    // restore the same state anyway, but more importantly nothing changed).
+    const before = useResumeStore.getState().resume!;
+    setBulletKind('b1', 'bullet', makeOrigin('tiptap'));
+    const after = useResumeStore.getState().resume!;
+    // Same reference → no setState happened
+    expect(after).toBe(before);
   });
 });

@@ -108,6 +108,13 @@
   background: #9ca3af;
 }
 
+/* Notion-style outdent: a bullet whose `kind` was flipped to 'plain' renders
+   without a marker and without the marker's reserved gutter. The row still
+   occupies space and remains focusable/editable. Applies in BOTH edit and
+   export/print modes since both go through the same renderer. */
+[data-canvas-root] .resume-bullet[data-kind="plain"]::before { content: none; }
+[data-canvas-root] .resume-bullet[data-kind="plain"] { padding-left: 0; }
+
 /* ── Inline marks ───────────────────────────────────── */
 [data-canvas-root] strong {
   color: #111827;

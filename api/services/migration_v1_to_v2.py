@@ -76,6 +76,11 @@ def migrate_bullet(node: dict, id_map: dict) -> dict:
     inline_content = node.get("content", []) or []
     # v1 bullets had inline text directly under the bullet; wrap in a paragraph
     # so v2's stored ProseMirrorBulletDoc is a complete doc node.
+    #
+    # NOTE on `kind`: v2 BulletBlock has an optional kind: 'bullet' | 'plain'
+    # (added for Notion-style outdent on Backspace). We deliberately leave it
+    # absent here — both the frontend and backend treat absence as 'bullet',
+    # so omitting it keeps migrated JSON minimal and back-compat clean.
     return {
         "id": bullet_id,
         "content": {

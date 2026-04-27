@@ -38,6 +38,14 @@ export type EntryBlock = {
 export type BulletBlock = {
   id: BlockId;
   content: ProseMirrorBulletDoc;
+  /**
+   * 'bullet' (or absent — back-compat default) renders the standard ::before
+   * marker. 'plain' suppresses the marker so the row reads as a continuation
+   * line. Notion-style Backspace at the start of an empty bullet flips
+   * 'bullet' → 'plain' as an outdent step before the next Backspace deletes
+   * the row.
+   */
+  kind?: 'bullet' | 'plain';
   tags?: string[];
   evidence_refs?: string[];
 };
