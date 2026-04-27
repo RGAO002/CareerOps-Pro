@@ -50,27 +50,42 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     setOutlineTick(t => t + 1);
   }, [layouts]);
 
-  // Document-level event delegation: figure out which atom the cursor is over
-  // by walking up from the event target to the nearest [data-atom-id].
+  // Document-level hover detection: figure out which atom the cursor is over.
+  // We use mousemove + Y-coordinate matching against atom layouts, NOT
+  // event-target walking. Reason: the gutter (where ⋮⋮ lives) sits at
+  // left:-28 with pointerEvents:'none' until hovered → before hover,
+  // mouseover targets pass through to the page card / canvas root, which
+  // has no [data-atom-id], which would clear the hover state right when
+  // the user is reaching for the ⋮⋮.
+  //
+  // Y-coordinate matching ignores X entirely, so the ⋮⋮ in the gutter is
+  // treated as "still on the same atom row" — hover stays put as the
+  // cursor crosses from content into gutter.
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const root = document.querySelector('[data-canvas-root]');
+    const root = document.querySelector('[data-canvas-root]') as HTMLElement | null;
     if (!root) return;
-    const onOver = (e: Event) => {
-      const tgt = e.target as HTMLElement | null;
-      if (!tgt || typeof tgt.closest !== 'function') return;
-      const atomEl = tgt.closest('[data-atom-id]') as HTMLElement | null;
-      const id = (atomEl?.getAttribute('data-atom-id') as AtomId | null) ?? null;
-      setHoveredAtomId(id);
+
+    const onMove = (e: MouseEvent) => {
+      const rootRect = root.getBoundingClientRect();
+      const cursorY = e.clientY - rootRect.top;
+      // Find the atom whose layout band contains cursorY.
+      let hit: AtomId | null = null;
+      for (const [id, layout] of layouts.entries()) {
+        const top = getAtomAbsoluteCoord(layout, 'edit', template).top;
+        const bottom = top + layout.height;
+        if (cursorY >= top && cursorY <= bottom) { hit = id; break; }
+      }
+      setHoveredAtomId(prev => (prev === hit ? prev : hit));
     };
     const onLeaveRoot = () => setHoveredAtomId(null);
-    root.addEventListener('mouseover', onOver);
+    root.addEventListener('mousemove', onMove);
     root.addEventListener('mouseleave', onLeaveRoot);
     return () => {
-      root.removeEventListener('mouseover', onOver);
+      root.removeEventListener('mousemove', onMove);
       root.removeEventListener('mouseleave', onLeaveRoot);
     };
-  }, []);
+  }, [layouts, template]);
 
   return (
     <div

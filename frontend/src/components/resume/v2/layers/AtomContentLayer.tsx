@@ -62,9 +62,13 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
               left: coord.left,
               width: layout.width,
               pointerEvents: 'auto',
-              transform: shift ? `translateY(${shift}px)` : undefined,
+              // Always set transform (even at 0px) so CSS can transition
+              // smoothly between values. Going from translateY(60px) → undefined
+              // doesn't animate consistently across browsers.
+              transform: `translateY(${shift}px)`,
               transition: 'transform 0.18s ease-out, opacity 0.18s ease-out',
               opacity: isDragging ? 0.3 : 1,
+              willChange: preview ? 'transform, opacity' : undefined,
             }}
           >
             <AtomRenderer atom={atom} resume={resume} mode={mode} registry={registry} />
