@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import Text from '@tiptap/extension-text';
+import Bold from '@tiptap/extension-bold';
+import Italic from '@tiptap/extension-italic';
 import Link from '@tiptap/extension-link';
 import { UndoRedo } from '@tiptap/extensions';
 
@@ -31,6 +33,8 @@ export function ContactLinesField({ index, items, mode }: Props) {
     extensions: [
       SingleLineWithMarksDocument,
       Text,
+      Bold,
+      Italic,
       Link.configure({ openOnClick: false }),
       NoNewline,
       ...(mode === 'edit' ? [UndoRedo] : []),
