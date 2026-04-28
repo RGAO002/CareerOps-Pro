@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/moveSection.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 export function moveSection(
@@ -9,6 +10,10 @@ export function moveSection(
 ): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  if (useAILockStore.getState().isLocked(sectionId)) {
+    console.warn(`[ai-lock] suppressed moveSection(${sectionId}) — locked`);
+    return;
+  }
   const srcIdx = r.sections.findIndex(s => s.id === sectionId);
   if (srcIdx < 0) return;
 

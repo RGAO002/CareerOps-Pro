@@ -240,3 +240,19 @@
   0%   { opacity: 0; }
   100% { opacity: 1; }
 }
+
+/* Bullet drop settle mirrors atom-settle's opacity cue, but intentionally avoids
+   transform so it cannot fight the per-bullet translateY preview style. */
+@keyframes bullet-settle {
+  0%   { opacity: 0.45; }
+  100% { opacity: 1; }
+}
+
+/* AI soft lock pulse (spec § 6.2 / Task 19): subtle outline-color pulse on
+   atoms whose source block is AI-locked. Paired with opacity: 0.55 + accent
+   outline applied inline by AtomContentLayer. The animation runs slowly so it
+   reads as "in flight" rather than "error". */
+@keyframes ai-lock-pulse {
+  0%, 100% { outline-color: rgba(212, 155, 94, 0.4); }
+  50%      { outline-color: rgba(212, 155, 94, 1.0); }
+}

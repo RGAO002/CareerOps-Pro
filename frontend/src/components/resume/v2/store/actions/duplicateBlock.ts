@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/duplicateBlock.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 function newId(): BlockId { return crypto.randomUUID(); }
@@ -21,6 +22,10 @@ function reassignIds(node: any): any {
 export function duplicateBullet(id: BlockId, origin: UpdateOrigin): BlockId | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed duplicateBullet(${id}) — locked`);
+    return null;
+  }
   for (const s of r.sections) {
     for (const e of s.entries) {
       const idx = e.bullets.findIndex(b => b.id === id);
@@ -45,6 +50,10 @@ export function duplicateBullet(id: BlockId, origin: UpdateOrigin): BlockId | nu
 export function duplicateEntry(id: BlockId, origin: UpdateOrigin): BlockId | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed duplicateEntry(${id}) — locked`);
+    return null;
+  }
   for (const s of r.sections) {
     const idx = s.entries.findIndex(e => e.id === id);
     if (idx < 0) continue;
@@ -65,6 +74,10 @@ export function duplicateEntry(id: BlockId, origin: UpdateOrigin): BlockId | nul
 export function duplicateSection(id: BlockId, origin: UpdateOrigin): BlockId | null {
   const r = useResumeStore.getState().resume;
   if (!r) return null;
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed duplicateSection(${id}) — locked`);
+    return null;
+  }
   const idx = r.sections.findIndex(s => s.id === id);
   if (idx < 0) return null;
   _pushUndo('duplicateSection');

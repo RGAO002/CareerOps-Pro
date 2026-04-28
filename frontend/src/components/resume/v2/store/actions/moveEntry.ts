@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/moveEntry.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 export function moveEntry(
@@ -10,6 +11,11 @@ export function moveEntry(
 ): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  const lock = useAILockStore.getState();
+  if (lock.isLocked(entryId) || lock.isLocked(targetSectionId)) {
+    console.warn(`[ai-lock] suppressed moveEntry(${entryId}) — locked`);
+    return;
+  }
   let entry: any = null;
   let sourceSectionId: BlockId | null = null;
   let srcIdxInSection = -1;

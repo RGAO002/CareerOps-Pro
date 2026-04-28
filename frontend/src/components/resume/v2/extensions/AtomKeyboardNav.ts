@@ -7,6 +7,7 @@ import { insertBullet } from '../store/actions/insertBlock';
 import { deleteBullet } from '../store/actions/deleteBlock';
 import { setBulletKind } from '../store/actions/setBulletKind';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { makeOrigin } from '../store/source-of-truth';
 import type {
   BlockId, EditableField, ProseMirrorBulletDoc, ProseMirrorParagraph,
@@ -109,6 +110,12 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
       if (!entry) return false;
       const idx = entry.bullets.findIndex(b => b.id === opts.bulletId);
       if (idx < 0) return false;
+      // ★ AI lock guard (spec § 6.2 / Task 19 Step 5a): suppress structural
+      // insertBullet when the entry (or current bullet) is AI-locked.
+      const lock = useAILockStore.getState();
+      if (lock.isLocked(opts.entryId) || lock.isLocked(opts.bulletId)) {
+        return true; // swallow Enter; suppress no-op
+      }
 
       const { from } = editor.state.selection;
       const para = editor.state.doc.firstChild;

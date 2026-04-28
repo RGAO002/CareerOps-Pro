@@ -1,10 +1,17 @@
 // frontend/src/components/resume/v2/store/actions/deleteBlock.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 export function deleteSection(id: BlockId, origin: UpdateOrigin): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  // ★ AI lock guard (spec § 6.2 / Task 19 Step 5g): defensive last-line of
+  // defense — the UI guards should already have suppressed this call.
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed deleteSection(${id}) — locked`);
+    return;
+  }
   _pushUndo('deleteSection');
   useResumeStore.setState({
     resume: { ...r, sections: r.sections.filter(s => s.id !== id),
@@ -15,6 +22,10 @@ export function deleteSection(id: BlockId, origin: UpdateOrigin): void {
 export function deleteEntry(id: BlockId, origin: UpdateOrigin): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed deleteEntry(${id}) — locked`);
+    return;
+  }
   _pushUndo('deleteEntry');
   useResumeStore.setState({
     resume: { ...r,
@@ -26,6 +37,10 @@ export function deleteEntry(id: BlockId, origin: UpdateOrigin): void {
 export function deleteBullet(id: BlockId, origin: UpdateOrigin): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  if (useAILockStore.getState().isLocked(id)) {
+    console.warn(`[ai-lock] suppressed deleteBullet(${id}) — locked`);
+    return;
+  }
   _pushUndo('deleteBullet');
   useResumeStore.setState({
     resume: { ...r,

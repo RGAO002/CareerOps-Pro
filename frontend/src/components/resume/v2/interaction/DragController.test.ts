@@ -6,10 +6,12 @@ import {
   findNearestDropTarget,
   resetDropTargetHysteresis,
   buildHypotheticalAtoms,
+  startDrag,
   type DropTarget,
 } from './DragController';
 import { projectAtoms } from '../layout/atoms-projection';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { makeOrigin, _resetTransactionCounter } from '../store/source-of-truth';
 import type { ResumeDoc } from '../types';
 
@@ -473,5 +475,47 @@ describe('findNearestDropTarget hysteresis', () => {
       if (t && t.kind === 'bullet-slot') seen.add(t.insertAtIndex);
     }
     expect([...seen]).toEqual([0]);
+  });
+});
+
+/* ─── AI lock blocks drag (spec § 6.2 / Task 19) ──────────────────────────
+ *
+ * When the AI lock store has the source block (or its parent) flagged as
+ * locked, startDrag must return a no-op session BEFORE setPointerCapture or
+ * any pointer-event listeners attach. No preview, no commit, no undo entry.
+ */
+describe('AI lock blocks drag (spec § 6.2)', () => {
+  beforeEach(() => {
+    useResumeStore.setState({ resume: structuredClone(RESUME), bulletMeta: {} });
+    useResumeStore.getState()._undo.clear();
+    _resetTransactionCounter();
+    useAILockStore.setState({ lockedBlockIds: new Set() });
+  });
+
+  afterEach(() => {
+    useAILockStore.setState({ lockedBlockIds: new Set() });
+  });
+
+  it('startDrag returns a no-op session when block is locked', () => {
+    useAILockStore.getState().lock(['e1']);
+    // Build a fake handle element + pointer event:
+    const handleEl = document.createElement('div');
+    document.body.appendChild(handleEl);
+    handleEl.setPointerCapture = () => {};
+    handleEl.releasePointerCapture = () => {};
+    const session = startDrag(
+      { pointerId: 1, clientX: 0, clientY: 0 } as unknown as PointerEvent,
+      handleEl,
+      { kind: 'entry', id: 'e1', sectionId: 's1' },
+      () => {},
+    );
+    // Move + up — nothing should happen, no preview / no selection / no commit.
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 100, clientY: 100 }));
+    window.dispatchEvent(new MouseEvent('pointerup'));
+    // No undo entry should have appeared:
+    expect(useResumeStore.getState()._undo.canUndo()).toBe(false);
+    // And the returned session is a no-op shape (cancel callable, nothing else).
+    expect(typeof session.cancel).toBe('function');
+    handleEl.remove();
   });
 });

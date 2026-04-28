@@ -10,6 +10,7 @@ import {
   getRecentlyDroppedId,
   subscribeRecentlyDropped,
 } from '../interaction/drag-preview-state';
+import { useAILockStore } from '@/stores/aiLock';
 import type { LayoutAtom, AtomLayout, AtomId, BlockId, ResumeDoc, CanvasMode } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
 import type { AtomElementRegistry } from '../layout/AtomElementRegistry';
@@ -61,6 +62,12 @@ export function buildPageClipPath(
 export function AtomContentLayer({ atoms, layouts, resume, mode, template, registry }: Props) {
   const [preview, setPreview] = useState<DragPreview>(getDragPreview());
   const [recentlyDroppedId, setRecentlyDroppedIdState] = useState<BlockId | null>(getRecentlyDroppedId());
+  // ★ AI soft lock visual (spec § 6.2 / Task 19): subscribe to the locked
+  // block id set so each per-atom render can paint a low-opacity, pulsing
+  // border on locked atoms. NO `pointerEvents: 'none'` — locked blocks must
+  // remain selectable; input gating happens at editor + structural-mutation
+  // entry points.
+  const lockedSet = useAILockStore((s) => s.lockedBlockIds);
 
   useEffect(() => subscribeDragPreview(setPreview), []);
   useEffect(() => subscribeRecentlyDropped(setRecentlyDroppedIdState), []);
@@ -255,6 +262,16 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
         const settleStyle: React.CSSProperties = justDropped
           ? { animation: 'atom-settle 0.24s ease-out' }
           : {};
+        // ★ AI soft lock visual (spec § 6.2 / Task 19): low opacity + accent
+        // border + slow pulse on atoms whose source block is AI-locked. NO
+        // pointerEvents: 'none' — locked blocks remain selectable.
+        const isLocked = lockedSet.has(atom.sourceBlockId);
+        const lockStyle: React.CSSProperties = isLocked ? {
+          opacity: 0.55,
+          outline: '1px solid #d49b5e',
+          outlineOffset: 2,
+          animation: 'ai-lock-pulse 1.6s ease-in-out infinite',
+        } : {};
         return (
           <div
             key={atom.id}
@@ -271,11 +288,12 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
               ...(justDropped ? {} : { transform: `translateY(${shift}px)` }),
               ...animationStyle,
               ...settleStyle,
+              ...lockStyle,
               // Hide the dragged atom completely — the floating ghost shows
               // where it's headed. visibility: hidden keeps the slot in
               // layout (so subscribers' getBoundingClientRect stays stable)
               // but no pixels render.
-              opacity: dragged ? 0 : 1,
+              opacity: dragged ? 0 : (isLocked ? 0.55 : 1),
               visibility: dragged ? 'hidden' : 'visible',
               willChange: (preview || justDropped) ? 'transform, opacity' : undefined,
             }}

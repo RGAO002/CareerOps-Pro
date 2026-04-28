@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/moveBullet.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 export function moveBullet(
@@ -10,6 +11,13 @@ export function moveBullet(
 ): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  // ★ AI lock guard (spec § 6.2 / Task 19 Step 5g): suppress when source
+  // bullet OR destination entry is AI-locked.
+  const lock = useAILockStore.getState();
+  if (lock.isLocked(bulletId) || lock.isLocked(targetEntryId)) {
+    console.warn(`[ai-lock] suppressed moveBullet(${bulletId}) — locked`);
+    return;
+  }
   let bullet: any = null;
   let sourceEntryId: BlockId | null = null;
   let srcIdxInEntry = -1;

@@ -1,6 +1,7 @@
 // frontend/src/components/resume/v2/interaction/DragController.ts
 import type { AtomId, AtomLayout, BlockId, LayoutAtom, SelectableBlock, UpdateOrigin } from '../types';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { makeOrigin } from '../store/source-of-truth';
 import { moveSection } from '../store/actions/moveSection';
 import { moveEntry } from '../store/actions/moveEntry';
@@ -206,6 +207,19 @@ export function isNoopTargetFor(block: SelectableBlock, target: DropTarget): boo
 }
 
 export function commitDrop(block: SelectableBlock, target: DropTarget, origin: UpdateOrigin): void {
+  // ★ AI lock guard (spec § 6.2 / Task 19): defensive — startDrag should
+  // already have returned a no-op session, but if a race somehow gets here,
+  // no-op rather than mutate.
+  const lockedAtCommit = useAILockStore.getState();
+  const sourceId = block.kind === 'header-row' ? block.headerId : block.id;
+  const targetParentId =
+    target.kind === 'entry-slot' ? target.sectionId :
+    target.kind === 'bullet-slot' ? target.entryId :
+    target.kind === 'header-row-slot' ? target.headerId :
+    null;
+  if (lockedAtCommit.isLocked(sourceId) || (targetParentId && lockedAtCommit.isLocked(targetParentId))) {
+    return;
+  }
   if (target.kind === 'section-slot' && block.kind === 'section') {
     moveSection(block.id, target.insertBeforeSectionId, origin);
   } else if (target.kind === 'entry-slot' && block.kind === 'entry') {
@@ -554,6 +568,19 @@ export function startDrag(
   block: SelectableBlock,
   onDropIndicator: (payload: DropIndicatorPayload) => void,
 ): DragSession {
+  // ★ AI lock guard (spec § 6.2): if the source block (or its parent) is
+  // locked by an in-flight AI run, return a no-op session — pointer events
+  // ignored, no preview, no commit. This prevents the user from dragging
+  // blocks AI is mutating. Defensive secondary check lives in commitDrop.
+  const locked = useAILockStore.getState();
+  const sourceId = block.kind === 'header-row' ? block.headerId : block.id;
+  if (
+    locked.isLocked(sourceId) ||
+    (block.kind === 'entry' && locked.isLocked(block.sectionId)) ||
+    (block.kind === 'bullet' && locked.isLocked(block.entryId))
+  ) {
+    return { cancel: () => {} };
+  }
   handleEl.setPointerCapture(e.pointerId);
   const startX = e.clientX, startY = e.clientY;
   let dragStarted = false;

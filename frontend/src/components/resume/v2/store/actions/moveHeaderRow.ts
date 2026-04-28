@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { effectiveHeaderRowOrder } from '../header-order';
 import type { UpdateOrigin } from '../../types';
 
@@ -20,6 +21,12 @@ export function moveHeaderRow(
 ): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  // ★ AI lock guard: rowKey isn't a block id (it's "name" / "contact:N"), but
+  // the header itself has an id — if AI is mutating the header, suppress.
+  if (useAILockStore.getState().isLocked(r.header.id)) {
+    console.warn(`[ai-lock] suppressed moveHeaderRow(${rowKey}) — header locked`);
+    return;
+  }
   const current = effectiveHeaderRowOrder(r.header);
   // The row must already exist in the effective order (otherwise this drag
   // can't have started — defensive guard).

@@ -3,6 +3,7 @@ import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import { insertBullet, insertEntry, insertSection } from '../store/actions/insertBlock';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { makeOrigin } from '../store/source-of-truth';
 import type { BlockId } from '../types';
 
@@ -45,7 +46,11 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
         command: ({ editor, range, props }) => {
           const item = props as SlashItem;
           editor.chain().focus().deleteRange(range).run();
+          // ★ AI lock guard (spec § 6.2 / Task 19 Step 5e): suppress slash-
+          // command structural inserts when the parent block is AI-locked.
+          const lock = useAILockStore.getState();
           if (item.id === 'bullet') {
+            if (lock.isLocked(opts.entryId) || lock.isLocked(opts.bulletId)) return;
             const r = useResumeStore.getState().resume;
             if (!r) return;
             const entry = r.sections.flatMap(s => s.entries).find(e => e.id === opts.entryId);
@@ -55,8 +60,11 @@ export const SlashCommand = Extension.create<SlashCommandOptions>({
               makeOrigin('tiptap'),
             );
           } else if (item.id === 'entry') {
+            if (lock.isLocked(opts.sectionId)) return;
             insertEntry(opts.sectionId, 9999, makeOrigin('tiptap'));
           } else if (item.id === 'heading') {
+            // No section parent to gate on — section insertion is always
+            // top-level — no guard.
             insertSection('custom', null, makeOrigin('tiptap'));
           }
         },

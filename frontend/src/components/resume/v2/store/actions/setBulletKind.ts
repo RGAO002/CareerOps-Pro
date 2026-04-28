@@ -1,5 +1,6 @@
 // frontend/src/components/resume/v2/store/actions/setBulletKind.ts
 import { useResumeStore, _pushUndo } from '../useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import type { BlockId, UpdateOrigin } from '../../types';
 
 /**
@@ -17,6 +18,10 @@ export function setBulletKind(
 ): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
+  if (useAILockStore.getState().isLocked(bulletId)) {
+    console.warn(`[ai-lock] suppressed setBulletKind(${bulletId}) — locked`);
+    return;
+  }
 
   // Find the bullet first so we can no-op if there's nothing to change.
   let found = false;

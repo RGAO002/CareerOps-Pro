@@ -11,6 +11,7 @@ import {
   deleteEntry, deleteSection, deleteContactLine,
 } from '../store/actions/deleteBlock';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { makeOrigin } from '../store/source-of-truth';
 import type { BlockId, EditableField } from '../types';
 
@@ -157,6 +158,10 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
 
     const handleEnter = (): boolean => {
       const origin = makeOrigin('tiptap');
+      // ★ AI lock guard (spec § 6.2 / Task 19 Step 5b): suppress every
+      // structural insert path when the parent block is AI-locked. Selection
+      // / cursor itself remains active per § 6.2.
+      const lock = useAILockStore.getState();
 
       switch (field.kind) {
         case 'header.name': {
@@ -176,6 +181,7 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
           return true;
         }
         case 'section.heading': {
+          if (lock.isLocked(field.id)) return true;
           // Insert a new entry at the START of this section's entries, then
           // focus its first bullet.
           const { entryId: _newEntryId, firstBulletId } = insertEntry(
@@ -190,6 +196,7 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
         }
         case 'entry.title':
         case 'entry.meta': {
+          if (lock.isLocked(field.id)) return true;
           const newId = insertBullet(
             field.id, 0,
             EMPTY_BULLET_DOC,
@@ -207,6 +214,7 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
     const handleBackspace = (editor: Editor): boolean => {
       // Mid-text or with selection: let TipTap delete normally.
       if (!isAtStartOfEmpty(editor)) return false;
+      const lock = useAILockStore.getState();
 
       switch (field.kind) {
         case 'header.name':
@@ -219,6 +227,7 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
           return true;
         }
         case 'section.heading': {
+          if (lock.isLocked(field.id)) return true;
           const sec = findSection(field.id);
           if (!sec) return false;
           // Conservative rule: only delete an empty section. If it still has
@@ -235,6 +244,7 @@ export const SingleLineKeyboardNav = Extension.create<SingleLineKeyboardNavOptio
           return true;
         }
         case 'entry.title': {
+          if (lock.isLocked(field.id)) return true;
           const info = findEntry(field.id);
           if (!info) return false;
           const prev = previousFieldFor(field);

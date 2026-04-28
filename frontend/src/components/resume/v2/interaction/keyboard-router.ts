@@ -1,6 +1,7 @@
 // frontend/src/components/resume/v2/interaction/keyboard-router.ts
 import { atomFocusManager } from './AtomFocusManager';
 import { useResumeStore } from '../store/useResumeStore';
+import { useAILockStore } from '@/stores/aiLock';
 import { selectionManager } from './SelectionManager';
 import { deleteBullet, deleteEntry, deleteSection } from '../store/actions/deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from '../store/actions/duplicateBlock';
@@ -72,7 +73,12 @@ function deleteSelectedBlocks(): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
   const ids = selectionManager.getBlocks();
+  const lock = useAILockStore.getState();
   for (const id of ids) {
+    // ★ AI lock guard (spec § 6.2 / Task 19 Step 5c): selection itself is
+    // permitted on locked blocks ("locked blocks remain selectable") — but
+    // mutation triggered FROM a multi-block selection must skip locked ids.
+    if (lock.isLocked(id)) continue;
     if (r.sections.some(s => s.id === id)) deleteSection(id, makeOrigin('tiptap'));
     else if (r.sections.flatMap(s => s.entries).some(e => e.id === id)) deleteEntry(id, makeOrigin('tiptap'));
     else deleteBullet(id, makeOrigin('tiptap'));
@@ -84,7 +90,9 @@ function duplicateSelectedBlocks(): void {
   const r = useResumeStore.getState().resume;
   if (!r) return;
   const ids = selectionManager.getBlocks();
+  const lock = useAILockStore.getState();
   for (const id of ids) {
+    if (lock.isLocked(id)) continue;
     if (r.sections.some(s => s.id === id)) duplicateSection(id, makeOrigin('tiptap'));
     else if (r.sections.flatMap(s => s.entries).some(e => e.id === id)) duplicateEntry(id, makeOrigin('tiptap'));
     else duplicateBullet(id, makeOrigin('tiptap'));
