@@ -16,6 +16,11 @@ import { PanelCompact }   from "./PanelCompact";
 import { PanelExpanded }  from "./PanelExpanded";
 import { C } from "./colors";
 
+// FastAPI backend default; override via NEXT_PUBLIC_API_BASE.
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
+  'http://localhost:8000';
+
 const HEIGHT_MAP: Record<AiPanelState, string> = {
   collapsed: "44px",
   compact:   "340px",
@@ -82,7 +87,7 @@ export function AIChatPanel() {
 
     let runId: string;
     try {
-      const r = await fetch("/api/ai/run", {
+      const r = await fetch(`${API_BASE}/api/ai/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

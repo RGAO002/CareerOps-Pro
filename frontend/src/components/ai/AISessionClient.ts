@@ -22,8 +22,13 @@ export interface AISessionCallbacks {
  *
  * Returns a cleanup function the caller invokes on unmount.
  */
+// FastAPI backend default; override via NEXT_PUBLIC_API_BASE for staging/prod.
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
+  'http://localhost:8000';
+
 export function runSSEStream(runId: string, cb: AISessionCallbacks): () => void {
-  const es = new EventSource(`/api/ai/runs/${runId}/events`);
+  const es = new EventSource(`${API_BASE}/api/ai/runs/${runId}/events`);
   let lockedBlocksByAgent: Record<string, string[]> = {};
 
   es.addEventListener('agent.started', (e: MessageEvent) => {

@@ -68,6 +68,12 @@ export function suggestionBlockId(s: Suggestion): BlockId {
   }
 }
 
+// Same API base resolver as flush-save.ts: dev defaults to localhost:8000
+// where FastAPI runs; override via NEXT_PUBLIC_API_BASE for staging/prod.
+const API_BASE =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
+  'http://localhost:8000';
+
 interface SuggestionStoreState {
   byId: Record<string, Suggestion>;
   byRun: Record<string, string[]>;
@@ -84,7 +90,7 @@ export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
 
   hydrate: async (resumeId: string) => {
     const params = new URLSearchParams({ resumeId, status: 'pending,streaming' });
-    const r = await fetch(`/api/ai/suggestions?${params}`, { method: 'GET' });
+    const r = await fetch(`${API_BASE}/api/ai/suggestions?${params}`, { method: 'GET' });
     if (!r.ok) return;
     const body = await r.json();
     const byId: Record<string, Suggestion> = {};
@@ -125,7 +131,7 @@ export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
   },
 
   postStatusToBackend: async (id: string, status: SuggestionStatus) => {
-    const r = await fetch(`/api/ai/suggestions/${id}/status`, {
+    const r = await fetch(`${API_BASE}/api/ai/suggestions/${id}/status`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
