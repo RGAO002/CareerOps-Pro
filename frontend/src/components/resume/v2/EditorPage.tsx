@@ -10,6 +10,9 @@ import { atomFocusManager } from './interaction/AtomFocusManager';
 import { selectionManager } from './interaction/SelectionManager';
 import { getTemplate } from './templates/registry';
 import type { ResumeDoc } from './types';
+import { usePageContext } from '@/hooks/usePageContext';
+import { AISidebar } from '@/components/ai/AISidebar';
+import { useSuggestionStore } from '@/stores/aiSuggestion';
 
 interface Props {
   initialResume: ResumeDoc;
@@ -45,6 +48,20 @@ export function EditorPage({ initialResume }: Props) {
     return () => { stopSave(); stopKbd(); stopFocusClear(); };
   }, [initialResume]);
 
+  // Register page context for the global AI panel:
+  usePageContext({
+    page: 'resume_editor',
+    summary: resume
+      ? `正在编辑「${resume.title || '未命名'}」简历，目标 ${resume.metadata?.target_company ?? resume.metadata?.target_role ?? '未指定'}`
+      : '加载中…',
+    data: resume ? { resumeId: resume.id, title: resume.title } : undefined,
+  });
+
+  // Hydrate suggestions when resume changes:
+  useEffect(() => {
+    if (resume) useSuggestionStore.getState().hydrate(resume.id);
+  }, [resume?.id]);
+
   if (!hydrated || !resume) {
     return (
       <AppShell>
@@ -55,17 +72,20 @@ export function EditorPage({ initialResume }: Props) {
   const template = getTemplate(resume.template_id);
 
   return (
-    <AppShell>
-      <EditorTopBar resumeId={resume.id} pageCount={pageCount} />
-      <div className="bg-neutral-100 py-6">
-        <ResumeDocumentCanvas
-          resume={resume}
-          template={template}
-          mode="edit"
-          hideInteractionLayer={hideInteraction}
-          onPageCountChange={setPageCount}
-        />
-      </div>
-    </AppShell>
+    <>
+      <AppShell>
+        <EditorTopBar resumeId={resume.id} pageCount={pageCount} />
+        <div className="bg-neutral-100 py-6">
+          <ResumeDocumentCanvas
+            resume={resume}
+            template={template}
+            mode="edit"
+            hideInteractionLayer={hideInteraction}
+            onPageCountChange={setPageCount}
+          />
+        </div>
+      </AppShell>
+      <AISidebar />
+    </>
   );
 }

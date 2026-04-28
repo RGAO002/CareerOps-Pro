@@ -1,5 +1,9 @@
 // frontend/src/stores/aiSuggestion.ts
 import { create } from 'zustand';
+import {
+  _registerAiApplyUndoCallback,
+  type AiApplyUndoDirection,
+} from '@/components/resume/v2/store/useResumeStore';
 
 // Mirror types from backend services/ai/types.py — discriminated union on `op`.
 type BlockId = string;
@@ -125,3 +129,21 @@ export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
     return r.json();
   },
 }));
+
+/** Install the AI-apply undo callback once on module load. Called by:
+ *  - undo() after popping an aiApply entry (direction='undo'): flip suggestions back to 'pending'
+ *  - redo() before swap (direction='redo:precheck'): return true iff all are pending
+ *  - redo() after swap (direction='redo'): flip back to 'accepted'
+ */
+_registerAiApplyUndoCallback((suggestionIds: string[], direction: AiApplyUndoDirection) => {
+  const store = useSuggestionStore.getState();
+  if (direction === 'redo:precheck') {
+    return store.allInRunArePending(suggestionIds);
+  }
+  const targetStatus = direction === 'undo' ? 'pending' : 'accepted';
+  for (const id of suggestionIds) {
+    store.markStatusLocally(id, targetStatus);
+    // Fire-and-forget the backend status update:
+    store.postStatusToBackend(id, targetStatus).catch(() => {});
+  }
+});

@@ -3,6 +3,7 @@
 import { DragHandle } from '../interaction/DragHandle';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId } from '../types';
+import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
 
 interface Props {
   bulletId: BlockId;
@@ -25,6 +26,10 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
   return (
     <div
       data-edit-only
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useAISidebarUIStore.getState().open(bulletId);
+      }}
       style={{
         position: 'absolute',
         left: -28,

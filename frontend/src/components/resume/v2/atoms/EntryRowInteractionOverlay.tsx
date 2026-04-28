@@ -4,6 +4,7 @@ import { DragHandle } from '../interaction/DragHandle';
 import { useResumeStore } from '../store/useResumeStore';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId, SelectableBlock } from '../types';
+import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
 
 interface Props {
   entryId: BlockId;
@@ -45,6 +46,10 @@ export function EntryRowInteractionOverlay({
     <div
       data-edit-only
       data-row-handle-field={field}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useAISidebarUIStore.getState().open(entryId);
+      }}
       style={{
         position: 'absolute',
         left: -28,

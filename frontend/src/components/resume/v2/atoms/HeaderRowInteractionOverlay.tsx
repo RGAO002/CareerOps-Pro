@@ -3,6 +3,7 @@
 import { DragHandle } from '../interaction/DragHandle';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId, SelectableBlock } from '../types';
+import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
 
 interface Props {
   headerId: BlockId;
@@ -34,6 +35,10 @@ export function HeaderRowInteractionOverlay({
     <div
       data-edit-only
       data-row-handle-field={rowKey}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useAISidebarUIStore.getState().open(headerId);
+      }}
       style={{
         position: 'absolute',
         left: -28,
