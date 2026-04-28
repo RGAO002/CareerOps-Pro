@@ -131,8 +131,13 @@ export const useResumeStore = create<ResumeStoreState & ResumeStoreActions>()(
       if (!r) return;
       const past = get()._undo.popPast();
       if (!past) return;
-      get()._undo.pushFuture({ doc: r, label: 'redo:' + past.label });
+      // ★ Future entry preserves the FULL shape (incl. AI metadata) for symmetric redo:
+      get()._undo.pushFuture({ ...past, doc: r, label: 'redo:' + past.label });
       set({ resume: past.doc, bulletMeta: {} });
+      // ★ NEW: notify suggestion store if this was an AI apply
+      if (past.kind === 'aiApply' && past.suggestionIds && _onAiApplyUndo) {
+        _onAiApplyUndo(past.suggestionIds, 'undo');
+      }
     },
 
     redo: () => {
@@ -140,8 +145,20 @@ export const useResumeStore = create<ResumeStoreState & ResumeStoreActions>()(
       if (!r) return;
       const fut = get()._undo.popFuture();
       if (!fut) return;
-      get()._undo.push({ doc: r, label: 'undo:' + fut.label });
+      // ★ AI precheck FIRST — before any doc swap or stack mutation:
+      if (fut.kind === 'aiApply' && fut.suggestionIds && _onAiApplyUndo) {
+        const allowed = _onAiApplyUndo(fut.suggestionIds, 'redo:precheck');
+        if (allowed === false) {
+          get()._undo.pushFuture(fut);   // restore: redo is non-destructive on block
+          return;
+        }
+      }
+      // ★ Past entry preserves the FULL shape so chains of undo/redo keep AI metadata:
+      get()._undo.push({ ...fut, doc: r, label: 'undo:' + fut.label });
       set({ resume: fut.doc, bulletMeta: {} });
+      if (fut.kind === 'aiApply' && fut.suggestionIds && _onAiApplyUndo) {
+        _onAiApplyUndo(fut.suggestionIds, 'redo');
+      }
     },
   }))
 );
@@ -178,10 +195,76 @@ function applyFieldUpdate(r: ResumeDoc, f: EditableField, value: string): Resume
   }
 }
 
+// ★ NEW (additive, non-breaking): module-local suppression flag for AI apply.
+let _undoSuppressed = false;
+
 /** Internal helper for tests: push current state to undo stack with a label.
  *  Real structural actions (Task 12) call this. */
 export function _pushUndo(label: string): void {
+  if (_undoSuppressed) return;        // ★ NEW: in-transaction, suppress
   const r = useResumeStore.getState().resume;
   if (!r) return;
   useResumeStore.getState()._undo.push({ doc: r, label });
+}
+
+// ★ AI apply transaction infrastructure (spec § 8.2 / § 8.4). All additive —
+//   no change to existing exports or store actions.
+
+export type AiTxResult = {
+  appliedSuggestionIds: string[];
+  mutated: boolean;
+};
+
+export type AiApplyUndoDirection = 'undo' | 'redo' | 'redo:precheck';
+export type AiApplyUndoCallback = (
+  suggestionIds: string[],
+  direction: AiApplyUndoDirection,
+) => boolean | void;
+
+let _onAiApplyUndo: AiApplyUndoCallback | null = null;
+
+/** Called once at module init by useSuggestionStore (Task 14). Pass null to
+ *  unregister (used in tests). */
+export function _registerAiApplyUndoCallback(cb: AiApplyUndoCallback | null): void {
+  _onAiApplyUndo = cb;
+}
+
+/** Wrap a multi-action AI apply so:
+ *    - inner _pushUndo calls are suppressed,
+ *    - one composite undo entry is pushed at the end (containing the BEFORE
+ *      ResumeDoc snapshot + suggestion ids),
+ *    - the resume is rolled back to before-state if `fn` throws. */
+export function _aiApplyTransaction(
+  label: string,
+  meta: { runId: string },
+  fn: () => AiTxResult,
+): AiTxResult {
+  const r = useResumeStore.getState().resume;
+  if (!r) return { appliedSuggestionIds: [], mutated: false };
+  const snapshotBefore = r;
+
+  const wasSuppressed = _undoSuppressed;
+  _undoSuppressed = true;
+  let result: AiTxResult;
+  try {
+    result = fn();
+  } catch (err) {
+    // Atomic-ish rollback: restore resume, do NOT push undo, propagate.
+    useResumeStore.setState({ resume: snapshotBefore, bulletMeta: {} });
+    throw err;
+  } finally {
+    _undoSuppressed = wasSuppressed;
+  }
+
+  // Skip undo push if nothing actually applied (per § 8.2 guard).
+  if (!result.mutated || result.appliedSuggestionIds.length === 0) return result;
+
+  useResumeStore.getState()._undo.push({
+    doc: snapshotBefore,
+    label,
+    kind: 'aiApply',
+    runId: meta.runId,
+    suggestionIds: result.appliedSuggestionIds,
+  });
+  return result;
 }

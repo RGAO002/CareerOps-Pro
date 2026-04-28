@@ -160,6 +160,7 @@ export type CanvasMode = 'edit' | 'export' | 'measure';
 export type UpdateOriginType =
   | 'tiptap'
   | 'ai-rewrite'
+  | 'ai-apply'
   | 'undo'
   | 'redo'
   | 'drag-reorder'
