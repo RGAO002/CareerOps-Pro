@@ -2864,11 +2864,27 @@ def emit(run_id: str, event_type: str, data: dict) -> None:
 
 
 def get_queue(run_id: str) -> Optional["queue.Queue"]:
-    """Consumer-side accessor. Returns the queue regardless of closed state
-    (so a late attacher can still drain queued events + see the sentinel).
-    Returns None only if the run never opened OR was GC'd past the grace period."""
+    """Consumer-side accessor. Returns the queue ONLY for runs that haven't
+    been closed yet. After close(), returns None so late attachers fall through
+    to the route's `_replay_from_state` one-shot path.
+
+    Why not return the queue post-close? A second SSE consumer that attaches
+    after the first has already drained CLOSE_SENTINEL would see an empty
+    closed queue and block indefinitely (queue.get blocks until next put,
+    which never comes). The route layer's overall stream timeout would
+    eventually catch it (~120s), but that's an unacceptable hang.
+
+    The slot stays in _QUEUES (with closed_at set) until gc(), but only so
+    that the (currently unused) admin / debug surface can introspect closed
+    runs. Active consumers always go through the live path during the run
+    OR the replay path after close — never the half-open middle ground.
+    """
     slot = _QUEUES.get(run_id)
-    return slot["queue"] if slot else None
+    if slot is None:
+        return None
+    if slot.get("closed_at") is not None:
+        return None              # ★ post-close → use replay path
+    return slot["queue"]
 
 
 def close(run_id: str) -> None:
@@ -2915,9 +2931,11 @@ def test_open_emit_get_close():
     event_queue.close(rid)
     sentinel = q.get(timeout=1)
     assert sentinel == event_queue.CLOSE_SENTINEL
-    # ★ R8 fix: queue STAYS in dict after close (within grace period) so
-    # late SSE attachers can still find it + drain. Removal is via gc().
-    assert event_queue.get_queue(rid) is q
+    # ★ Post-close: existing consumers (who hold `q` from their attach-time
+    # get_queue call) can still drain via their own reference; NEW attachers
+    # see None and fall through to the route's replay-from-state path.
+    # This avoids hanging a second consumer on an empty closed queue.
+    assert event_queue.get_queue(rid) is None
 
 
 def test_emit_after_close_is_dropped():
@@ -2944,12 +2962,19 @@ def test_gc_purges_queues_past_grace_period():
     assert event_queue.get_queue(rid) is None
 
 
-def test_gc_keeps_queues_within_grace_period():
+def test_gc_keeps_slot_within_grace_period_for_debug_introspection():
+    """Slot stays in _QUEUES dict after close until 5min grace expires —
+    only for admin/debug visibility. `get_queue()` still returns None
+    once closed (active SSE consumers go to replay path); this test peeks
+    at the underlying dict directly to verify the slot is preserved."""
     rid = "run_keep"
     event_queue.open(rid)
     event_queue.close(rid)
     event_queue.gc()  # current time → still within 5 min
-    assert event_queue.get_queue(rid) is not None
+    # get_queue returns None because closed (consumers go to replay):
+    assert event_queue.get_queue(rid) is None
+    # But the slot is still in the dict (not yet GC'd):
+    assert rid in event_queue._QUEUES
 
 
 def test_emit_to_unknown_run_is_noop():
@@ -3225,15 +3250,24 @@ def _compute_lock_scope(resume: dict, agent: str, focus: str) -> list:
 - [ ] **Step 7: Run tests**
 
 ```bash
-cd /Users/fred/Desktop/CareerOps-Pro && pytest tests/services/ai/test_runs.py tests/services/ai/test_orchestrator.py -v 2>&1 | tail -20
+cd /Users/fred/Desktop/CareerOps-Pro && pytest \
+  tests/services/ai/test_runs.py \
+  tests/services/ai/test_event_queue.py \
+  tests/services/ai/test_orchestrator.py -v 2>&1 | tail -20
 ```
-Expected: `4 + 2 = 6 passed`.
+Expected: `4 + 6 + 2 = 12 passed`.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git -C /Users/fred/Desktop/CareerOps-Pro add services/ai/runs.py services/ai/orchestrator.py tests/services/ai/test_runs.py tests/services/ai/test_orchestrator.py
-git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: LangGraph orchestrator (Coordinator -> Polish|Experience|END) + run state CRUD"
+git -C /Users/fred/Desktop/CareerOps-Pro add \
+  services/ai/runs.py \
+  services/ai/event_queue.py \
+  services/ai/orchestrator.py \
+  tests/services/ai/test_runs.py \
+  tests/services/ai/test_event_queue.py \
+  tests/services/ai/test_orchestrator.py
+git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: LangGraph orchestrator + run state + per-run event queue"
 ```
 
 ---
@@ -3256,7 +3290,7 @@ Routes:
 `tests/api/test_ai_routes.py`:
 
 ```python
-"""AI routes — POST /run synchronous, GET /events SSE replay, GET /suggestions, POST /status."""
+"""AI routes — POST /run async background dispatch, GET /events live SSE, GET /suggestions, POST /status."""
 import json
 import pytest
 from fastapi.testclient import TestClient
@@ -3300,9 +3334,9 @@ def client(tmp_path, monkeypatch):
 
 
 def test_run_returns_runid_immediately_and_dispatches_in_background(client):
-    """POST /run returns synchronously with runId; orchestration runs on a
-    daemon thread. Response time should be <100ms even when the orchestrator
-    would take seconds (here it's a stub LLM, but the dispatch shape matters)."""
+    """POST /run returns IMMEDIATELY with runId after dispatching orchestration
+    to a daemon thread. Response time should be <100ms even when the orchestrator
+    would take seconds (here it's a stub LLM, but the async-dispatch shape matters)."""
     import time
     t0 = time.time()
     r = client.post("/api/ai/run", json={
@@ -3373,30 +3407,46 @@ def test_events_sse_streams_live_then_closes(client):
     assert "event: run.completed" in body
 
 
-def test_events_sse_replay_fallback_when_queue_gc_d(client):
-    """If the SSE attaches AFTER event_queue.gc() removed the queue (>5min
-    after run.completed), fall back to one-shot replay from persisted state.
+def test_events_sse_replay_fallback_after_run_closed(client):
+    """If the SSE attaches AFTER the orchestrator called event_queue.close()
+    (worker thread done), fall back to one-shot replay from persisted state.
 
-    For runs that finished within the grace period, the live path is taken
-    and the queue is drained in one shot — separate test covers that.
-    """
+    `get_queue` returns None for closed runs even within the 5min grace
+    period — late attachers always go through replay to avoid hanging on
+    an empty closed queue (R9 P0 #2 fix)."""
     import time
     r = client.post("/api/ai/run", json={
         "resumeId": "r1", "userInput": "hi", "selection": [], "chatHistory": []
     })
     rid = r.json()["runId"]
-    # Wait for the run to finish:
+    # Wait for the worker thread to finish + call event_queue.close():
     time.sleep(1.0)
-    # Force-GC the queue (simulating 5+ min later):
     from services.ai import event_queue
-    event_queue.gc(now_ms=lambda: int(time.time() * 1000) + 6 * 60 * 1000)
-    assert event_queue.get_queue(rid) is None
+    assert event_queue.get_queue(rid) is None      # closed → None
     # Now attach: should get the synthetic replay
     r = client.get(f"/api/ai/runs/{rid}/events")
     assert r.status_code == 200
     body = r.text
     assert "event: run.started" in body
     assert "event: run.completed" in body
+
+
+def test_events_sse_replay_after_queue_gc_d(client):
+    """Same replay path also fires when the underlying slot has been GC'd
+    past its 5min grace period — runs.load still returns persisted state."""
+    import time
+    r = client.post("/api/ai/run", json={
+        "resumeId": "r1", "userInput": "hi", "selection": [], "chatHistory": []
+    })
+    rid = r.json()["runId"]
+    time.sleep(1.0)
+    from services.ai import event_queue
+    event_queue.gc(now_ms=lambda: int(time.time() * 1000) + 6 * 60 * 1000)
+    assert rid not in event_queue._QUEUES        # GC'd
+    r = client.get(f"/api/ai/runs/{rid}/events")
+    assert r.status_code == 200
+    body = r.text
+    assert "event: run.started" in body
 ```
 
 - [ ] **Step 2: Run failing test**
@@ -3619,7 +3669,7 @@ app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 ```bash
 pytest tests/api/test_ai_routes.py -v 2>&1 | tail -10
 ```
-Expected: `5 passed`.
+Expected: `7 passed` (run + suggestions + status idempotent + status conflict + live SSE + replay-after-close + replay-after-gc).
 
 - [ ] **Step 6: Run the FULL backend test suite — must be green**
 
@@ -5035,7 +5085,7 @@ async function _applySuggestionGroup(
 
 ```bash
 npx vitest run src/components/ai/__tests__/applySuggestion.test.ts 2>&1 | tail
-# Expected: 5 passed
+# Expected: 8 passed (4 single accept + 2 applySuggestions scope + 2 applyAllInRun)
 npx vitest run src/components/resume/v2 2>&1 | tail -3
 # Expected: ≥ baseline still passing (no regression)
 ```
@@ -5627,14 +5677,14 @@ git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: AISidebar + AISidebar
 - Modify: `frontend/src/components/resume/v2/interaction/keyboard-router.ts` (if structural delete routes through it — Step 5c verifies)
 - Modify: `frontend/src/components/resume/v2/interaction/SelectionManager.ts` (if batch delete present — Step 5d verifies)
 - Modify: `frontend/src/components/resume/v2/extensions/SlashCommand.ts` (if it triggers structural inserts — Step 5e verifies)
-- Modify: `frontend/src/components/resume/v2/store/actions/insertBlock.ts` — top-of-action lock guard (Step 5g)
-- Modify: `frontend/src/components/resume/v2/store/actions/deleteBlock.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/moveBullet.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/moveEntry.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/moveSection.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/setBulletKind.ts` — top-of-action lock guard
-- Modify: `frontend/src/components/resume/v2/store/actions/duplicateBlock.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/deleteBlock.ts` — top-of-action lock guard (void return)
+- Modify: `frontend/src/components/resume/v2/store/actions/moveBullet.ts` — top-of-action lock guard (void)
+- Modify: `frontend/src/components/resume/v2/store/actions/moveEntry.ts` — top-of-action lock guard (void)
+- Modify: `frontend/src/components/resume/v2/store/actions/moveSection.ts` — top-of-action lock guard (void)
+- Modify: `frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts` — top-of-action lock guard (void)
+- Modify: `frontend/src/components/resume/v2/store/actions/setBulletKind.ts` — top-of-action lock guard (void)
+- Modify: `frontend/src/components/resume/v2/store/actions/duplicateBlock.ts` — top-of-action lock guard (returns null on guard — already nullable)
+- **NOT modified:** `insertBlock.ts` (insert* return non-null types — UI guards in 5a/5b/5e are the protection; see 5g rationale)
 - Modify: any toolbar component invoking structural actions (Step 5f enumerates via grep — list at execution time)
 - Create: `frontend/src/components/resume/v2/store/actions/__tests__/aiLockGuard.test.ts`
 
@@ -5810,23 +5860,45 @@ grep -rn "deleteBlock\|deleteBullet\|deleteEntry\|deleteSection\|duplicateBlock"
 ```
 For each call site: add the same `if (useAILockStore.getState().isLocked(<id>)) return;` guard. Toolbar buttons that match a locked block in their target should also render `disabled` (use `useAILockStore((s) => s.isLocked(currentBlockId))` selector).
 
-**5g. Defensive store-action top-of-action guards** (last line of defense):
+**5g. Defensive store-action top-of-action guards** (last line of defense — VOID / NULLABLE-RETURN actions only):
 
-In each of `frontend/src/components/resume/v2/store/actions/insertBlock.ts`, `deleteBlock.ts`, `moveBullet.ts`, `moveEntry.ts`, `moveSection.ts`, `moveHeaderRow.ts`, `setBulletKind.ts`, `duplicateBlock.ts`: add at the top of the exported function (after the resume `if (!r) return;` line):
+Top-of-action `return;` is only safe on functions whose return type is `void` (where bare `return` is type-correct) or `T | null` (where we can return `null`). The `insert*` actions return non-nullable `BlockId` / `InsertEntryResult` / `number` — adding a `return;` would either fail TypeScript or force signature widening to nullable, which violates "existing actions semantics frozen" (§ 0.5). **Insert lock protection lives entirely at the UI/apply layer (5a / 5b / 5e — keyboard handlers, slash command).** The store's apply layer (Task 16's `applySuggestion`) doesn't need a store-level guard either — it gates explicitly via the optimistic concurrency check + the lock check happens at agent.started time.
+
+Apply top-of-action guards to these files only:
+
+- `frontend/src/components/resume/v2/store/actions/deleteBlock.ts` — every export returns `void`
+- `frontend/src/components/resume/v2/store/actions/moveSection.ts` — `void`
+- `frontend/src/components/resume/v2/store/actions/moveEntry.ts` — `void`
+- `frontend/src/components/resume/v2/store/actions/moveBullet.ts` — `void`
+- `frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts` — `void`
+- `frontend/src/components/resume/v2/store/actions/setBulletKind.ts` — `void`
+- `frontend/src/components/resume/v2/store/actions/duplicateBlock.ts` — returns `BlockId | null` (already nullable; return `null` on guard)
+
+Pattern for `void` actions (e.g. `moveBullet`):
 
 ```typescript
 import { useAILockStore } from '@/stores/aiLock';
-// ... at top of action function:
+// ... at top of action function, after `if (!r) return;`:
 const lock = useAILockStore.getState();
-// for actions that take a target block id:
-if (lock.isLocked(<targetId>)) {
-  console.warn(`[ai-lock] suppressed ${actionName} on locked block ${targetId}`);
+if (lock.isLocked(blockId) || (newParentEntryId && lock.isLocked(newParentEntryId))) {
+  console.warn(`[ai-lock] suppressed moveBullet(${blockId}) — locked`);
   return;
 }
-// for actions that take parent + child (insert/move): check both
 ```
 
-This is a defensive fail-safe — the UI guards in 5a-5f should already prevent these from being reached. Adding the store-level guard means even if a future code path forgets to check, the structural change is still blocked. **Per spec § 0.5 rule #7 this is the explicitly-allowed additive change to the existing actions** ("structural lock-check guard added as top-of-action no-op").
+Pattern for `duplicateBlock` (returns `BlockId | null`):
+
+```typescript
+const lock = useAILockStore.getState();
+if (lock.isLocked(id)) {
+  console.warn(`[ai-lock] suppressed duplicateBullet(${id}) — locked`);
+  return null;
+}
+```
+
+**`insertBullet`, `insertEntry`, `insertContactLine`, `insertSection` — DO NOT modify.** Their signatures return non-null. UI guards in 5a/5b/5e are sufficient. (If a future path needs the store-level guard for inserts, add it as a deliberate signature change in that future PR — not as a side effect of this task.)
+
+This is the explicitly-allowed additive change to existing void/nullable structural actions per spec § 0.5 rule #7.
 
 - [ ] **Step 5 verification**
 
@@ -5871,24 +5943,21 @@ beforeEach(() => {
 
 const ORIGIN = () => makeOrigin('ai-apply');
 
-describe('AI lock blocks structural mutations (defensive store-action guard)', () => {
-  it('insertBullet is no-op when parent entry is locked', () => {
-    const before = useResumeStore.getState().resume!.sections[0].entries[0].bullets.length;
-    useAILockStore.getState().lock(['e1']);
-    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, ORIGIN());
-    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.length).toBe(before);
-  });
-
-  it('insertBullet succeeds when parent entry is NOT locked', () => {
-    const before = useResumeStore.getState().resume!.sections[0].entries[0].bullets.length;
-    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, ORIGIN());
-    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.length).toBe(before + 1);
-  });
+describe('AI lock blocks structural mutations (defensive store-action guard, void/nullable returns only)', () => {
+  // ★ Insert actions (insertBullet/insertEntry/insertContactLine/insertSection)
+  //   are NOT guarded at the store level — their non-null return types make
+  //   bare `return;` unsafe. Insert lock protection lives at the UI layer
+  //   (keyboard / slash command handlers — Task 19 Step 5a/5b/5e).
 
   it('deleteBullet is no-op when bullet is locked', () => {
     useAILockStore.getState().lock(['b1']);
     deleteBullet('b1', ORIGIN());
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeTruthy();
+  });
+
+  it('deleteBullet succeeds when not locked', () => {
+    deleteBullet('b1', ORIGIN());
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeUndefined();
   });
 
   it('deleteEntry is no-op when entry is locked', () => {
@@ -5900,7 +5969,6 @@ describe('AI lock blocks structural mutations (defensive store-action guard)', (
   it('moveBullet is no-op when source bullet is locked', () => {
     useAILockStore.getState().lock(['b1']);
     moveBullet('b1', 'e2', 0, ORIGIN());
-    // b1 should still be in e1, not e2:
     const r = useResumeStore.getState().resume!;
     expect(r.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeTruthy();
     expect(r.sections[0].entries[1].bullets.find(b => b.id === 'b1')).toBeUndefined();
@@ -5921,11 +5989,13 @@ describe('AI lock blocks structural mutations (defensive store-action guard)', (
     expect(r.sections[1].entries.find(e => e.id === 'e1')).toBeUndefined();
   });
 
-  it('insertEntry is no-op when target section is locked', () => {
-    const before = useResumeStore.getState().resume!.sections[0].entries.length;
-    useAILockStore.getState().lock(['s1']);
-    insertEntry('s1', 0, ORIGIN());
-    expect(useResumeStore.getState().resume!.sections[0].entries.length).toBe(before);
+  it('insertBullet is NOT gated at store level (returns BlockId, can\'t no-op return) — UI guard in keyboard handler is the protection', () => {
+    // This test documents the design decision so a future regression that
+    // adds a store-level insert guard fails loudly.
+    useAILockStore.getState().lock(['e1']);
+    const newId = insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, ORIGIN());
+    expect(typeof newId).toBe('string');  // returned a real id, not no-op
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets[0].id).toBe(newId);
   });
 });
 ```
@@ -5952,7 +6022,6 @@ git -C /Users/fred/Desktop/CareerOps-Pro add \
   frontend/src/components/resume/v2/interaction/keyboard-router.ts \
   frontend/src/components/resume/v2/interaction/SelectionManager.ts \
   frontend/src/components/resume/v2/extensions/SlashCommand.ts \
-  frontend/src/components/resume/v2/store/actions/insertBlock.ts \
   frontend/src/components/resume/v2/store/actions/deleteBlock.ts \
   frontend/src/components/resume/v2/store/actions/moveBullet.ts \
   frontend/src/components/resume/v2/store/actions/moveEntry.ts \
@@ -6150,7 +6219,9 @@ async function sendToAI(userText: string) {
   const ackId = Date.now();
   append({ role: 'assistant', content: '好的，正在处理…', ts: ackId });
 
-  // Fire the run (synchronous — orchestrator runs to completion, returns runId):
+  // Fire the run — POST /run returns IMMEDIATELY with runId; orchestration
+  // runs in a backend daemon thread (Task 11). We connect SSE right after to
+  // see live events as they happen.
   let runId: string;
   try {
     const r = await fetch('/api/ai/run', {
@@ -6167,8 +6238,8 @@ async function sendToAI(userText: string) {
     return;
   }
 
-  // Open SSE — replays the events that already happened during the run.
-  // narrations append; on completion show summary + button.
+  // Open SSE — live tail of events as the orchestrator emits them.
+  // narrations append in real time; on run.completed show summary + button.
   runSSEStream(runId, {
     onNarration: (text, agentId) => {
       append({ role: 'assistant', content: `${agentId}: ${text}`, ts: Date.now() });
@@ -6370,7 +6441,7 @@ If anything fails, file a follow-up task (or fix in place if trivial) before dec
 **Open items intentionally deferred to follow-up tasks (acknowledged gaps):**
 
 - **§ 6.3 Inline marks (post-acceptance fade window).** v0 ships without the per-block "✦ + accent border for 5min after accept" decoration. The structural undo path works (Cmd+Z restores) — this is purely visual polish. **Add as a post-v0 task** when reviewing user feedback (likely Task 23 in a follow-up plan).
-- **Streaming during the run (vs SSE replay after).** v0 runs the orchestration synchronously and replays events from persisted state in the SSE response. True streaming (events emitted DURING the run via async iterator) is more complex; spec § 4.4 anticipates it but v0 ACs don't require it. **Acceptable for v0** — sidebar / narration UX still functions correctly because the SSE replay completes immediately after `POST /run` returns.
+- **Live streaming during the run.** v0 dispatches orchestration to a daemon thread (POST /run returns immediately) and emits events to a per-run `event_queue` (Task 10 Step 3.5) that the SSE handler tails in real time. Soft lock visual + narration progress work *during* the run as spec § 6.2 requires. The "burst at end of agent" approximation in `_emit_streamed_suggestions_for_run` is the only remaining time-spread gap (suggestion.streamed events fire when the agent's tool-call burst finishes rather than per individual tool call) — true per-tool streaming is a v0.1 polish; v0 still satisfies all spec ACs.
 - **search_user_data + get_user_profile read tools.** Explicitly deferred per spec § 3.2.
 
 **Placeholder scan** — none. Every code step contains complete code or a precise existing-file modification with surrounding context. Acceptance criteria in Task 22 reference concrete commands.
