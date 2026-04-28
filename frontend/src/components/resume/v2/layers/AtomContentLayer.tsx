@@ -1,6 +1,6 @@
 // frontend/src/components/resume/v2/layers/AtomContentLayer.tsx
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AtomRenderer } from '../atoms/AtomRenderer';
 import { getAtomAbsoluteCoord, gapForMode } from '../layout/coords';
 import {
@@ -64,6 +64,39 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
 
   useEffect(() => subscribeDragPreview(setPreview), []);
   useEffect(() => subscribeRecentlyDropped(setRecentlyDroppedIdState), []);
+
+  /**
+   * Post-commit "no-transition" frame.
+   *
+   * Why: during drag, a non-dragged atom that's been preview-shifted has its
+   * inline `transform: translateY(±H)` plus its ORIGINAL layout `top`. On
+   * commit two things change in the same React paint:
+   *   1. `top` jumps to the atom's NEW layout position (not in CSS transition).
+   *   2. `transform` snaps to `translateY(0)` (in CSS transition over 180 ms).
+   *
+   * If the transition is alive at commit, the browser interpolates transform
+   * from ±H → 0 while top has already jumped. Visual position at t=0 of the
+   * transition = newTop ± H — i.e. the atom appears H px past its final spot
+   * and "flies in" to land. Most visible when dragging DOWN: the new top item
+   * (was the dragged atom's neighbor, preview-shifted UP) sits H above its
+   * final slot then drops in.
+   *
+   * Fix: detect commit (recentlyDroppedId went null → id) and inject
+   * `transition: none` on the very next render. With no transition active,
+   * top and transform both apply instantly: newTop + 0 = oldTop + (oldShift)
+   * = the atom's pre-commit visual position. No motion. The just-dropped atom
+   * itself is unaffected — it uses `animation: atom-settle` (a keyframe, not a
+   * transition), which is independent of `transition`. We re-enable transition
+   * on the following frame so live drag previews still animate normally.
+   *
+   * Cancel (Escape) intentionally still uses the transition: there's no `top`
+   * jump on cancel, so the transform→0 transition is the right snap-back UX.
+   */
+  const prevRecentlyDroppedRef = useRef<BlockId | null>(null);
+  const justCommitted = !prevRecentlyDroppedRef.current && !!recentlyDroppedId;
+  useEffect(() => {
+    prevRecentlyDroppedRef.current = recentlyDroppedId;
+  }, [recentlyDroppedId]);
 
   // Page-card clip path: the wrapper masks out inter-page gap rows so atoms
   // can translate freely across page boundaries during drag preview without
@@ -212,9 +245,9 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
         // Single transition handles both same-page and cross-page shifts —
         // the wrapper's clip-path hides any traversal of the inter-page gap.
         // No more keyframe / cross-page detection needed.
-        const animationStyle: React.CSSProperties = {
-          transition: 'transform 0.18s ease-out, opacity 0.12s ease-out, visibility 0s',
-        };
+        const animationStyle: React.CSSProperties = justCommitted
+          ? { transition: 'none' }
+          : { transition: 'transform 0.18s ease-out, opacity 0.12s ease-out, visibility 0s' };
         // Settle: a freshly-dropped atom plays atom-settle (opacity 0 → 1)
         // at its final position. Pairs with the ghost fading out in place
         // at the cursor → "the slot caught the drop here", not "the item

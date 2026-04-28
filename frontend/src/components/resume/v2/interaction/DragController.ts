@@ -133,6 +133,78 @@ export function getDropTargetsFor(block: SelectableBlock): DropTarget[] {
   return targets;
 }
 
+/**
+ * True when dropping `block` on `target` would not change document order.
+ *
+ * Why filter these slots out at startDrag? Two related symptoms made this
+ * necessary:
+ *   1. ENTRY drag, "Skills" bug: dragging Product&AI down to "swap with
+ *      Full-Stack" hovered the slot at insertAtIndex = srcIdx + 1.
+ *      `moveEntry` correctly no-op'd that slot (line 27-30), but the preview
+ *      (`buildHypotheticalAtoms`) interpreted the same dst in *post-removal*
+ *      space and drew Full-Stack shifted up — a phantom swap. On release the
+ *      commit no-op'd and the entry visibly snapped back. The user had to
+ *      drag PAST Full-Stack onto Data&Systems' top to reach a non-no-op slot.
+ *   2. SECTION drag: same family, but preview honestly showed no shift on the
+ *      no-op slot. So instead of a phantom swap the user got "I'm dragging
+ *      and nothing's happening" until they moved much further.
+ *
+ * The cleanest fix for both is to remove the no-op slots from validTargets at
+ * startDrag. Snapshot Y mapping then jumps directly to the next meaningful
+ * slot (which, for "drag down to swap with next sibling," lines up with the
+ * next sibling's TOP — the natural cursor target). Preview and commit agree
+ * because both run against the same target set.
+ *
+ * Bullet path doesn't currently exhibit the phantom-swap symptom (its preview
+ * is `kind: 'bullet'`, not the atom path that owns buildHypotheticalAtoms),
+ * but we filter its no-op slots too for consistency and to prevent regressions
+ * if the bullet preview math is ever rewritten.
+ *
+ * Header-row drag is left unfiltered: there are at most 2-4 rows in a single
+ * header atom, the no-op slot is barely a few pixels apart from the next
+ * meaningful slot, and the header-row drag deliberately uses no atom preview
+ * (see HeaderRowInteractionOverlay) — neither symptom can occur.
+ */
+export function isNoopTargetFor(block: SelectableBlock, target: DropTarget): boolean {
+  const r = useResumeStore.getState().resume;
+  if (!r) return false;
+
+  if (block.kind === 'section' && target.kind === 'section-slot') {
+    const idx = r.sections.findIndex(s => s.id === block.id);
+    if (idx < 0) return false;
+    if (target.insertBeforeSectionId === block.id) return true;        // drop on self
+    const next = r.sections[idx + 1];
+    if (next && target.insertBeforeSectionId === next.id) return true; // drop just below self
+    if (target.insertBeforeSectionId === null && idx === r.sections.length - 1) return true;
+    return false;
+  }
+
+  if (block.kind === 'entry' && target.kind === 'entry-slot') {
+    for (const s of r.sections) {
+      const i = s.entries.findIndex(e => e.id === block.id);
+      if (i < 0) continue;
+      if (s.id !== target.sectionId) return false;                     // cross-section never no-op
+      return target.insertAtIndex === i || target.insertAtIndex === i + 1;
+    }
+    return false;
+  }
+
+  if (block.kind === 'bullet' && target.kind === 'bullet-slot') {
+    for (const s of r.sections) {
+      for (const e of s.entries) {
+        const i = e.bullets.findIndex(b => b.id === block.id);
+        if (i < 0) continue;
+        if (e.id !== target.entryId) return false;                     // cross-entry never no-op
+        return target.insertAtIndex === i || target.insertAtIndex === i + 1;
+      }
+    }
+    return false;
+  }
+
+  // header-row: see doc comment above — intentionally never filtered.
+  return false;
+}
+
 export function commitDrop(block: SelectableBlock, target: DropTarget, origin: UpdateOrigin): void {
   if (target.kind === 'section-slot' && block.kind === 'section') {
     moveSection(block.id, target.insertBeforeSectionId, origin);
@@ -169,7 +241,7 @@ export function commitDrop(block: SelectableBlock, target: DropTarget, origin: U
  * but on the projected atom list. Bullet drops aren't atom-level so they
  * return the current atoms unchanged (preview stays null).
  */
-function buildHypotheticalAtoms(
+export function buildHypotheticalAtoms(
   block: SelectableBlock,
   target: DropTarget,
   currentAtoms: LayoutAtom[],
@@ -201,15 +273,32 @@ function buildHypotheticalAtoms(
       insertAt = i >= 0 ? i : remaining.length;
     }
   } else {
-    // entry-slot — insert after the section heading, at the Nth entry slot.
+    // entry-slot — match moveEntry's semantics: `insertAtIndex` is in the
+    // section's ORIGINAL `entries[]` index space. For same-section drags,
+    // removing src shifts subsequent indices down by one; mirror moveEntry's
+    // `adjustedIdx` so the hypothetical atom order matches what moveEntry
+    // will actually produce. Without this adjustment, dst > srcIdx values
+    // produced a phantom layout one slot too far down, making the preview
+    // shift one extra atom and disagree with the commit.
     const sectionAtomIdx = remaining.findIndex(
       a => a.kind === 'section-heading' && a.sourceBlockId === target.sectionId,
     );
     if (sectionAtomIdx < 0) return null;
+
+    let adjustedIdx = target.insertAtIndex;
+    if (block.kind === 'entry') {
+      const r = useResumeStore.getState().resume;
+      const srcSection = r?.sections.find(s => s.entries.some(e => e.id === block.id));
+      if (srcSection && srcSection.id === target.sectionId) {
+        const srcIdxInSection = srcSection.entries.findIndex(e => e.id === block.id);
+        if (target.insertAtIndex > srcIdxInSection) adjustedIdx = target.insertAtIndex - 1;
+      }
+    }
+
     let entryCount = 0;
     let cursor = sectionAtomIdx + 1;
     while (cursor < remaining.length && remaining[cursor].kind !== 'section-heading') {
-      if (entryCount === target.insertAtIndex) break;
+      if (entryCount === adjustedIdx) break;
       if (remaining[cursor].kind === 'entry') entryCount++;
       cursor++;
     }
@@ -470,7 +559,10 @@ export function startDrag(
   let dragStarted = false;
   let ghost: HTMLElement | null = null;
   let bulletDraggedHeight = 0;  // only used for bullet drags (atom drags compute their own group height)
-  const validTargets = getDropTargetsFor(block);
+  // Filter out drop slots that would commit no movement (drop on self,
+  // drop just below self). Without this, the cursor lingers on a phantom
+  // slot whose preview disagrees with the commit — see isNoopTargetFor doc.
+  const validTargets = getDropTargetsFor(block).filter(t => !isNoopTargetFor(block, t));
   resetDropTargetHysteresis();
   // Snapshot target Ys NOW, before any preview transforms run. See
   // snapshotDropTargetYs comment for why this is critical to kill jitter.

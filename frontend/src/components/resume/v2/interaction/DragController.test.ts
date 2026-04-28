@@ -5,8 +5,10 @@ import {
   commitDrop,
   findNearestDropTarget,
   resetDropTargetHysteresis,
+  buildHypotheticalAtoms,
   type DropTarget,
 } from './DragController';
+import { projectAtoms } from '../layout/atoms-projection';
 import { useResumeStore } from '../store/useResumeStore';
 import { makeOrigin, _resetTransactionCounter } from '../store/source-of-truth';
 import type { ResumeDoc } from '../types';
@@ -67,6 +69,272 @@ describe('getDropTargetsFor', () => {
     expect(targets.every(t => t.kind === 'header-row-slot')).toBe(true);
     // All slots target the same header.
     expect(targets.every(t => t.kind === 'header-row-slot' && t.headerId === 'h')).toBe(true);
+  });
+});
+
+/* ─── isNoopTargetFor: filter out drop slots that would commit no movement ──
+ *
+ * The bug this guards against: when src is at index N, the slot "just below
+ * self" (insertAtIndex = N+1 for entries/bullets, insertBefore=next-sibling
+ * for sections) maps to the same effective position. moveEntry/moveSection/
+ * moveBullet all detect this and no-op the commit, but the preview path
+ * (buildHypotheticalAtoms) interpreted insertAtIndex in post-removal space and
+ * showed a phantom swap. Fix: filter these slots out of validTargets at
+ * startDrag so the cursor snaps past them — preview and commit then agree on
+ * the next meaningful slot, which actually swaps with the next sibling.
+ */
+describe('isNoopTargetFor', () => {
+  it('section: drop on self is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'section', id: 's1' },
+      { kind: 'section-slot', insertBeforeSectionId: 's1' },
+    )).toBe(true);
+  });
+  it('section: drop just below self (insertBefore next sibling) is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    // s1 → s2 in fixture; insertBefore s2 while dragging s1 is "stay put".
+    expect(isNoopTargetFor(
+      { kind: 'section', id: 's1' },
+      { kind: 'section-slot', insertBeforeSectionId: 's2' },
+    )).toBe(true);
+  });
+  it('section: drop at end while already last is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'section', id: 's2' },                              // s2 is last
+      { kind: 'section-slot', insertBeforeSectionId: null },
+    )).toBe(true);
+  });
+  it('section: drop before a non-adjacent sibling is NOT a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    // s2 dragged, insertBefore s1 = move s2 to top → real change.
+    expect(isNoopTargetFor(
+      { kind: 'section', id: 's2' },
+      { kind: 'section-slot', insertBeforeSectionId: 's1' },
+    )).toBe(false);
+  });
+
+  it('entry: drop at own index is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    // Use 4-entry fixture so srcIdx and srcIdx+1 are both reachable + non-end.
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'p', title: 'P', meta: '', bullets: [] },
+            { id: 'f', title: 'F', meta: '', bullets: [] },
+            { id: 'd', title: 'D', meta: '', bullets: [] },
+            { id: 'i', title: 'I', meta: '', bullets: [] },
+          ]},
+          { id: 's2', role: 'skills', heading: 'Skills', entries: [] },
+        ],
+      },
+      bulletMeta: {},
+    });
+    expect(isNoopTargetFor(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 0 },   // p is at idx 0
+    )).toBe(true);
+  });
+  it('entry: drop just below self (srcIdx + 1) is a no-op — the Skills bug', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'p', title: 'P', meta: '', bullets: [] },
+            { id: 'f', title: 'F', meta: '', bullets: [] },
+          ]},
+          { id: 's2', role: 'skills', heading: 'Skills', entries: [] },
+        ],
+      },
+      bulletMeta: {},
+    });
+    // Dragging P (idx 0) and aiming at insertAtIndex=1 (top of F) is the
+    // "phantom swap" case that prompted this fix.
+    expect(isNoopTargetFor(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 1 },
+    )).toBe(true);
+  });
+  it('entry: drop at srcIdx + 2 (real swap) is NOT a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'p', title: 'P', meta: '', bullets: [] },
+            { id: 'f', title: 'F', meta: '', bullets: [] },
+            { id: 'd', title: 'D', meta: '', bullets: [] },
+          ]},
+          { id: 's2', role: 'skills', heading: 'Skills', entries: [] },
+        ],
+      },
+      bulletMeta: {},
+    });
+    expect(isNoopTargetFor(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 2 },   // between F and D = swap with F
+    )).toBe(false);
+  });
+  it('entry: cross-section drop is NEVER a no-op (even at index that matches src)', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'entry', id: 'e1', sectionId: 's1' },                // e1 at s1 idx 0
+      { kind: 'entry-slot', sectionId: 's2', insertAtIndex: 0 },   // moving to s2
+    )).toBe(false);
+  });
+
+  it('bullet: drop at own index is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'bullet', id: 'b1', entryId: 'e1' },
+      { kind: 'bullet-slot', entryId: 'e1', insertAtIndex: 0 },
+    )).toBe(true);
+  });
+  it('bullet: drop at srcIdx + 1 is a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'bullet', id: 'b1', entryId: 'e1' },
+      { kind: 'bullet-slot', entryId: 'e1', insertAtIndex: 1 },
+    )).toBe(true);
+  });
+  it('bullet: cross-entry drop is NEVER a no-op', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    // Add a second entry to s1 so we have a cross-entry destination.
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'e1', title: '', meta: '', bullets: [
+              { id: 'b1', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
+            ]},
+            { id: 'e2', title: '', meta: '', bullets: [] },
+          ]},
+        ],
+      },
+      bulletMeta: {},
+    });
+    expect(isNoopTargetFor(
+      { kind: 'bullet', id: 'b1', entryId: 'e1' },
+      { kind: 'bullet-slot', entryId: 'e2', insertAtIndex: 0 },
+    )).toBe(false);
+  });
+
+  it('header-row: never filtered (rows are few; phantom no-op slots not perceptible)', async () => {
+    const { isNoopTargetFor } = await import('./DragController');
+    expect(isNoopTargetFor(
+      { kind: 'header-row', rowKey: 'name', headerId: 'h' },
+      { kind: 'header-row-slot', headerId: 'h', insertAtIndex: 0 },
+    )).toBe(false);
+  });
+});
+
+/* ─── buildHypotheticalAtoms: preview must match commit semantics ─────────
+ *
+ * Same root cause as the Skills phantom-swap. `moveEntry` interprets
+ * `insertAtIndex` in the section's ORIGINAL entries[] space and decrements by
+ * one for same-section drags where dst > srcIdx (because removing src shifts
+ * subsequent indices down). The preview's hypothetical atom list must match
+ * that adjustment, otherwise previewLayouts (engine path) shows one extra
+ * atom shifted — preview lies, commit doesn't.
+ *
+ * Symptom before fix: dragging P (idx 0) down to insertAtIndex=2 (intended
+ * "swap with F") showed BOTH F AND D shifted up in preview, while commit
+ * only swapped P with F.
+ */
+describe('buildHypotheticalAtoms entry-slot adjustment', () => {
+  // 4-entry section gives us the canonical [P, F, D, I] case.
+  function setupFourEntries() {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'p', title: 'P', meta: '', bullets: [] },
+            { id: 'f', title: 'F', meta: '', bullets: [] },
+            { id: 'd', title: 'D', meta: '', bullets: [] },
+            { id: 'i', title: 'I', meta: '', bullets: [] },
+          ]},
+        ],
+      },
+      bulletMeta: {},
+    });
+  }
+
+  // Pull just the entry ids in order from a hypothetical atom list (drop the
+  // header / section-heading atoms so the assertion stays focused on entry
+  // ordering — the only thing the preview actually moves around).
+  function entryIds(atoms: ReturnType<typeof projectAtoms>): string[] {
+    return atoms.filter(a => a.kind === 'entry').map(a => a.sourceBlockId);
+  }
+
+  it('same-section dst > srcIdx: result matches moveEntry (Skills bug fix)', () => {
+    setupFourEntries();
+    const atoms = projectAtoms(useResumeStore.getState().resume!);
+    const result = buildHypotheticalAtoms(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 2 },   // "swap with F"
+      atoms,
+    );
+    expect(result).not.toBeNull();
+    // Expected: P after F, before D = [F, P, D, I] — NOT [F, D, P, I].
+    expect(entryIds(result!)).toEqual(['f', 'p', 'd', 'i']);
+  });
+
+  it('same-section dst at end: P moves to tail', () => {
+    setupFourEntries();
+    const atoms = projectAtoms(useResumeStore.getState().resume!);
+    const result = buildHypotheticalAtoms(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 4 },
+      atoms,
+    );
+    expect(entryIds(result!)).toEqual(['f', 'd', 'i', 'p']);
+  });
+
+  it('same-section dst < srcIdx: no adjustment needed (drag up)', () => {
+    setupFourEntries();
+    const atoms = projectAtoms(useResumeStore.getState().resume!);
+    // Drag I (idx 3) up to insertAtIndex=1 ("between P and F" → swap with F).
+    const result = buildHypotheticalAtoms(
+      { kind: 'entry', id: 'i', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's1', insertAtIndex: 1 },
+      atoms,
+    );
+    expect(entryIds(result!)).toEqual(['p', 'i', 'f', 'd']);
+  });
+
+  it('cross-section: no adjustment (target section unaffected by removing src)', () => {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        sections: [
+          { id: 's1', role: 'experience', heading: 'Exp', entries: [
+            { id: 'p', title: 'P', meta: '', bullets: [] },
+            { id: 'f', title: 'F', meta: '', bullets: [] },
+          ]},
+          { id: 's2', role: 'skills', heading: 'Skills', entries: [
+            { id: 'a', title: 'A', meta: '', bullets: [] },
+            { id: 'b', title: 'B', meta: '', bullets: [] },
+          ]},
+        ],
+      },
+      bulletMeta: {},
+    });
+    const atoms = projectAtoms(useResumeStore.getState().resume!);
+    // Move P from s1 into s2 at insertAtIndex=1 (between A and B).
+    const result = buildHypotheticalAtoms(
+      { kind: 'entry', id: 'p', sectionId: 's1' },
+      { kind: 'entry-slot', sectionId: 's2', insertAtIndex: 1 },
+      atoms,
+    );
+    expect(entryIds(result!)).toEqual(['f', 'a', 'p', 'b']);
   });
 });
 
