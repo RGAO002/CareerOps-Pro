@@ -28,6 +28,7 @@ from api.routes.review import router as review_router
 from api.routes.resume import router as resume_router
 from api.routes.walkthrough import router as walkthrough_router
 from api.routes.humanize import router as humanize_router
+from api.routes.jobs import router as jobs_router
 
 app = FastAPI(
     title="CareerOps Pro API",
@@ -51,6 +52,7 @@ app.include_router(resume_router, prefix="/api/resume", tags=["resume"])
 app.include_router(review_router, prefix="/api/review", tags=["review"])
 app.include_router(walkthrough_router, prefix="/api/walkthrough", tags=["walkthrough"])
 app.include_router(humanize_router, prefix="/api/humanize", tags=["humanize"])
+app.include_router(jobs_router, prefix="/api/jobs", tags=["jobs"])
 
 
 from api.services import ai_tools
