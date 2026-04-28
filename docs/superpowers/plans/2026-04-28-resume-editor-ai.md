@@ -2812,16 +2812,16 @@ run.started, agent.started, agent.narration, suggestion.streamed,
 agent.completed, run.completed, run.error.
 
 `close(run_id)` pushes a `CLOSE_SENTINEL` so the consumer's loop can break
-cleanly. **It does NOT pop the queue from the dict** — late SSE attachers
-(browser races, page reloads moments after run.completed) can still find the
-queue, drain queued events including the sentinel, and exit cleanly. The
-queue is removed by `gc(now_ms)` only after `closed_at + 5 min`.
-
-Without this delayed removal, a fast (stub-LLM-fast or just brief) run would
-finish, immediately remove its queue, and any consumer that attached even a
-millisecond later would fall through to the `_replay_from_state` path —
-losing the `agent.started` event with the lockedBlockIds and the per-tool
-`suggestion.streamed` events the live stream would have surfaced.
+cleanly. The slot stays in `_QUEUES` (with `closed_at` set) for a 5-min
+grace period only for debug/admin introspection — `gc(now_ms)` removes it
+afterwards. **`get_queue()` returns None for any closed run**, so live
+(during-run) consumers and post-close attachers split at `get_queue()`:
+the live consumer holds the queue ref obtained at attach time and drains
+through the sentinel; post-close attachers see None and fall through to
+the route's `_replay_from_state` one-shot path. This avoids the hang a
+second consumer would experience if it attached to an empty closed queue
+(it would block on `queue.get` forever — the sentinel was already drained
+by the first consumer).
 """
 from __future__ import annotations
 import queue
