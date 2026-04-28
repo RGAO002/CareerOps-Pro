@@ -58,12 +58,32 @@ export function MessageList({ variant, typing = false }: Props) {
                 className="mt-[0.45em] size-1.5 shrink-0 rounded-full"
                 style={{ backgroundColor: C.accent }}
               />
-              <p
-                className="text-[13px] leading-[1.65] whitespace-pre-line"
-                style={{ color: C.textBody }}
-              >
-                {msg.content}
-              </p>
+              <div className="flex flex-col items-start">
+                <p
+                  className="text-[13px] leading-[1.65] whitespace-pre-line"
+                  style={{ color: C.textBody }}
+                >
+                  {msg.content}
+                </p>
+                {msg.action && (
+                  <button
+                    type="button"
+                    onClick={msg.action.onClick}
+                    style={{
+                      marginTop: 6,
+                      padding: "3px 8px",
+                      background: "#d49b5e",
+                      color: "#2a1f12",
+                      border: "none",
+                      borderRadius: 3,
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {msg.action.label}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

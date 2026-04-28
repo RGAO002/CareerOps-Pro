@@ -5,19 +5,16 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { useAiPanelStore, type AiPanelState } from "@/stores/aiPanel";
 import { useConversationStore } from "@/stores/conversation";
+import { usePageContextStore } from "@/stores/pageContext";
+import { useAISidebarUIStore } from "@/stores/aiSidebarUI";
+import { useResumeStore } from "@/components/resume/v2/store/useResumeStore";
+import { selectionManager } from "@/components/resume/v2/interaction/SelectionManager";
+import { runSSEStream } from "@/components/ai/AISessionClient";
 import { FluidCanvas } from "@/components/landing/FluidCanvas";
 import { PanelCollapsed } from "./PanelCollapsed";
 import { PanelCompact }   from "./PanelCompact";
 import { PanelExpanded }  from "./PanelExpanded";
 import { C } from "./colors";
-
-/* ─── Mock responses (re-used from old panel) ──────────────── */
-const MOCK_RESPONSES: Record<string, string> = {
-  "Why is my score 87 and not higher?":
-    "Your resume is genuinely strong — 87 puts you in the top quartile of what we see.\n\nThe main gaps: Python and AWS don't appear in your skills section, but show up in 80% of your saved jobs.",
-  "Help me rewrite my weakest bullet":
-    "Let's look at your Snapbrillia bullet #3. Right now it reads: \"Worked on developing backend APIs for the platform.\"\n\nHere's a stronger version:\n\"Designed and shipped 12 REST APIs in Node.js, cutting average response time by 40%.\"",
-};
 
 const HEIGHT_MAP: Record<AiPanelState, string> = {
   collapsed: "44px",
@@ -47,7 +44,7 @@ export function AIChatPanel() {
   const [input, setInput]   = useState("");
   const [typing, setTyping] = useState(false);
 
-  /* ── Send + mock reply ────────────────────────────────────── */
+  /* ── Send → POST /api/ai/run + open SSE stream ────────────── */
   const send = useCallback(async (forceExpand = false) => {
     const text = input.trim();
     if (!text || typing) return;
@@ -55,15 +52,81 @@ export function AIChatPanel() {
     appendMessage({ role: "user", content: text });
     setInput("");
     if (forceExpand) setState("expanded");
+
+    // Guard: AI is gated to the resume editor page (Task 21 spec).
+    const ctx = usePageContextStore.getState().context;
+    const resume = useResumeStore.getState().resume;
+    if (!ctx || ctx.page !== "resume_editor" || !resume) {
+      appendMessage({ role: "ai", content: "AI 仅在简历编辑页可用。" });
+      return;
+    }
+
+    // Selection comes from the v2 SelectionManager (vanilla class, not zustand).
+    const selection = selectionManager.getBlocks();
+
+    // Last 10 turns of chat history. Map our internal "ai" role to the API's
+    // expected "assistant" role.
+    const chatHistory = useConversationStore
+      .getState()
+      .messages
+      .filter((m) => m.role === "user" || m.role === "ai")
+      .slice(-10)
+      .map((m) => ({
+        role: m.role === "ai" ? ("assistant" as const) : ("user" as const),
+        content: m.content,
+      }));
+
+    // Optimistic ack — confirms the request was received before the run starts.
+    appendMessage({ role: "ai", content: "好的，正在处理…" });
     setTyping(true);
 
-    await new Promise((r) => setTimeout(r, 900 + Math.random() * 600));
+    let runId: string;
+    try {
+      const r = await fetch("/api/ai/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeId: resume.id,
+          userInput: text,
+          selection,
+          chatHistory,
+        }),
+      });
+      if (!r.ok) throw new Error(`/api/ai/run returned ${r.status}`);
+      const json = await r.json();
+      runId = json.runId;
+    } catch (err) {
+      setTyping(false);
+      appendMessage({ role: "ai", content: `AI 调用失败：${String(err)}` });
+      return;
+    }
 
-    setTyping(false);
-    appendMessage({
-      role: "ai",
-      content: MOCK_RESPONSES[text] ??
-        "That's a good question. Based on your resume and saved jobs, I see a pattern worth discussing.",
+    // Live tail of orchestrator events. Narrations append as separate
+    // assistant messages; on run.completed we render the "view in sidebar"
+    // button only if there are suggestions to review.
+    runSSEStream(runId, {
+      onNarration: (narrationText, agentId) => {
+        appendMessage({
+          role: "ai",
+          content: `${agentId}: ${narrationText}`,
+        });
+      },
+      onCompleted: (_rid, suggestionIds) => {
+        setTyping(false);
+        if (!suggestionIds || suggestionIds.length === 0) return;
+        appendMessage({
+          role: "ai",
+          content: `提议了 ${suggestionIds.length} 处改动。`,
+          action: {
+            label: "📋 查看详情",
+            onClick: () => useAISidebarUIStore.getState().open(),
+          },
+        });
+      },
+      onError: (err) => {
+        setTyping(false);
+        appendMessage({ role: "ai", content: `SSE 错误：${String(err)}` });
+      },
     });
   }, [input, typing, appendMessage, setState]);
 

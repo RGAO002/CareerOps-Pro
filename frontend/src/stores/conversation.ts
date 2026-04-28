@@ -7,6 +7,15 @@ export interface Message {
   content: string;
   /** Unix ms */
   createdAt: number;
+  /**
+   * Optional inline action button rendered alongside the message
+   * (e.g. "📋 查看详情" → open AI sidebar after a run completes).
+   *
+   * Note: callbacks aren't serialisable. The conversation store IS persisted
+   * to localStorage, so on reload `action` will be missing — that's OK for v0
+   * since the action only makes sense within the same SSE-run lifetime.
+   */
+  action?: { label: string; onClick: () => void };
 }
 
 interface ConversationStore {
