@@ -19,13 +19,21 @@ export function insertBullet(
    * case keeps JSON minimal (and the consumer treats absence as 'bullet').
    */
   kind: 'bullet' | 'plain' = 'bullet',
+  /**
+   * Optional v0-AI extension (spec section 0.5 rule #7): force a specific id for the
+   * new bullet. Used by AI apply to keep `Suggestion.insertedBlock.id` consistent
+   * with the persisted block id across reloads. Existing callers (drag,
+   * keyboard, slash) omit this and continue to get a freshly-minted UUID.
+   */
+  forcedId?: BlockId,
 ): BlockId {
   const r = useResumeStore.getState().resume;
   if (!r) throw new Error('No resume hydrated');
   _pushUndo('insertBullet');
+  const newBulletId = forcedId ?? newId();
   const newBullet: BulletBlock = kind === 'plain'
-    ? { id: newId(), content: contentDoc, kind: 'plain' }
-    : { id: newId(), content: contentDoc };
+    ? { id: newBulletId, content: contentDoc, kind: 'plain' }
+    : { id: newBulletId, content: contentDoc };
   const next = r.sections.map(s => ({
     ...s,
     entries: s.entries.map(e => {
@@ -47,13 +55,19 @@ export function insertEntry(
   sectionId: BlockId,
   indexInSection: number,
   origin: UpdateOrigin,
+  /**
+   * Optional v0-AI extension (spec section 0.5 rule #7).
+   */
+  forcedEntryId?: BlockId,
+  forcedFirstBulletId?: BlockId,
 ): InsertEntryResult {
   const r = useResumeStore.getState().resume;
   if (!r) throw new Error('No resume hydrated');
   _pushUndo('insertEntry');
-  const firstBulletId = newId();
+  const newEntryId = forcedEntryId ?? newId();
+  const firstBulletId = forcedFirstBulletId ?? newId();
   const newEntry: EntryBlock = {
-    id: newId(),
+    id: newEntryId,
     title: '',
     meta: '',
     bullets: [{ id: firstBulletId, content: { type: 'doc', content: [{ type: 'paragraph' }] } }],

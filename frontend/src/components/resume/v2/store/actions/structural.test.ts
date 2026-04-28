@@ -322,3 +322,33 @@ describe('_setBulletKindNoOp', () => {
     expect(after).toBe(before);
   });
 });
+
+describe('forcedId (additive — for AI apply use only)', () => {
+  it('insertBullet uses forcedId when provided', () => {
+    const id = insertBullet('e1', 1, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'), undefined, 'forced-bid-1');
+    expect(id).toBe('forced-bid-1');
+    const r = useResumeStore.getState().resume!;
+    const e1 = r.sections[0].entries.find(e => e.id === 'e1')!;
+    expect(e1.bullets.find(b => b.id === 'forced-bid-1')).toBeTruthy();
+  });
+
+  it('insertBullet generates id when forcedId omitted (existing behavior unchanged)', () => {
+    const id = insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/i);  // uuid v4
+  });
+
+  it('insertEntry uses forcedEntryId + forcedFirstBulletId when provided', () => {
+    const { entryId, firstBulletId } = insertEntry('s1', 0, makeOrigin('paste'), 'forced-eid', 'forced-fid');
+    expect(entryId).toBe('forced-eid');
+    expect(firstBulletId).toBe('forced-fid');
+    const r = useResumeStore.getState().resume!;
+    expect(r.sections[0].entries[0].id).toBe('forced-eid');
+    expect(r.sections[0].entries[0].bullets[0].id).toBe('forced-fid');
+  });
+
+  it('insertEntry generates ids when forced params omitted (existing behavior unchanged)', () => {
+    const { entryId, firstBulletId } = insertEntry('s1', 0, makeOrigin('paste'));
+    expect(entryId).toMatch(/^[0-9a-f]{8}-/i);
+    expect(firstBulletId).toMatch(/^[0-9a-f]{8}-/i);
+  });
+});
