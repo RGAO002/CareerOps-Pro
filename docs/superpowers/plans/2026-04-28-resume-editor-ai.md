@@ -2803,52 +2803,96 @@ def gc(*, now_ms: Callable[[], int] = _now_ms) -> int:
 ```python
 """Per-run event channel — backs live SSE streaming during orchestration.
 
-Module-level `{run_id: queue.Queue}` dict. Producer (orchestrator running on a
-background thread) writes events; consumer (SSE generator running on the
-asyncio event loop) reads via `await asyncio.to_thread(queue.get, timeout=...)`.
+Module-level `{run_id: {queue, closed_at}}` dict. Producer (orchestrator on a
+background thread) writes events; consumer (SSE generator on the asyncio loop)
+reads via `await asyncio.to_thread(queue.get, timeout=...)`.
 
-Events are dicts shaped `{type: str, data: dict}`. The event types match
-spec § 4.4: run.started, agent.started, agent.narration, suggestion.streamed,
+Events are dicts shaped `{type: str, data: dict}`. Event types match spec § 4.4:
+run.started, agent.started, agent.narration, suggestion.streamed,
 agent.completed, run.completed, run.error.
 
-A sentinel `{type: 'CLOSE'}` is sent after run.completed/run.error so the
-consumer's loop can break cleanly.
+`close(run_id)` pushes a `CLOSE_SENTINEL` so the consumer's loop can break
+cleanly. **It does NOT pop the queue from the dict** — late SSE attachers
+(browser races, page reloads moments after run.completed) can still find the
+queue, drain queued events including the sentinel, and exit cleanly. The
+queue is removed by `gc(now_ms)` only after `closed_at + 5 min`.
+
+Without this delayed removal, a fast (stub-LLM-fast or just brief) run would
+finish, immediately remove its queue, and any consumer that attached even a
+millisecond later would fall through to the `_replay_from_state` path —
+losing the `agent.started` event with the lockedBlockIds and the per-tool
+`suggestion.streamed` events the live stream would have surfaced.
 """
 from __future__ import annotations
 import queue
-from typing import Dict, Optional
+import time
+from typing import Callable, Dict, Optional, TypedDict
 
-_QUEUES: Dict[str, "queue.Queue"] = {}
+_GRACE_PERIOD_MS = 5 * 60 * 1000   # keep closed queues 5 min for late attachers
+
+
+class _Slot(TypedDict, total=False):
+    queue: "queue.Queue"
+    closed_at: Optional[int]   # ms epoch; None while still receiving
+
+
+_QUEUES: Dict[str, _Slot] = {}
 
 CLOSE_SENTINEL = {"type": "CLOSE", "data": {}}
 
 
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
 def open(run_id: str) -> "queue.Queue":
-    """Allocate a fresh queue for this run. Caller (orchestrator entry point)
-    must call `close(run_id)` after run.completed/error to free memory."""
+    """Allocate a fresh queue for this run. close() pushes a sentinel; gc()
+    removes the entry from the dict after a grace period."""
     q: queue.Queue = queue.Queue()
-    _QUEUES[run_id] = q
+    _QUEUES[run_id] = {"queue": q, "closed_at": None}
     return q
 
 
 def emit(run_id: str, event_type: str, data: dict) -> None:
-    """Producer-side: push an event onto the run's queue. No-op if queue gone."""
-    q = _QUEUES.get(run_id)
-    if q is None:
+    """Producer-side: push an event onto the run's queue. No-op if queue gone.
+    Tolerates emit-after-close by silently dropping (orchestrator's `finally`
+    may double-emit due to retry logic)."""
+    slot = _QUEUES.get(run_id)
+    if slot is None or slot.get("closed_at") is not None:
         return
-    q.put({"type": event_type, "data": data})
+    slot["queue"].put({"type": event_type, "data": data})
 
 
 def get_queue(run_id: str) -> Optional["queue.Queue"]:
-    """Consumer-side accessor. None if the run hasn't started or already closed."""
-    return _QUEUES.get(run_id)
+    """Consumer-side accessor. Returns the queue regardless of closed state
+    (so a late attacher can still drain queued events + see the sentinel).
+    Returns None only if the run never opened OR was GC'd past the grace period."""
+    slot = _QUEUES.get(run_id)
+    return slot["queue"] if slot else None
 
 
 def close(run_id: str) -> None:
-    """Push the close sentinel + remove the queue entry. Safe to call twice."""
-    q = _QUEUES.pop(run_id, None)
-    if q is not None:
-        q.put(CLOSE_SENTINEL)
+    """Push the close sentinel + mark closed_at. Does NOT remove from _QUEUES.
+    Safe to call twice (second call is a no-op)."""
+    slot = _QUEUES.get(run_id)
+    if slot is None or slot.get("closed_at") is not None:
+        return
+    slot["closed_at"] = _now_ms()
+    slot["queue"].put(CLOSE_SENTINEL)
+
+
+def gc(*, now_ms: Callable[[], int] = _now_ms) -> int:
+    """Remove queues whose `closed_at` is older than the grace period. Called
+    periodically by the runs GC sweep (or on-demand from tests)."""
+    now = now_ms()
+    purged = 0
+    for rid in list(_QUEUES.keys()):
+        slot = _QUEUES[rid]
+        ts = slot.get("closed_at")
+        if ts is not None and now - ts > _GRACE_PERIOD_MS:
+            del _QUEUES[rid]
+            purged += 1
+    return purged
 ```
 
 Test `tests/services/ai/test_event_queue.py`:
@@ -2871,7 +2915,41 @@ def test_open_emit_get_close():
     event_queue.close(rid)
     sentinel = q.get(timeout=1)
     assert sentinel == event_queue.CLOSE_SENTINEL
-    assert event_queue.get_queue(rid) is None  # removed
+    # ★ R8 fix: queue STAYS in dict after close (within grace period) so
+    # late SSE attachers can still find it + drain. Removal is via gc().
+    assert event_queue.get_queue(rid) is q
+
+
+def test_emit_after_close_is_dropped():
+    """Defensive: if orchestrator's finally accidentally double-emits, the
+    second emit is silently dropped (no extra event after the sentinel)."""
+    rid = "run_double"
+    q = event_queue.open(rid)
+    event_queue.close(rid)
+    event_queue.emit(rid, "stray", {"oops": True})
+    sentinel = q.get(timeout=1)
+    assert sentinel == event_queue.CLOSE_SENTINEL
+    # No further event:
+    import queue as _q
+    with pytest.raises(_q.Empty):
+        q.get(timeout=0.1)
+
+
+def test_gc_purges_queues_past_grace_period():
+    rid = "run_gc"
+    event_queue.open(rid)
+    event_queue.close(rid)
+    # Fake "5 min later":
+    event_queue.gc(now_ms=lambda: int(__import__("time").time() * 1000) + 6 * 60 * 1000)
+    assert event_queue.get_queue(rid) is None
+
+
+def test_gc_keeps_queues_within_grace_period():
+    rid = "run_keep"
+    event_queue.open(rid)
+    event_queue.close(rid)
+    event_queue.gc()  # current time → still within 5 min
+    assert event_queue.get_queue(rid) is not None
 
 
 def test_emit_to_unknown_run_is_noop():
@@ -2897,7 +2975,7 @@ def test_threaded_producer_consumer():
     assert received == [0, 1, 2, 3, 4]
 ```
 
-Run: `pytest tests/services/ai/test_event_queue.py -v` → expected `3 passed`.
+Run: `pytest tests/services/ai/test_event_queue.py -v` → expected `6 passed`.
 
 - [ ] **Step 4: Write failing test for orchestrator**
 
@@ -3295,18 +3373,24 @@ def test_events_sse_streams_live_then_closes(client):
     assert "event: run.completed" in body
 
 
-def test_events_sse_replay_fallback_when_run_already_finished(client):
-    """If the SSE attaches AFTER the queue is closed (e.g. browser reload
-    after run.completed), fall back to one-shot replay from persisted state."""
+def test_events_sse_replay_fallback_when_queue_gc_d(client):
+    """If the SSE attaches AFTER event_queue.gc() removed the queue (>5min
+    after run.completed), fall back to one-shot replay from persisted state.
+
+    For runs that finished within the grace period, the live path is taken
+    and the queue is drained in one shot — separate test covers that.
+    """
     import time
     r = client.post("/api/ai/run", json={
         "resumeId": "r1", "userInput": "hi", "selection": [], "chatHistory": []
     })
     rid = r.json()["runId"]
-    # Wait for the run to finish + queue to be closed:
+    # Wait for the run to finish:
     time.sleep(1.0)
+    # Force-GC the queue (simulating 5+ min later):
     from services.ai import event_queue
-    assert event_queue.get_queue(rid) is None  # GC'd
+    event_queue.gc(now_ms=lambda: int(time.time() * 1000) + 6 * 60 * 1000)
+    assert event_queue.get_queue(rid) is None
     # Now attach: should get the synthetic replay
     r = client.get(f"/api/ai/runs/{rid}/events")
     assert r.status_code == 200
@@ -3420,9 +3504,11 @@ async def get_run_events(run_id: str):
     """
     q = event_queue.get_queue(run_id)
     if q is None:
-        # Run may have completed before SSE attached. Fall back to a one-shot
-        # replay from persisted state — equivalent to a synthetic post-hoc
-        # stream that ends immediately.
+        # Queue not found — run was GC'd past the 5-minute grace period
+        # (event_queue.gc removes only after `closed_at + 5min`). For runs
+        # that finished moments before this attach, the queue still exists
+        # with the sentinel queued, and we go through the live path below
+        # which yields all queued events + sentinel + exits cleanly.
         state = runs.load(run_id)
         if state is None:
             raise HTTPException(status_code=404, detail="run not found")
@@ -3546,7 +3632,7 @@ Expected: all backend tests green (suggestions + read_tools + write_tools + cont
 
 ```bash
 git -C /Users/fred/Desktop/CareerOps-Pro add api/routes/ai.py api/main.py tests/api/test_ai_routes.py
-git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: API routes (POST /run, SSE /events replay, GET /suggestions, POST /status)"
+git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: API routes (POST /run async dispatch, live SSE /events, GET /suggestions, POST /status)"
 ```
 
 ---
@@ -4691,7 +4777,43 @@ describe('applySuggestion: superseded when before differs', () => {
   });
 });
 
-describe('applyAllInRun', () => {
+describe('applySuggestions (scope-respecting primitive)', () => {
+  it('only applies the explicitly-passed ids; other pending in same run untouched', async () => {
+    const { applySuggestions } = await import('../applySuggestion');
+    const s1: Suggestion = { ..._b, id: 'a', createdAt: 1, op: 'update',
+      field: { kind: 'entry.title', id: 'e1' }, before: 'OldT', after: 'NewT' };
+    const s2: Suggestion = { ..._b, id: 'b', createdAt: 2, op: 'update',
+      field: { kind: 'entry.meta', id: 'e1' }, before: 'OldM', after: 'NewM' };
+    useSuggestionStore.getState().upsert(s1);
+    useSuggestionStore.getState().upsert(s2);
+    // ★ Only pass ['a']: the sidebar-Accept-all scope path
+    const result = await applySuggestions(['a']);
+    expect(result).toEqual({ accepted: 1, skipped: 0 });
+    const e = useResumeStore.getState().resume!.sections[0].entries[0];
+    expect(e.title).toBe('NewT');
+    expect(e.meta).toBe('OldM');                           // ← s2 NOT applied
+    expect(useSuggestionStore.getState().byId['b'].status).toBe('pending');  // ← still pending
+  });
+
+  it('groups by runId so each batch produces its own undo entry', async () => {
+    const { applySuggestions } = await import('../applySuggestion');
+    const s1: Suggestion = { ..._b, id: 'a', runId: 'rA', createdAt: 1, op: 'update',
+      field: { kind: 'entry.title', id: 'e1' }, before: 'OldT', after: 'NewT' };
+    const s2: Suggestion = { ..._b, id: 'b', runId: 'rB', createdAt: 2, op: 'update',
+      field: { kind: 'entry.meta', id: 'e1' }, before: 'OldM', after: 'NewM' };
+    useSuggestionStore.getState().upsert(s1);
+    useSuggestionStore.getState().upsert(s2);
+    await applySuggestions(['a', 'b']);
+    // Two undo entries (one per runId), each undo restores its own block:
+    useResumeStore.getState().undo();   // pops the most recent (rB)
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].meta).toBe('OldM');
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].title).toBe('NewT');  // rA still applied
+    useResumeStore.getState().undo();   // pops rA
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].title).toBe('OldT');
+  });
+});
+
+describe('applyAllInRun (legacy wrapper)', () => {
   it('applies multiple suggestions in createdAt order, single undo entry', async () => {
     const s1: Suggestion = { ..._b, id: 'a', createdAt: 1, op: 'update',
       field: { kind: 'entry.title', id: 'e1' }, before: 'OldT', after: 'NewT' };
@@ -5493,13 +5615,28 @@ git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: AISidebar + AISidebar
 
 ---
 
-## Task 19: Frontend — Soft lock visual + DragController/keyboard structural guards
+## Task 19: Frontend — Soft lock visual + DragController/keyboard/structural guards
 
-**Files:**
+**Files** (every file Step 5 enumerates — DO NOT skip any. Step 5 is intentionally exhaustive per spec § 6.2's mandate that EVERY mutation entry point check the lock):
 - Modify: `frontend/src/components/resume/v2/interaction/DragController.ts`
 - Modify: `frontend/src/components/resume/v2/interaction/DragController.test.ts`
 - Modify: `frontend/src/components/resume/v2/layers/AtomContentLayer.tsx`
+- Modify: `frontend/src/components/resume/v2/tokens/resume-styles.css` — add `@keyframes ai-lock-pulse`
 - Modify: `frontend/src/components/resume/v2/extensions/AtomKeyboardNav.ts`
+- Modify: `frontend/src/components/resume/v2/extensions/SingleLineKeyboardNav.ts`
+- Modify: `frontend/src/components/resume/v2/interaction/keyboard-router.ts` (if structural delete routes through it — Step 5c verifies)
+- Modify: `frontend/src/components/resume/v2/interaction/SelectionManager.ts` (if batch delete present — Step 5d verifies)
+- Modify: `frontend/src/components/resume/v2/extensions/SlashCommand.ts` (if it triggers structural inserts — Step 5e verifies)
+- Modify: `frontend/src/components/resume/v2/store/actions/insertBlock.ts` — top-of-action lock guard (Step 5g)
+- Modify: `frontend/src/components/resume/v2/store/actions/deleteBlock.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/moveBullet.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/moveEntry.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/moveSection.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/setBulletKind.ts` — top-of-action lock guard
+- Modify: `frontend/src/components/resume/v2/store/actions/duplicateBlock.ts` — top-of-action lock guard
+- Modify: any toolbar component invoking structural actions (Step 5f enumerates via grep — list at execution time)
+- Create: `frontend/src/components/resume/v2/store/actions/__tests__/aiLockGuard.test.ts`
 
 Per spec § 6.2: lock check at `DragController.startDrag` (return no-op session) + at structural mutation entry points (delete via keyboard). Visual treatment: opacity 0.55 + slow ✦ pulse + accent border on locked atoms (in AtomContentLayer's per-atom render).
 
@@ -5696,6 +5833,7 @@ This is a defensive fail-safe — the UI guards in 5a-5f should already prevent 
 Add a regression test asserting that with `useAILockStore` containing the target id, every guarded action no-ops:
 
 `frontend/src/components/resume/v2/store/actions/__tests__/aiLockGuard.test.ts`:
+
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useResumeStore } from '../../useResumeStore';
@@ -5707,29 +5845,88 @@ import { moveEntry } from '../moveEntry';
 import { makeOrigin } from '../../source-of-truth';
 import type { ResumeDoc } from '../../../types';
 
-const FIXTURE: ResumeDoc = {/* same shape as structural.test.ts fixture */} as ResumeDoc;
+const FIXTURE: ResumeDoc = {
+  schema_version: 2, id: 'r', title: '', template_id: 'minimal-single-column',
+  header: { id: 'h', name: '', contact_lines: [] },
+  sections: [
+    { id: 's1', role: 'experience', heading: 'Exp', entries: [
+      { id: 'e1', title: '', meta: '', bullets: [
+        { id: 'b1', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
+        { id: 'b2', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
+      ]},
+      { id: 'e2', title: '', meta: '', bullets: [
+        { id: 'b3', content: { type: 'doc', content: [{ type: 'paragraph' }] } },
+      ]},
+    ]},
+    { id: 's2', role: 'skills', heading: 'Skills', entries: [] },
+  ],
+  metadata: { created_at: '', updated_at: '', target_company: null, target_role: null, parent_id: null },
+};
 
 beforeEach(() => {
   useResumeStore.setState({ resume: structuredClone(FIXTURE), bulletMeta: {} });
+  useResumeStore.getState()._undo.clear();
   useAILockStore.setState({ lockedBlockIds: new Set() });
 });
 
-describe('AI lock blocks structural mutations', () => {
+const ORIGIN = () => makeOrigin('ai-apply');
+
+describe('AI lock blocks structural mutations (defensive store-action guard)', () => {
   it('insertBullet is no-op when parent entry is locked', () => {
     const before = useResumeStore.getState().resume!.sections[0].entries[0].bullets.length;
     useAILockStore.getState().lock(['e1']);
-    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, makeOrigin('paste'));
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, ORIGIN());
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.length).toBe(before);
+  });
+
+  it('insertBullet succeeds when parent entry is NOT locked', () => {
+    const before = useResumeStore.getState().resume!.sections[0].entries[0].bullets.length;
+    insertBullet('e1', 0, { type: 'doc', content: [{ type: 'paragraph' }] }, ORIGIN());
+    expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.length).toBe(before + 1);
   });
 
   it('deleteBullet is no-op when bullet is locked', () => {
     useAILockStore.getState().lock(['b1']);
-    deleteBullet('b1', makeOrigin('paste'));
+    deleteBullet('b1', ORIGIN());
     expect(useResumeStore.getState().resume!.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeTruthy();
   });
 
-  // Add similar for moveBullet, moveEntry, deleteEntry, insertEntry.
-  // Each should assert: locked → no mutation; unlocked → mutation as usual.
+  it('deleteEntry is no-op when entry is locked', () => {
+    useAILockStore.getState().lock(['e1']);
+    deleteEntry('e1', ORIGIN());
+    expect(useResumeStore.getState().resume!.sections[0].entries.find(e => e.id === 'e1')).toBeTruthy();
+  });
+
+  it('moveBullet is no-op when source bullet is locked', () => {
+    useAILockStore.getState().lock(['b1']);
+    moveBullet('b1', 'e2', 0, ORIGIN());
+    // b1 should still be in e1, not e2:
+    const r = useResumeStore.getState().resume!;
+    expect(r.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeTruthy();
+    expect(r.sections[0].entries[1].bullets.find(b => b.id === 'b1')).toBeUndefined();
+  });
+
+  it('moveBullet is no-op when destination entry is locked', () => {
+    useAILockStore.getState().lock(['e2']);
+    moveBullet('b1', 'e2', 0, ORIGIN());
+    const r = useResumeStore.getState().resume!;
+    expect(r.sections[0].entries[0].bullets.find(b => b.id === 'b1')).toBeTruthy();
+  });
+
+  it('moveEntry is no-op when entry is locked', () => {
+    useAILockStore.getState().lock(['e1']);
+    moveEntry('e1', 's2', 0, ORIGIN());
+    const r = useResumeStore.getState().resume!;
+    expect(r.sections[0].entries.find(e => e.id === 'e1')).toBeTruthy();
+    expect(r.sections[1].entries.find(e => e.id === 'e1')).toBeUndefined();
+  });
+
+  it('insertEntry is no-op when target section is locked', () => {
+    const before = useResumeStore.getState().resume!.sections[0].entries.length;
+    useAILockStore.getState().lock(['s1']);
+    insertEntry('s1', 0, ORIGIN());
+    expect(useResumeStore.getState().resume!.sections[0].entries.length).toBe(before);
+  });
 });
 ```
 
@@ -5745,8 +5942,30 @@ npx vitest run src/components/resume/v2 2>&1 | tail -3
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /Users/fred/Desktop/CareerOps-Pro add frontend/src/components/resume/v2/interaction/DragController.ts frontend/src/components/resume/v2/interaction/DragController.test.ts frontend/src/components/resume/v2/layers/AtomContentLayer.tsx frontend/src/components/resume/v2/tokens/resume-styles.css frontend/src/components/resume/v2/extensions/AtomKeyboardNav.ts frontend/src/components/resume/v2/extensions/SingleLineKeyboardNav.ts
-git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: soft lock — DragController/keyboard guards + opacity-pulse visual"
+git -C /Users/fred/Desktop/CareerOps-Pro add \
+  frontend/src/components/resume/v2/interaction/DragController.ts \
+  frontend/src/components/resume/v2/interaction/DragController.test.ts \
+  frontend/src/components/resume/v2/layers/AtomContentLayer.tsx \
+  frontend/src/components/resume/v2/tokens/resume-styles.css \
+  frontend/src/components/resume/v2/extensions/AtomKeyboardNav.ts \
+  frontend/src/components/resume/v2/extensions/SingleLineKeyboardNav.ts \
+  frontend/src/components/resume/v2/interaction/keyboard-router.ts \
+  frontend/src/components/resume/v2/interaction/SelectionManager.ts \
+  frontend/src/components/resume/v2/extensions/SlashCommand.ts \
+  frontend/src/components/resume/v2/store/actions/insertBlock.ts \
+  frontend/src/components/resume/v2/store/actions/deleteBlock.ts \
+  frontend/src/components/resume/v2/store/actions/moveBullet.ts \
+  frontend/src/components/resume/v2/store/actions/moveEntry.ts \
+  frontend/src/components/resume/v2/store/actions/moveSection.ts \
+  frontend/src/components/resume/v2/store/actions/moveHeaderRow.ts \
+  frontend/src/components/resume/v2/store/actions/setBulletKind.ts \
+  frontend/src/components/resume/v2/store/actions/duplicateBlock.ts \
+  frontend/src/components/resume/v2/store/actions/__tests__/aiLockGuard.test.ts
+# If Step 5c/5d/5e/5f find no structural ops to gate in their respective
+# files, those files won't be modified — `git add` of unmodified paths is
+# a no-op, safe. Toolbar files identified at execution time per Step 5f's
+# grep — add them to the `git add` line above before commit.
+git -C /Users/fred/Desktop/CareerOps-Pro commit -m "v0 ai: soft lock — DragController + keyboard + slash + selection + 8 store action guards + visual"
 ```
 
 ---
