@@ -44,6 +44,30 @@ describe('getDropTargetsFor', () => {
     const targets = getDropTargetsFor({ kind: 'bullet', id: 'b1', entryId: 'e1' });
     expect(targets).toHaveLength(2);  // before b1, after b1
   });
+  it('header-row drag → only header-row-slot targets in this header (never section/entry/bullet)', () => {
+    // Replace header with one that has a contact line so we have 2 rows.
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        header: {
+          id: 'h', name: 'A',
+          contact_lines: [{ type: 'text', value: 'a' }],
+        },
+      },
+      bulletMeta: {},
+    });
+    const targets = getDropTargetsFor({
+      kind: 'header-row', rowKey: 'name', headerId: 'h',
+    });
+    // 2 rows → 3 slots (above, between, below).
+    expect(targets).toHaveLength(3);
+    // CRITICAL: header rows must NEVER produce section/entry/bullet drop
+    // targets — that would let the user drop a contact line into the
+    // experience section.
+    expect(targets.every(t => t.kind === 'header-row-slot')).toBe(true);
+    // All slots target the same header.
+    expect(targets.every(t => t.kind === 'header-row-slot' && t.headerId === 'h')).toBe(true);
+  });
 });
 
 describe('commitDrop', () => {

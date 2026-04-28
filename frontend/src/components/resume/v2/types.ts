@@ -26,6 +26,14 @@ export type HeaderBlock = {
   id: BlockId;
   name: string;
   contact_lines: ContactItem[];
+  /** Display order of header rows. Each entry is either 'name' or 'contact:N'
+   *  where N is the index into contact_lines. Defaults (when undefined) to
+   *  ['name', 'contact:0', 'contact:1', ...] — backward compatible.
+   *
+   *  Edits to row_order are user-initiated via drag-reorder of the header
+   *  row handles; never inferred. If a referenced row no longer exists
+   *  (e.g. user deleted a contact line), it's filtered out at render time. */
+  row_order?: string[];
 };
 
 export type EntryBlock = {
@@ -130,7 +138,11 @@ export type AtomLayout = {
 export type SelectableBlock =
   | { kind: 'section'; id: BlockId }
   | { kind: 'entry';   id: BlockId; sectionId: BlockId }
-  | { kind: 'bullet';  id: BlockId; entryId: BlockId };
+  | { kind: 'bullet';  id: BlockId; entryId: BlockId }
+  /** Header row drag — `rowKey` is 'name' or 'contact:N'. Drag scope is
+   *  intentionally limited to within the header (DragController only emits
+   *  header-row-slot drop targets for this kind). */
+  | { kind: 'header-row'; rowKey: string; headerId: BlockId };
 
 // ─────────── EditableField (TipTap instance unit) ───────────
 export type EditableField =

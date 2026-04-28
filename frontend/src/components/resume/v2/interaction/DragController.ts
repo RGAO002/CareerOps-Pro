@@ -5,6 +5,8 @@ import { makeOrigin } from '../store/source-of-truth';
 import { moveSection } from '../store/actions/moveSection';
 import { moveEntry } from '../store/actions/moveEntry';
 import { moveBullet } from '../store/actions/moveBullet';
+import { moveHeaderRow } from '../store/actions/moveHeaderRow';
+import { effectiveHeaderRowOrder } from '../store/header-order';
 import { projectAtoms } from '../layout/atoms-projection';
 import { selectionManager } from './SelectionManager';
 import { setDragPreview, setRecentlyDroppedId, getRecentlyDroppedId } from './drag-preview-state';
@@ -30,7 +32,8 @@ function allBlockIdsInDocOrder(): BlockId[] {
 export type DropTarget =
   | { kind: 'section-slot'; insertBeforeSectionId: BlockId | null }
   | { kind: 'entry-slot'; sectionId: BlockId; insertAtIndex: number }
-  | { kind: 'bullet-slot'; entryId: BlockId; insertAtIndex: number };
+  | { kind: 'bullet-slot'; entryId: BlockId; insertAtIndex: number }
+  | { kind: 'header-row-slot'; headerId: BlockId; insertAtIndex: number };
 
 const DRAG_THRESHOLD = 5;
 const SCROLL_EDGE_PX = 30;
@@ -56,6 +59,7 @@ let _stickyTargetKey: string | null = null;
 export function targetKey(t: DropTarget): string {
   if (t.kind === 'section-slot') return `s:${t.insertBeforeSectionId ?? '*'}`;
   if (t.kind === 'entry-slot') return `e:${t.sectionId}:${t.insertAtIndex}`;
+  if (t.kind === 'header-row-slot') return `hr:${t.headerId}:${t.insertAtIndex}`;
   return `b:${t.entryId}:${t.insertAtIndex}`;
 }
 
@@ -107,6 +111,16 @@ export function getDropTargetsFor(block: SelectableBlock): DropTarget[] {
     }
     return targets;
   }
+  if (block.kind === 'header-row') {
+    // Drop targets are limited to header-row slots within THIS header. The
+    // user must not be able to drop a header row into the section list.
+    const order = effectiveHeaderRowOrder(r.header);
+    const targets: DropTarget[] = [];
+    for (let i = 0; i <= order.length; i++) {
+      targets.push({ kind: 'header-row-slot', headerId: r.header.id, insertAtIndex: i });
+    }
+    return targets;
+  }
   // bullet
   const targets: DropTarget[] = [];
   for (const s of r.sections) {
@@ -126,17 +140,23 @@ export function commitDrop(block: SelectableBlock, target: DropTarget, origin: U
     moveEntry(block.id, target.sectionId, target.insertAtIndex, origin);
   } else if (target.kind === 'bullet-slot' && block.kind === 'bullet') {
     moveBullet(block.id, target.entryId, target.insertAtIndex, origin);
+  } else if (target.kind === 'header-row-slot' && block.kind === 'header-row') {
+    moveHeaderRow(block.rowKey, target.insertAtIndex, origin);
   }
   // Scroll the moved block into view after the layout engine reflows.
   // Two rAFs: one for React commit, one for layout engine repaginate.
-  requestAnimationFrame(() => {
+  // Header rows don't have a per-row block id — skip the scroll-into-view
+  // (the header is always at the top of the document anyway).
+  if (block.kind !== 'header-row') {
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-block-id="${block.id}"]`);
-      if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
-        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-block-id="${block.id}"]`);
+        if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+          (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
     });
-  });
+  }
 }
 
 /**
@@ -155,6 +175,9 @@ function buildHypotheticalAtoms(
   currentAtoms: LayoutAtom[],
 ): LayoutAtom[] | null {
   if (target.kind === 'bullet-slot') return null;
+  // Header-row drags don't move atoms — the header atom stays put; only the
+  // intra-header row order changes. No hypothetical atom list to build.
+  if (target.kind === 'header-row-slot' || block.kind === 'header-row') return null;
   // Identify the dragged group (single entry, or section-heading + entries).
   const startIdx = currentAtoms.findIndex(a => a.sourceBlockId === block.id);
   if (startIdx < 0) return null;
@@ -234,6 +257,25 @@ function getDropTargetY(target: DropTarget): number | null {
       const el = document.querySelector(`[data-block-id="${last.id}"]`);
       return el ? el.getBoundingClientRect().bottom : null;
     }
+  }
+  if (target.kind === 'header-row-slot') {
+    const order = effectiveHeaderRowOrder(r.header);
+    // Map a row key to its row wrapper rect (the wrappers carry
+    // [data-row-field-key="header.name"] / "header.contact:N").
+    const fullKey = (k: string) => (k === 'name' ? 'header.name' : `header.${k}`);
+    if (target.insertAtIndex < order.length) {
+      const k = order[target.insertAtIndex];
+      const el = document.querySelector(`[data-row-field-key="${fullKey(k)}"]`);
+      return el ? el.getBoundingClientRect().top : null;
+    }
+    // Tail slot: bottom of the last row, or bottom of the header block if empty.
+    const last = order[order.length - 1];
+    if (!last) {
+      const hEl = document.querySelector(`[data-block-id="${target.headerId}"]`);
+      return hEl ? hEl.getBoundingClientRect().bottom : null;
+    }
+    const el = document.querySelector(`[data-row-field-key="${fullKey(last)}"]`);
+    return el ? el.getBoundingClientRect().bottom : null;
   }
   // bullet-slot
   const entry = r.sections.flatMap(s => s.entries).find(e => e.id === target.entryId);
@@ -342,6 +384,10 @@ function atomGroupForBlock(
   block: SelectableBlock,
   atoms: LayoutAtom[],
 ): { startIdx: number; endIdx: number; ids: BlockId[]; heightSum: number } {
+  // Header rows aren't atoms — the caller must filter them out before this.
+  if (block.kind === 'header-row') {
+    return { startIdx: 0, endIdx: 0, ids: [], heightSum: 0 };
+  }
   const startIdx = atoms.findIndex(a => a.sourceBlockId === block.id);
   if (startIdx < 0) {
     return { startIdx: 0, endIdx: 0, ids: [], heightSum: 0 };
@@ -437,19 +483,56 @@ export function startDrag(
       // For section drag, the ghost includes the section heading + all its
       // entry atoms (so the user sees the whole section being lifted).
       // For entry / bullet drag the ghost is a single block.
-      let ghostIds: BlockId[] = [block.id];
-      if (block.kind === 'section') {
-        const atoms = currentAtoms();
-        const group = atomGroupForBlock(block, atoms);
-        if (group.ids.length > 0) {
-          // group.ids are atom ids; for atoms, id === sourceBlockId, so
-          // [data-block-id="${id}"] resolves to the right element.
-          ghostIds = atoms
-            .slice(group.startIdx, group.endIdx)
-            .map(a => a.sourceBlockId);
+      if (block.kind === 'header-row') {
+        // Header-row ghost: clone the row wrapper directly (we don't have a
+        // data-block-id on individual rows). Build a minimal ghost wrapper
+        // mirroring DragGhost styling.
+        const rowKeyFull = block.rowKey === 'name'
+          ? 'header.name'
+          : `header.${block.rowKey}`;
+        const src = document.querySelector(`[data-row-field-key="${rowKeyFull}"]`) as HTMLElement | null;
+        if (src) {
+          const rect = src.getBoundingClientRect();
+          const wrapper = document.createElement('div');
+          wrapper.setAttribute('data-canvas-root', '');
+          wrapper.setAttribute('aria-hidden', 'true');
+          wrapper.setAttribute('inert', '');
+          Object.assign(wrapper.style, {
+            position: 'fixed', pointerEvents: 'none', opacity: '0.85',
+            zIndex: '9999', width: `${rect.width}px`, background: 'white',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06)',
+            borderRadius: '4px', padding: '8px 12px', boxSizing: 'border-box',
+          });
+          const clone = src.cloneNode(true) as HTMLElement;
+          clone.querySelectorAll('[contenteditable]').forEach(el => {
+            el.removeAttribute('contenteditable');
+            el.removeAttribute('spellcheck');
+          });
+          clone.querySelectorAll('[data-edit-only]').forEach(el => {
+            (el as HTMLElement).style.display = 'none';
+          });
+          Object.assign(clone.style, {
+            position: 'static', transform: 'none', opacity: '1',
+            visibility: 'visible', width: '100%',
+          });
+          wrapper.appendChild(clone);
+          ghost = wrapper;
         }
+      } else {
+        let ghostIds: BlockId[] = [block.id];
+        if (block.kind === 'section') {
+          const atoms = currentAtoms();
+          const group = atomGroupForBlock(block, atoms);
+          if (group.ids.length > 0) {
+            // group.ids are atom ids; for atoms, id === sourceBlockId, so
+            // [data-block-id="${id}"] resolves to the right element.
+            ghostIds = atoms
+              .slice(group.startIdx, group.endIdx)
+              .map(a => a.sourceBlockId);
+          }
+        }
+        ghost = makeDragGhost(ghostIds);
       }
-      ghost = makeDragGhost(ghostIds);
       if (ghost) document.body.appendChild(ghost);
       document.body.style.cursor = 'grabbing';
       // Measure dragged element height for bullet drags (atom drags compute
@@ -483,6 +566,14 @@ export function startDrag(
         dstEntryId: target.entryId,
         dstBulletIndex: target.insertAtIndex,
       });
+      return;
+    }
+
+    if (block.kind === 'header-row') {
+      // Header-row drag: no layout-aware preview (see HeaderRowInteractionOverlay
+      // doc comment). Ghost + DropIndicator line only — simpler and adequate at
+      // this scale (2-4 rows, all in the same atom).
+      setDragPreview(null);
       return;
     }
 
@@ -527,6 +618,9 @@ export function startDrag(
       // Click-without-drag on the ⋮⋮ handle → block selection.
       // Mirrors the modifier semantics that used to live on the (now-deleted)
       // select dot: shift extends a range, cmd/ctrl toggles, plain selects.
+      // Header rows aren't selectable (they're a render-time concept, not a
+      // SelectableBlock with an id) — click-without-drag is a no-op.
+      if (block.kind === 'header-row') return;
       if (ev.shiftKey) {
         selectionManager.extendBlockSelection(block.id, allBlockIdsInDocOrder());
       } else if (ev.metaKey || ev.ctrlKey) {
@@ -545,11 +639,14 @@ export function startDrag(
       animateSoftDrop(ghost);
       ghost = null;  // ownership transferred to animateSoftDrop
       // Mark dropped atom so AtomContentLayer plays atom-settle on it.
-      setRecentlyDroppedId(block.id);
-      setTimeout(() => {
-        // Clear only if it's still us (defensive — another drop could have started)
-        if (getRecentlyDroppedId() === block.id) setRecentlyDroppedId(null);
-      }, 260);
+      // Header rows aren't atoms — skip the settle marker.
+      if (block.kind !== 'header-row') {
+        setRecentlyDroppedId(block.id);
+        setTimeout(() => {
+          // Clear only if it's still us (defensive — another drop could have started)
+          if (getRecentlyDroppedId() === block.id) setRecentlyDroppedId(null);
+        }, 260);
+      }
       // SCROLL LOCK: snapshot scrollY BEFORE the commit, then continuously
       // re-pin it for ~350ms. A single rAF×2 restore isn't enough — the
       // layout can pass through several reflow stages (React commit → atom

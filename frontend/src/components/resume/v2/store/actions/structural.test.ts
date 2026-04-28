@@ -13,6 +13,7 @@ import {
 } from './deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from './duplicateBlock';
 import { setBulletKind } from './setBulletKind';
+import { moveHeaderRow } from './moveHeaderRow';
 import type { ResumeDoc } from '../../types';
 
 const RESUME: ResumeDoc = {
@@ -256,6 +257,60 @@ describe('setBulletKind', () => {
     expect(b.kind).toBeUndefined();
   });
 
+  it.skip('__moveHeaderRow_block__', () => {});
+});
+
+describe('moveHeaderRow', () => {
+  beforeEach(() => {
+    useResumeStore.setState({
+      resume: {
+        ...structuredClone(RESUME),
+        header: {
+          id: 'h', name: 'A',
+          contact_lines: [{ type: 'text', value: 'a' }],
+        },
+      },
+      bulletMeta: {},
+    });
+  });
+
+  it('moves name to after contact:0 (writes row_order)', () => {
+    moveHeaderRow('name', 1, makeOrigin('drag-reorder'));
+    const order = useResumeStore.getState().resume!.header.row_order;
+    expect(order).toEqual(['contact:0', 'name']);
+  });
+
+  it('no-ops when the resulting order matches the current effective order', () => {
+    const before = useResumeStore.getState().resume!;
+    // 'name' is already at index 0 by default — moving to 0 is a no-op.
+    moveHeaderRow('name', 0, makeOrigin('drag-reorder'));
+    const after = useResumeStore.getState().resume!;
+    expect(after).toBe(before);
+  });
+
+  it('is undoable: undo restores previous order', () => {
+    moveHeaderRow('name', 1, makeOrigin('drag-reorder'));
+    expect(useResumeStore.getState().resume!.header.row_order)
+      .toEqual(['contact:0', 'name']);
+    useResumeStore.getState().undo();
+    expect(useResumeStore.getState().resume!.header.row_order).toBeUndefined();
+  });
+
+  it('clamps insertAtIndex past the end', () => {
+    moveHeaderRow('name', 99, makeOrigin('drag-reorder'));
+    expect(useResumeStore.getState().resume!.header.row_order)
+      .toEqual(['contact:0', 'name']);
+  });
+
+  it('no-ops on unknown rowKey', () => {
+    const before = useResumeStore.getState().resume!;
+    moveHeaderRow('contact:99', 0, makeOrigin('drag-reorder'));
+    const after = useResumeStore.getState().resume!;
+    expect(after).toBe(before);
+  });
+});
+
+describe('_setBulletKindNoOp', () => {
   it('no-ops when the bullet already has the requested kind', () => {
     // Initial kind is absent → 'bullet' default. setBulletKind('bullet')
     // should not modify the bullet (no undo entry created — undo would

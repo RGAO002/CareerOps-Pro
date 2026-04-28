@@ -86,6 +86,10 @@ class HeaderBlockV2(BaseModel):
     id: str
     name: str
     contact_lines: List[ContactItem] = Field(default_factory=list)
+    # Display order of header rows; entries are 'name' or 'contact:N'.
+    # Defaults (None) to ['name', 'contact:0', ...]. Mostly belt-and-suspenders
+    # — v2 docs are stored as raw dict; the frontend owns the canonical schema.
+    row_order: Optional[List[str]] = None
 
 
 class BulletBlockV2(BaseModel):
