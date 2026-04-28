@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useSuggestionStore } from '../aiSuggestion';
+import { useSuggestionStore, type Suggestion } from '../aiSuggestion';
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -8,7 +8,7 @@ beforeEach(() => {
   useSuggestionStore.setState({ byId: {}, byRun: {} });
 });
 
-const sampleSuggestion = {
+const sampleSuggestion: Suggestion = {
   id: 'sug_1', runId: 'run_1', agentId: 'PolishAgent', resumeId: 'r1',
   status: 'pending', createdAt: 1,
   source: { kind: 'agent', agentId: 'PolishAgent', runId: 'run_1' },

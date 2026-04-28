@@ -17,10 +17,14 @@ export type EditableField =
   | { kind: 'entry.meta'; id: BlockId }
   | { kind: 'bullet.content'; id: BlockId };
 
-export type BlockSnapshot =
-  | { kind: 'bullet'; id: BlockId; content: TipTapDoc }
-  | { kind: 'entry'; id: BlockId; title: string; meta: string; bullets: BlockSnapshot[] }
-  | { kind: 'section'; id: BlockId; heading: string; role: string; entries: BlockSnapshot[] };
+// BlockSnapshot mirrors backend services/ai/types.py. Inner arrays are typed
+// to their concrete child variant (not the union) so TS narrows cleanly in
+// apply / concurrency layers — entries always contain bullets, sections
+// always contain entries.
+export type BulletSnapshot = { kind: 'bullet'; id: BlockId; content: TipTapDoc };
+export type EntrySnapshot = { kind: 'entry'; id: BlockId; title: string; meta: string; bullets: BulletSnapshot[] };
+export type SectionSnapshot = { kind: 'section'; id: BlockId; heading: string; role: string; entries: EntrySnapshot[] };
+export type BlockSnapshot = BulletSnapshot | EntrySnapshot | SectionSnapshot;
 
 export type SuggestionStatus = 'streaming' | 'pending' | 'accepted' | 'rejected' | 'superseded';
 

@@ -51,8 +51,11 @@ function _checkMove(s: Suggestion & { op: 'move' }, r: ResumeDoc): CheckResult {
   return { ok: true };
 }
 
-function _readField(f: Suggestion['field'] extends infer F ? F : never, r: ResumeDoc): string | object | undefined {
-  // @ts-expect-error narrow at runtime
+// Suggestion['field'] only exists on the UpdateSuggestion variant; pull it out
+// directly from the discriminated union for a clean type.
+type _Field = Extract<Suggestion, { op: 'update' }>['field'];
+
+function _readField(f: _Field, r: ResumeDoc): string | object | undefined {
   switch (f.kind) {
     case 'header.name':     return r.header.name;
     case 'section.heading': return r.sections.find((s) => s.id === (f as any).id)?.heading;
