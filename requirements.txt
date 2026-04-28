@@ -4,6 +4,7 @@ langchain-anthropic
 langchain-google-genai
 google-genai
 langchain-core
+langgraph>=0.2,<0.3
 openai
 pypdf
 pymupdf
