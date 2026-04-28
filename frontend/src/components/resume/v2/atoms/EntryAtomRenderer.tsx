@@ -13,16 +13,41 @@ import {
 } from '../interaction/drag-preview-state';
 import { useResumeStore } from '../store/useResumeStore';
 import type { Align } from '../fields/single-line-adapter';
-import type { BlockId, CanvasMode, EntryBlock } from '../types';
+import type { BlockId, CanvasMode, EntryBlock, SectionRole } from '../types';
 
 interface Props {
   entry: EntryBlock;
+  /** Owning section's role — drives role-aware placeholder text + whether to
+   *  render meta at all. Skills/summary entries don't need "Date · Location". */
+  sectionRole: SectionRole;
   mode: CanvasMode;
+}
+
+/** Placeholder text + visibility per section role.
+ *
+ * - `title`: shown when entry.title is empty + we're in edit mode.
+ *            null = don't render title row at all.
+ * - `meta`:  same, but for entry.meta. Skills / summary skip meta entirely
+ *            because the data type doesn't have a date · location semantic.
+ *
+ * For 'custom', stay generic — we don't know what the user wants. */
+function placeholdersFor(role: SectionRole): { title: string | null; meta: string | null } {
+  switch (role) {
+    case 'summary':       return { title: null, meta: null };
+    case 'skills':        return { title: 'Skill category (e.g. Languages)', meta: null };
+    case 'experience':    return { title: 'Title @ Company', meta: 'Date · Location' };
+    case 'projects':      return { title: 'Project name', meta: 'Date · Tech / link' };
+    case 'education':     return { title: 'Degree, Major', meta: 'School · Year' };
+    case 'awards':        return { title: 'Award name', meta: 'Date · Issuer' };
+    case 'publications':  return { title: 'Publication title', meta: 'Venue · Year' };
+    case 'custom':        return { title: 'Title', meta: 'Subtitle' };
+  }
 }
 
 const BULLET_SHIFT_GAP = 6;
 
-export function EntryAtomRenderer({ entry, mode }: Props) {
+export function EntryAtomRenderer({ entry, sectionRole, mode }: Props) {
+  const ph = placeholdersFor(sectionRole);
   // Bullet hover via global Y-coord matcher (InteractionLayer publishes).
   // Same publisher also tracks `atomFieldKey` for the title/meta row handles.
   const initial = getHoverState();
@@ -83,8 +108,13 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
   // Acceptable trade — accurate on-page editing of guidance > exact preview.
   const titleEmpty = (entry.title?.trim().length ?? 0) === 0;
   const metaEmpty = (entry.meta?.trim().length ?? 0) === 0;
-  const renderTitle = mode === 'edit' || !titleEmpty;
-  const renderMeta = mode === 'edit' || !metaEmpty;
+  // Hide rows that don't make sense for this section role even in edit mode.
+  // E.g., Skills entries shouldn't show a "Date · Location" placeholder, and
+  // Summary entries shouldn't show "Title (e.g. Software Engineer @ Acme)".
+  const titleApplies = ph.title !== null;
+  const metaApplies = ph.meta !== null;
+  const renderTitle = (mode === 'edit' && titleApplies) || (!titleEmpty);
+  const renderMeta = (mode === 'edit' && metaApplies) || (!metaEmpty);
 
   const titleRowKey = `entry.title:${entry.id}`;
   const metaRowKey = `entry.meta:${entry.id}`;
@@ -109,7 +139,7 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
             align={titleAlign}
             mode={mode}
             className="resume-entry-title"
-            placeholder="Title (e.g. Software Engineer @ Acme)"
+            placeholder={ph.title ?? ''}
           />
         </div>
       )}
@@ -131,7 +161,7 @@ export function EntryAtomRenderer({ entry, mode }: Props) {
             align={metaAlign}
             mode={mode}
             className="resume-entry-meta"
-            placeholder="Date · Location"
+            placeholder={ph.meta ?? ''}
           />
         </div>
       )}

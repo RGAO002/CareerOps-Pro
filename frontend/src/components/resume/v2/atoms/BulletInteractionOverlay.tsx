@@ -1,7 +1,6 @@
 // frontend/src/components/resume/v2/atoms/BulletInteractionOverlay.tsx
 'use client';
 import { DragHandle } from '../interaction/DragHandle';
-import { HoverAffordance } from '../interaction/HoverAffordance';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId } from '../types';
 
@@ -39,7 +38,6 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
       }}
     >
       <DragHandle block={block} onDropIndicator={onDropIndicator ?? (() => {})} />
-      <HoverAffordance block={block} />
     </div>
   );
 }

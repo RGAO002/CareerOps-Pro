@@ -28,8 +28,14 @@ export function AtomRenderer({ atom, resume, mode, registry, style }: Props) {
     const section = resume.sections.find(s => s.id === atom.sourceBlockId);
     if (section) content = <SectionHeadingAtomRenderer section={section} mode={mode} />;
   } else if (atom.kind === 'entry') {
-    const entry = resume.sections.flatMap(s => s.entries).find(e => e.id === atom.sourceBlockId);
-    if (entry) content = <EntryAtomRenderer entry={entry} mode={mode} />;
+    // Look up the owning section so EntryAtomRenderer can pick role-specific
+    // placeholders (Skills doesn't need "Date · Location"; Summary doesn't
+    // need "Title (e.g. Software Engineer @ Acme)" etc.).
+    const ownerSection = resume.sections.find(s => s.entries.some(e => e.id === atom.sourceBlockId));
+    const entry = ownerSection?.entries.find(e => e.id === atom.sourceBlockId);
+    if (entry && ownerSection) {
+      content = <EntryAtomRenderer entry={entry} sectionRole={ownerSection.role} mode={mode} />;
+    }
   }
 
   return (

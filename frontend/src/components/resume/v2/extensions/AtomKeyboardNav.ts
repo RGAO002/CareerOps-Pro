@@ -150,13 +150,18 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
       },
       Backspace: () => {
         // Backspace at start of a bullet row, by current kind + content:
-        //   bullet + empty   → delete the row, focus END of previous field
+        //   bullet + empty   → outdent to kind='plain' (drop marker, keep row;
+        //                       placeholder is still visible so user sees the row)
         //   bullet + content → outdent to kind='plain' (drop marker + indent,
         //                       preserve content + cursor)
         //   plain  + empty   → delete the row, focus END of previous field
         //   plain  + content → no-op (don't lose content; "merge into prev"
         //                       is v2.1 territory)
         //   selection / mid-text → let TipTap delete normally
+        //
+        // Two-step rationale: every bullet first becomes a plain row before it
+        // can be deleted. Avoids the surprise of an in-progress thought
+        // disappearing on a single Backspace.
         const { from, to } = this.editor.state.selection;
         if (from !== to) return false;       // selection — let TipTap handle
         if (from > 1) return false;          // not at start — TipTap deletes char
@@ -165,14 +170,7 @@ export const AtomKeyboardNav = Extension.create<AtomKeyboardNavOptions>({
         const kind = readBulletKind(opts.bulletId);
 
         if (kind === 'bullet') {
-          if (isEmpty) {
-            // Empty bullet: single-step delete.
-            const prev = previousFieldForBackspace(opts.bulletId, opts.entryId);
-            deleteBullet(opts.bulletId, makeOrigin('tiptap'));
-            if (prev) atomFocusManager.focusFieldEnd(prev);
-            return true;
-          }
-          // Non-empty bullet: outdent to plain. Keep content + cursor.
+          // Bullet → plain (regardless of empty/content). Cursor stays put.
           setBulletKind(opts.bulletId, 'plain', makeOrigin('tiptap'));
           return true;
         }

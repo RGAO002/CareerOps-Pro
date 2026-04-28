@@ -125,6 +125,7 @@ export function ContactLinesField({ index, items, align, mode }: Props) {
       editor={editor}
       className="resume-contact-line"
       data-placeholder="email | phone | location"
+      style={{ ['--resume-placeholder' as string]: '"email | phone | location"' } as React.CSSProperties}
     />
   );
 }

@@ -9,6 +9,12 @@
   font-size: 14px;
   line-height: 1.5;
   color: #374151;
+  /* Disable browsers' auto scroll-anchoring inside the canvas. Without this,
+     the browser tries to "preserve" some visible element's screen position
+     when layout changes (drop-induced re-pagination), which causes a visible
+     scrollbar jitter the user finds disorienting. We snapshot+restore scrollY
+     manually in DragController.commitDrop instead. */
+  overflow-anchor: none;
 }
 
 /* ── Header ─────────────────────────────────────────── */
@@ -223,8 +229,9 @@
    translateY(...)` for layout, so a transform animation here would clobber
    it. The opacity fade alone is enough to feel like "appearing in place". */
 @keyframes atom-settle {
-  0%   { opacity: 0; }
-  100% { opacity: 1; }
+  0%   { opacity: 0; transform: scale(1.05); }
+  60%  { opacity: 1; transform: scale(0.99); }
+  100% { opacity: 1; transform: scale(1);    }
 }
 
 /* Legacy alias — keep until call sites are migrated. Same keyframes as

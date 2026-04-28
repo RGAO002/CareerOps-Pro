@@ -14,6 +14,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
+import { FontSize } from '../extensions/FontSize';
 import TextAlign from '@tiptap/extension-text-align';
 import { SingleLineDocument } from '../extensions/SingleLineDocument';
 import { NoNewline } from '../extensions/NoNewline';
@@ -74,6 +75,7 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
       Underline,
       Color,
       FontFamily.configure({ types: ['textStyle'] }),
+      FontSize.configure({ types: ['textStyle'] }),
       Highlight.configure({ multicolor: true }),
       Link.configure({ openOnClick: false }),
       NoNewline,
@@ -126,6 +128,10 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
       className={className}
       data-field-key={fieldKeyString(fieldKey)}
       data-placeholder={placeholder}
+      // CSS-var-driven placeholder text. resume-styles.css reads this via
+      // `content: var(--resume-placeholder, "")` on the empty <p>::before.
+      // Quotes are required because `content` substitutes raw token text.
+      style={placeholder ? { ['--resume-placeholder' as string]: `"${placeholder.replace(/"/g, '\\"')}"` } as React.CSSProperties : undefined}
     />
   );
 }

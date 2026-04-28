@@ -192,40 +192,21 @@ describe('AtomKeyboardNav — Enter (Notion-style split)', () => {
 });
 
 // ─── Backspace ────────────────────────────────────────────────────────────
-describe('AtomKeyboardNav — Backspace (single-step delete)', () => {
-  it('Backspace at start of empty bullet (any kind) deletes it and focuses END of previous field', () => {
-    // b2 in the default RESUME is an empty bullet with kind absent (treated as 'bullet').
-    // No setBulletKind setup needed — single-step delete fires regardless of kind.
+describe('AtomKeyboardNav — Backspace (two-step: bullet → plain → delete)', () => {
+  it('Backspace at start of empty bullet (kind=bullet) outdents to plain (does NOT delete)', () => {
+    // b2 is empty + kind='bullet' (default). First Backspace converts to plain;
+    // a second Backspace would delete it. Two-step prevents single-keystroke loss.
     const editor = makeBulletEditor('b2', 'e1', makeContent(''));
     editor.commands.focus();
 
     expect(fireKey(editor, 'Backspace')).toBe(true);
 
-    expect(setBulletKindMock).not.toHaveBeenCalled();
-    expect(deleteBulletMock).toHaveBeenCalledTimes(1);
-    const delCall = deleteBulletMock.mock.calls[0] as unknown as [string, unknown];
-    expect(delCall[0]).toBe('b2');
-    expect(focusFieldEnd).toHaveBeenCalled();
-    const focusCall = focusFieldEnd.mock.calls[0] as unknown as [{ kind: string; id: string }];
-    expect(focusCall[0].kind).toBe('bullet.content');
-    expect(focusCall[0].id).toBe('b1');
-    expect(focusPrevious).not.toHaveBeenCalled();
-    editor.destroy();
-  });
-
-  it('Backspace at start of empty bullet ALWAYS deletes (single-step, no outdent)', () => {
-    // Entry has [b1(text), b2(empty)]. Pressing Backspace in b2 must call
-    // deleteBullet exactly once and must NEVER call setBulletKind — the
-    // two-step outdent → delete path is gone.
-    const editor = makeBulletEditor('b2', 'e1', makeContent(''));
-    editor.commands.focus();
-
-    expect(fireKey(editor, 'Backspace')).toBe(true);
-
-    expect(deleteBulletMock).toHaveBeenCalledTimes(1);
-    expect(deleteBulletMock.mock.calls[0][0]).toBe('b2');
-    // Critical assertion: no auto-conversion to 'plain'.
-    expect(setBulletKindMock).not.toHaveBeenCalled();
+    expect(setBulletKindMock).toHaveBeenCalledTimes(1);
+    const skCall = setBulletKindMock.mock.calls[0] as unknown as [string, string, unknown];
+    expect(skCall[0]).toBe('b2');
+    expect(skCall[1]).toBe('plain');
+    expect(deleteBulletMock).not.toHaveBeenCalled();
+    expect(focusFieldEnd).not.toHaveBeenCalled();
     editor.destroy();
   });
 

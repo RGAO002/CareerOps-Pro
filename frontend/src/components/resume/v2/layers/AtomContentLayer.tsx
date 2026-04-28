@@ -220,7 +220,7 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
         // at the cursor → "the slot caught the drop here", not "the item
         // flew somewhere".
         const settleStyle: React.CSSProperties = justDropped
-          ? { animation: 'atom-settle 0.18s ease-out' }
+          ? { animation: 'atom-settle 0.24s ease-out' }
           : {};
         return (
           <div
@@ -231,9 +231,11 @@ export function AtomContentLayer({ atoms, layouts, resume, mode, template, regis
               left: coord.left,
               width: layout.width,
               pointerEvents: dragged ? 'none' : 'auto',
-              // Always set transform (even at 0px) so CSS can transition
-              // smoothly between values.
-              transform: `translateY(${shift}px)`,
+              // For the just-dropped atom, OMIT the inline transform so the
+              // atom-settle keyframe (which animates `transform: scale(...)`)
+              // can own transform during its 240 ms window. Post-drop shift
+              // is 0 anyway (preview is gone), so no layout impact.
+              ...(justDropped ? {} : { transform: `translateY(${shift}px)` }),
               ...animationStyle,
               ...settleStyle,
               // Hide the dragged atom completely — the floating ghost shows

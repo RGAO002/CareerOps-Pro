@@ -32,7 +32,10 @@ export function EditorTopBar({ resumeId, pageCount }: Props) {
     setExporting(true);
     try {
       await flushSave();
-      window.location.href = `${API_BASE}/api/resume/${encodeURIComponent(resumeId)}/pdf`;
+      // Pass the live frontend origin so the backend's Playwright loads the
+      // correct port (Next dev auto-bumps to 3001/3002 when 3000 is taken).
+      const origin = encodeURIComponent(window.location.origin);
+      window.location.href = `${API_BASE}/api/resume/${encodeURIComponent(resumeId)}/pdf?frontend_base=${origin}`;
     } catch (e) {
       alert(`Couldn't save before export: ${(e as Error).message}`);
     } finally {

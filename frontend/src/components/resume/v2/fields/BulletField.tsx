@@ -12,6 +12,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
+import { FontSize } from '../extensions/FontSize';
 import TextAlign from '@tiptap/extension-text-align';
 import { UndoRedo } from '@tiptap/extensions';   // TipTap 3 history
 
@@ -68,6 +69,7 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
       Underline,
       Color,
       FontFamily.configure({ types: ['textStyle'] }),
+      FontSize.configure({ types: ['textStyle'] }),
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['paragraph'], alignments: ['left', 'center', 'right'] }),
       Link.configure({ openOnClick: false }),
@@ -171,6 +173,7 @@ export function BulletField({ bulletId, entryId, content, mode }: Props) {
         className="resume-bullet-content"
         data-field-key={`bullet.content:${bulletId}`}
         data-placeholder="Empty bullet — type, or Backspace to remove"
+        style={{ ['--resume-placeholder' as string]: '"Empty bullet — type, or Backspace to remove"' } as React.CSSProperties}
       />
       {mode === 'edit' && <BubbleMenu editor={editor} />}
     </>

@@ -15,6 +15,7 @@ Endpoints:
 """
 import copy
 import os
+import re
 import uuid
 from typing import Optional
 
@@ -367,7 +368,7 @@ async def create_variant(resume_id: str, body: VariantRequest) -> dict:
 
 
 @router.get("/{resume_id}/pdf")
-async def export_pdf(resume_id: str):
+async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
     """Render the resume to PDF (headless Chromium) and stream it back as a
     download.
 
@@ -386,10 +387,17 @@ async def export_pdf(resume_id: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
 
-    # The frontend URL Playwright will load. CAREEROPS_FRONTEND_BASE lets
-    # production override the dev default.
-    frontend_base = os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
-    print_url = f"{frontend_base}/resume/{resume_id}/print"
+    # Resolution order for the frontend URL Playwright loads:
+    # 1. Explicit ?frontend_base= query param (frontend tells us its origin —
+    #    handles Next dev auto-bumping the port to 3001/3002).
+    # 2. CAREEROPS_FRONTEND_BASE env var (production override).
+    # 3. Default localhost:3000.
+    # Validate the param to allow only http(s)://localhost or 127.0.0.1 — never
+    # let a caller point Playwright at an arbitrary host.
+    base = frontend_base or os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
+    if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", base):
+        base = os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
+    print_url = f"{base}/resume/{resume_id}/print"
 
     pdf_bytes = await url_to_pdf_chrome(print_url)
     if pdf_bytes is None:

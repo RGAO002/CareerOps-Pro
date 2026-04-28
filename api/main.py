@@ -38,7 +38,10 @@ app = FastAPI(
 # CORS — allow Next.js dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3003", "http://127.0.0.1:3000", "http://127.0.0.1:3003"],
+    # Dev: allow any localhost / 127.0.0.1 port. Next dev auto-bumps the port
+    # when 3000 is in use, and we don't want to babysit a hardcoded allowlist.
+    # Tighten this for production deploys.
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

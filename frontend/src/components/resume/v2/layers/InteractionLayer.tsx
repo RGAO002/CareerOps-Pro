@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { DragHandle } from '../interaction/DragHandle';
 import { DropIndicator } from '../interaction/DropIndicator';
-import { HoverAffordance } from '../interaction/HoverAffordance';
 import { SlashMenu } from '../interaction/SlashMenu';
 import { selectionManager } from '../interaction/SelectionManager';
 import type { DropIndicatorPayload } from '../interaction/DragController';
@@ -144,7 +143,6 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
             }}
           >
             <DragHandle block={block} onDropIndicator={setDropPayload} />
-            <HoverAffordance block={block} style={{ marginTop: 4 }} />
           </div>
         );
       })}

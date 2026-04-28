@@ -392,6 +392,27 @@ function animateSoftDrop(ghost: HTMLElement | null): void {
   setTimeout(() => ghost.remove(), 160);
 }
 
+/**
+ * Continuously force window.scrollY back to `targetY` for `durationMs` after
+ * a drop. Single-frame restores aren't enough — re-pagination triggers
+ * multiple reflow stages, each capable of nudging scrollY (most often via
+ * doc-height clamping when page count shrinks). We pin scrollY across all of
+ * them so the viewport stays motionless.
+ */
+function pinScrollY(targetY: number, durationMs: number): void {
+  const start = performance.now();
+  function tick() {
+    if (window.scrollY !== targetY) {
+      window.scrollTo({ top: targetY, behavior: 'instant' as ScrollBehavior });
+    }
+    if (performance.now() - start < durationMs) {
+      requestAnimationFrame(tick);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+
 export function startDrag(
   e: PointerEvent,
   handleEl: HTMLElement,
@@ -520,8 +541,7 @@ export function startDrag(
       // SOFT DROP — "settle in place" pattern:
       //   - Ghost fades out at the cursor (no flight). Reads as "I let go."
       //   - The dropped atom plays the `atom-settle` keyframe at its final
-      //     position (opacity 0 → 1). Reads as "the slot caught it here."
-      // The two run in parallel ~180 ms total, no teleport seam.
+      //     position (opacity 0 → 1, scale bounce). Reads as "the slot caught it here."
       animateSoftDrop(ghost);
       ghost = null;  // ownership transferred to animateSoftDrop
       // Mark dropped atom so AtomContentLayer plays atom-settle on it.
@@ -529,7 +549,16 @@ export function startDrag(
       setTimeout(() => {
         // Clear only if it's still us (defensive — another drop could have started)
         if (getRecentlyDroppedId() === block.id) setRecentlyDroppedId(null);
-      }, 220);
+      }, 260);
+      // SCROLL LOCK: snapshot scrollY BEFORE the commit, then continuously
+      // re-pin it for ~350ms. A single rAF×2 restore isn't enough — the
+      // layout can pass through several reflow stages (React commit → atom
+      // ResizeObserver → pagination engine → repaint) and any of them can
+      // nudge scrollY (esp. via doc-height clamping). Looping the restore
+      // catches every nudge until the layout settles. Combined with the
+      // `overflow-anchor: none` rule in resume-styles.css, the viewport
+      // is effectively frozen through the entire post-drop reflow.
+      pinScrollY(window.scrollY, 350);
       commitDrop(block, target, makeOrigin('drag-reorder'));
     }
     cleanup();

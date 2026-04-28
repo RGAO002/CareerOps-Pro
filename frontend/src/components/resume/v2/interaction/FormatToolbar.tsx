@@ -46,12 +46,30 @@ const FONT_CHOICES: { label: string; value: string | null }[] = [
   { label: 'Arial',     value: 'Arial, sans-serif' },
 ];
 
+// Font sizes in pt (resumes are typeset in pt, not px). Stored on textStyle
+// via the custom FontSize extension as `font-size: <value>`.
+const FONT_SIZE_CHOICES: { label: string; value: string | null }[] = [
+  { label: 'Default', value: null },
+  { label: '8',  value: '8pt' },
+  { label: '9',  value: '9pt' },
+  { label: '10', value: '10pt' },
+  { label: '11', value: '11pt' },
+  { label: '12', value: '12pt' },
+  { label: '14', value: '14pt' },
+  { label: '16', value: '16pt' },
+  { label: '18', value: '18pt' },
+  { label: '20', value: '20pt' },
+  { label: '24', value: '24pt' },
+  { label: '32', value: '32pt' },
+];
+
 export function FormatToolbar() {
   const [, force] = useState(0);
   const lastEditorRef = useRef<Editor | null>(null);
   const [colorOpen, setColorOpen] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
   const [fontOpen, setFontOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
 
   useEffect(() => atomFocusManager.subscribe(() => {
     const ed = atomFocusManager.currentEditor();
@@ -63,16 +81,16 @@ export function FormatToolbar() {
 
   // Close popovers on outside click
   useEffect(() => {
-    if (!colorOpen && !hlOpen && !fontOpen) return;
+    if (!colorOpen && !hlOpen && !fontOpen && !sizeOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest?.('[data-toolbar-popover]') && !t.closest?.('[data-toolbar-trigger]')) {
-        setColorOpen(false); setHlOpen(false); setFontOpen(false);
+        setColorOpen(false); setHlOpen(false); setFontOpen(false); setSizeOpen(false);
       }
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
-  }, [colorOpen, hlOpen, fontOpen]);
+  }, [colorOpen, hlOpen, fontOpen, sizeOpen]);
 
   const liveEditor = atomFocusManager.currentEditor();
   const editor: Editor | null = liveEditor ?? lastEditorRef.current;
@@ -150,12 +168,62 @@ export function FormatToolbar() {
 
       {sep}
 
+      {/* Font family — grouped with Text color per UX request */}
+      <div className="relative">
+        <button type="button" aria-label="Font family" title="Font family"
+          data-toolbar-trigger
+          onMouseDown={noStealFocus}
+          onClick={() => { setFontOpen(o => !o); setColorOpen(false); setHlOpen(false); setSizeOpen(false); }}
+          disabled={!has('textStyle')}
+          className={`${btn(false, !has('textStyle'))} px-1.5`}
+          style={{ width: 'auto', minWidth: 28 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>Aa</span>
+        </button>
+        {fontOpen && (
+          <FontList
+            choices={FONT_CHOICES}
+            current={(editor?.getAttributes('textStyle').fontFamily as string | undefined) ?? null}
+            apply={(value) => {
+              if (!editor) return;
+              if (value === null) editor.chain().focus().unsetFontFamily().run();
+              else editor.chain().focus().setFontFamily(value).run();
+              setFontOpen(false);
+            }}
+          />
+        )}
+      </div>
+
+      {/* Font size — sibling to Aa, applies to current selection / stored mark */}
+      <div className="relative">
+        <button type="button" aria-label="Font size" title="Font size"
+          data-toolbar-trigger
+          onMouseDown={noStealFocus}
+          onClick={() => { setSizeOpen(o => !o); setFontOpen(false); setColorOpen(false); setHlOpen(false); }}
+          disabled={!has('textStyle')}
+          className={`${btn(false, !has('textStyle'))} px-1.5`}
+          style={{ width: 'auto', minWidth: 28 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>pt</span>
+        </button>
+        {sizeOpen && (
+          <FontList
+            choices={FONT_SIZE_CHOICES}
+            current={(editor?.getAttributes('textStyle').fontSize as string | undefined) ?? null}
+            apply={(value) => {
+              if (!editor) return;
+              if (value === null) editor.chain().focus().unsetFontSize().run();
+              else editor.chain().focus().setFontSize(value).run();
+              setSizeOpen(false);
+            }}
+          />
+        )}
+      </div>
+
       {/* Text color */}
       <div className="relative">
         <button type="button" aria-label="Text color" title="Text color"
           data-toolbar-trigger
           onMouseDown={noStealFocus}
-          onClick={() => { setColorOpen(o => !o); setHlOpen(false); }}
+          onClick={() => { setColorOpen(o => !o); setHlOpen(false); setFontOpen(false); }}
           disabled={!has('textStyle')}
           className={btn(false, !has('textStyle'))}>
           <Type className="size-3.5" strokeWidth={2} />
@@ -191,31 +259,6 @@ export function FormatToolbar() {
               if (value === null) editor.chain().focus().unsetHighlight().run();
               else editor.chain().focus().toggleHighlight({ color: value }).run();
               setHlOpen(false);
-            }}
-          />
-        )}
-      </div>
-
-      {/* Font family — depends on textStyle being in the schema */}
-      <div className="relative">
-        <button type="button" aria-label="Font family" title="Font family"
-          data-toolbar-trigger
-          onMouseDown={noStealFocus}
-          onClick={() => { setFontOpen(o => !o); setColorOpen(false); setHlOpen(false); }}
-          disabled={!has('textStyle')}
-          className={`${btn(false, !has('textStyle'))} px-1.5`}
-          style={{ width: 'auto', minWidth: 28 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>Aa</span>
-        </button>
-        {fontOpen && (
-          <FontList
-            choices={FONT_CHOICES}
-            current={(editor?.getAttributes('textStyle').fontFamily as string | undefined) ?? null}
-            apply={(value) => {
-              if (!editor) return;
-              if (value === null) editor.chain().focus().unsetFontFamily().run();
-              else editor.chain().focus().setFontFamily(value).run();
-              setFontOpen(false);
             }}
           />
         )}
