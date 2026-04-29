@@ -106,12 +106,18 @@ export function PlainTextField({ fieldKey, value, align, mode, placeholder, clas
     (p) => stringToSingleLineDoc(p.value, p.align),
   );
 
-  // Edit mode: register with focus manager
+  // Edit mode: register with focus manager. fieldKey is a fresh object every
+  // render — depend on its stringified identity so the effect doesn't churn.
+  // Without this, every re-render unregister/re-registers the field and
+  // pushes its key to the END of atomFocusManager.order, scrambling the
+  // doc-order used by cross-editor selection.
+  const fieldKeyStr = fieldKeyString(fieldKey);
   useEffect(() => {
     if (mode !== 'edit' || !editor) return;
     atomFocusManager.register(fieldKey, editor);
     return () => atomFocusManager.unregister(fieldKey);
-  }, [mode, editor, fieldKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fieldKey is unstable; fieldKeyStr captures its identity.
+  }, [mode, editor, fieldKeyStr]);
 
   // Edit mode: optional TipTap blur callback for parents that need to react
   // (e.g. EntryAtomRenderer hides entry.meta when blurred empty).
