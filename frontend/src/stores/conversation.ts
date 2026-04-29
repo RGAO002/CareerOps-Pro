@@ -48,12 +48,18 @@ export const useConversationStore = create<ConversationStore>()(
     {
       name: 'careerops-ai-conversation',
       version: 2,
-      migrate: (persisted: unknown, fromVersion: number): ConversationStore => {
+      // CRITICAL: migrate must return ONLY the persisted slice (here, `messages`).
+      // It must NOT include `appendMessage` / `clearConversation` — zustand
+      // merges the migrate output back into the store object, so any action
+      // passed here would CLOBBER the real implementations from create() with
+      // whatever is in the migrate return (previous bug: noop functions made
+      // chat unable to send anything).
+      migrate: (persisted: unknown, fromVersion: number): { messages: Message[] } => {
         // v0 / v1 had `{ role: 'user'|'ai', content, action? }`. Map to the new union;
         // drop the unserialisable `action` field.
         const p = persisted as { messages?: Array<{ role?: 'user' | 'ai'; content?: string; id?: string; createdAt?: number }>; } | null;
-        if (!p?.messages) return { messages: [], appendMessage: () => {}, clearConversation: () => {} } as unknown as ConversationStore;
-        if (fromVersion >= 2) return p as unknown as ConversationStore;
+        if (!p?.messages) return { messages: [] };
+        if (fromVersion >= 2) return { messages: p.messages as unknown as Message[] };
         const upgraded: Message[] = p.messages
           .map<Message | null>((m) => {
             const base = { id: m.id ?? nextId('m'), createdAt: m.createdAt ?? Date.now() };
@@ -62,7 +68,7 @@ export const useConversationStore = create<ConversationStore>()(
             return null;
           })
           .filter((x): x is Message => x !== null);
-        return { messages: upgraded, appendMessage: () => {}, clearConversation: () => {} } as unknown as ConversationStore;
+        return { messages: upgraded };
       },
     },
   ),
