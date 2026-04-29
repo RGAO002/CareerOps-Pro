@@ -12,6 +12,7 @@ import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
 import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
+import { AskAIPill } from '@/components/ai/assistant/AskAIPill';
 
 interface Props {
   atoms: LayoutAtom[];
@@ -134,28 +135,48 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         const coord = getAtomAbsoluteCoord(layout, 'edit', template);
         const isHovered = hoveredAtomId === atom.id;
         return (
-          <div
-            key={atom.id}
-            onMouseEnter={() => setHoveredAtomId(atom.id)}
-            onMouseLeave={() => setHoveredAtomId(prev => (prev === atom.id ? null : prev))}
-            style={{
-              position: 'absolute',
-              top: coord.top,
-              left: coord.left - 28,
-              opacity: isHovered ? 1 : 0,
-              transition: 'opacity 0.15s',
-              pointerEvents: isHovered ? 'auto' : 'none',
-            }}
-          >
-            <DragHandle
-              block={block}
-              onDropIndicator={setDropPayload}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                useAISidebarUIStore.getState().open(aiScopeForBlock(block));
+          <>
+            <div
+              key={atom.id}
+              onMouseEnter={() => setHoveredAtomId(atom.id)}
+              onMouseLeave={() => setHoveredAtomId(prev => (prev === atom.id ? null : prev))}
+              style={{
+                position: 'absolute',
+                top: coord.top,
+                left: coord.left - 28,
+                opacity: isHovered ? 1 : 0,
+                transition: 'opacity 0.15s',
+                pointerEvents: isHovered ? 'auto' : 'none',
               }}
-            />
-          </div>
+            >
+              <DragHandle
+                block={block}
+                onDropIndicator={setDropPayload}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  useAISidebarUIStore.getState().open(aiScopeForBlock(block));
+                }}
+              />
+            </div>
+            {block.kind === 'section' && (
+              <div
+                key={`pill-${atom.id}`}
+                onMouseEnter={() => setHoveredAtomId(atom.id)}
+                onMouseLeave={() => setHoveredAtomId(prev => (prev === atom.id ? null : prev))}
+                style={{
+                  position: 'absolute',
+                  top: coord.top - 4,
+                  // Right edge of canvas content (assume 8.5in - margins is exposed via CSS var; fallback to template.page.contentWidthPx)
+                  left: coord.left + (template.page.contentWidthPx ?? 720) - 70,
+                  opacity: isHovered ? 1 : 0,
+                  transition: 'opacity 0.15s',
+                  pointerEvents: isHovered ? 'auto' : 'none',
+                }}
+              >
+                <AskAIPill blockId={block.id} label={`Section ${block.id.slice(0, 6)}`} />
+              </div>
+            )}
+          </>
         );
       })}
       {/* Selection outlines — drawn on top of selected blocks. Re-rendered
