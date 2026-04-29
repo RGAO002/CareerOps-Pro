@@ -79,6 +79,19 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     useSectionHighlight.getState().setHovered(sectionForAtom(atom));
   }, [hoveredAtomId, atoms]);
 
+  // Click anywhere outside a drag handle → deselect any active section. Drag
+  // handles handle their own toggle in onClick (set up below); skipping them
+  // here lets the toggle work cleanly without being clobbered.
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('button[data-edit-only]')) return;
+      useSectionHighlight.getState().setSelected(null);
+    }
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, []);
+
   // Document-level hover detection: figure out which atom the cursor is over.
   // We use mousemove + Y-coordinate matching against atom layouts, NOT
   // event-target walking. Reason: the gutter (where ⋮⋮ lives) sits at
@@ -165,11 +178,12 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
               onMouseLeave={() => setHoveredAtomId(prev => (prev === atom.id ? null : prev))}
               style={{
                 position: 'absolute',
+                // The atom's first text line — pin handle at the TOP of the atom
+                // (not centered to atom height; entry atoms span 60-80px including
+                // bullets, and centering puts the handle below the title where the
+                // user expects to click).
                 top: coord.top,
                 left: coord.left - 28,
-                height: layout.height,
-                display: 'flex',
-                alignItems: 'center',
                 opacity: isHovered ? 1 : 0,
                 transition: 'opacity 0.15s',
                 pointerEvents: isHovered ? 'auto' : 'none',
