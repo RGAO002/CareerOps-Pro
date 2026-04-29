@@ -55,38 +55,33 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        // Truly translucent dark base — host content shows through behind
-        // the panel. Lower alpha than before since the FluidCanvas no longer
-        // adds opaque coverage (blend mode: screen, see below).
-        background: 'oklch(0.13 0.025 34 / 0.32)',
-        // Frosted-glass: blur the host content behind so it's visible but
-        // not distracting. Heavier blur + saturation makes the see-through
-        // feel intentional rather than incidental.
-        backdropFilter: 'blur(34px) saturate(1.5)',
-        WebkitBackdropFilter: 'blur(34px) saturate(1.5)',
+        // EXACT design-spec values — `.assist` bg is `oklch(0.22 0.028 34 / .55)`
+        // and `backdrop-filter: blur(24px) saturate(1.3)`. The lighter base
+        // (0.22 vs the v1 0.13) is what gives the panel its premium see-through
+        // feel — too-dark bg flattens everything to murky glass.
+        background: 'oklch(0.22 0.028 34 / 0.55)',
+        backdropFilter: 'blur(24px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {/* WebGL three-color fluid (the original 三色小球). Use
-          `mix-blend-mode: screen` so only the BRIGHT pixels (the colored
-          orbs) add to the bg — the dark vignette pixels become invisible
-          instead of obscuring the translucent panel. Result: orbs glow over
-          a properly see-through panel. brightness cranked because screen
-          blending darkens perceived intensity. */}
+      {/* WebGL three-color fluid. mix-blend-mode: screen drops dark vignette
+          pixels and only adds the bright orb colors on top of the lighter
+          panel base — produces the design's glowy effect. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
         mixBlendMode: 'screen',
       }}>
-        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={2.2} />
+        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.8} />
       </div>
-      {/* Light text-legibility scrim — kept very subtle so the see-through
-          quality isn't flattened. */}
+      {/* Subtle scrim — design `.a-scrim` uses `linear-gradient(180deg,
+          oklch(.14 .020 34 / .25), oklch(.14 .020 34 / .42))`. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, oklch(0.10 0.018 34 / 0.18) 0%, oklch(0.10 0.018 34 / 0.30) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.25) 0%, oklch(0.14 0.020 34 / 0.42) 100%)',
       }} />
 
       {/* Header row */}
