@@ -55,23 +55,26 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        // Translucent base — the FluidCanvas + scrim do the heavy lifting,
-        // and a touch of transparency lets the three-orb animation breathe
-        // (matches the original global AIChatPanel feel).
-        background: 'oklch(0.13 0.025 34 / 0.78)',
-        backdropFilter: 'blur(20px) saturate(1.1)',
-        WebkitBackdropFilter: 'blur(20px) saturate(1.1)',
+        // FluidCanvas paints the whole bg; this base color is just the fallback
+        // for the brief moment before WebGL initializes.
+        background: 'var(--p-sidebar-base)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {/* Three-color WebGL fluid (warm orange / muted green / soft blue blobs).
-          speed=3 + brightness=1.45 matches the original AIChatPanel hero feel. */}
-      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} brightness={1.45} />
-      {/* Soft scrim — keeps text legible without flattening the fluid. */}
-      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'oklch(0.08 0.015 34 / 0.42)', zIndex: 1, pointerEvents: 'none' }} />
+      {/* Three-color WebGL fluid (warm terracotta / sage green / deep blue
+          blobs). brightness=2.4 cranks the shader past its landing default
+          so the orbs read as distinct color bands in this narrow tall
+          panel — matches the design's vibrant look. */}
+      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} brightness={2.4} />
+      {/* Light gradient scrim — design `.a-scrim`: top 0.25 → bottom 0.42,
+          keeps text legible without flattening the fluid. */}
+      <div aria-hidden style={{
+        position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.25) 0%, oklch(0.14 0.020 34 / 0.42) 100%)',
+      }} />
 
       {/* Header row */}
       <div style={{ position: 'relative', zIndex: 3, padding: '14px 18px 0', borderBottom: '1px solid var(--p-border)', paddingBottom: 14, flexShrink: 0 }}>
