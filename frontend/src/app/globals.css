@@ -335,29 +335,35 @@
   }
 }
 
-/* ─── AI Assistant tokens (per design_handoff_ai_sidebar/README.md §Design Tokens) ─── */
+/* ─── AI Assistant tokens (per design_handoff_ai_sidebar/ai-sidebar.html `:root`) ─── */
 :root {
-  /* Surface — assistant (translucent, sits on FluidCanvas) */
-  --p-surface:      oklch(0.18 0.022 34 / 0.72);
-  --p-surface-hi:   oklch(0.22 0.024 34 / 0.82);
-  --p-border:       oklch(0.55 0.015 40 / 0.22);
-  --p-border2:      oklch(0.60 0.018 40 / 0.30);
+  /* Surface — translucent, sits on the FluidCanvas. Lighter + lower alpha than v1
+     so the fluid breathes through; matches design exactly. */
+  --p-surface:      oklch(0.28 0.024 34 / 0.42);
+  --p-surface-hi:   oklch(0.34 0.028 34 / 0.55);
+  --p-border:       oklch(0.70 0.018 40 / 0.22);
+  --p-border2:      oklch(0.75 0.020 40 / 0.32);
 
   /* Sidebar / Bar / Orb base colors */
   --p-sidebar-base: oklch(0.13 0.025 34);
   --p-bar-base:     oklch(0.10 0.018 34 / 0.92);
 
   /* Type — assistant */
-  --p-text:         oklch(0.96 0.010 55);
-  --p-text-body:    oklch(0.86 0.012 52);
-  --p-text-mute:    oklch(0.66 0.010 50);
-  --p-text-dim:     oklch(0.50 0.008 50);
+  --p-text:         oklch(0.97 0.010 55);
+  --p-text-body:    oklch(0.90 0.012 52);
+  --p-text-mute:    oklch(0.72 0.012 50);
+  --p-text-dim:     oklch(0.58 0.010 50);
 
-  /* Accents */
+  /* Accents — terracotta / warm-orange family (design: --accent / --accent-warm / --accent-muted / --accent-deep) */
   --p-accent:       oklch(0.72 0.13 38);
   --p-accent-warm:  oklch(0.78 0.12 42);
   --p-accent-muted: oklch(0.72 0.13 38 / 0.18);
   --p-accent-deep:  oklch(0.55 0.14 32);
+  --p-deep:         oklch(0.55 0.14 32);
+
+  /* Terracotta accent strip (selected section vertical line). */
+  --p-terracotta:      oklch(0.62 0.13 38);
+  --p-terracotta-deep: oklch(0.50 0.14 35);
 
   /* Three-agent palette (v0: tokens defined, only used in chip dots; AI message rows do NOT show per-agent dot yet) */
   --p-recruit:      oklch(0.70 0.12 35);
