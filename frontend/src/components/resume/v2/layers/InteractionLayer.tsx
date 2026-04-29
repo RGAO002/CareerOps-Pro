@@ -135,20 +135,32 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       }
       setHoverState({ atomId: atomHit, bulletId: bulletHit, atomFieldKey });
 
-      // Drive the block-hover preview at the finest available granularity:
-      //   bullet > entry > section > nothing.
+      // Drive the block-hover preview at the finest available granularity.
+      //
+      // Crucial: ONLY map to entry-level preview when the cursor is actually
+      // on the entry's title or meta ROW (atomFieldKey set). When the cursor
+      // is in the gap BETWEEN bullets within an entry, atomHit still equals
+      // the entry atom, but treating that as "preview entry" causes a jarring
+      // flash from "this small bullet" → "the whole entry/section" when the
+      // mouse glides 1-2px between bullet rows. Solution: in those gap
+      // moments, stick with the last hovered bullet (don't widen the preview).
       let preview: { kind: 'section' | 'entry' | 'bullet'; id: BlockId } | null = null;
       if (bulletHit) {
         preview = { kind: 'bullet', id: bulletHit };
+      } else if (atomFieldKey === 'title' || atomFieldKey === 'meta') {
+        // Cursor is on entry's title or meta row → preview the entry.
+        if (atomHit) {
+          const a = atoms.find(x => x.id === atomHit);
+          if (a?.kind === 'entry') preview = { kind: 'entry', id: a.sourceBlockId };
+        }
       } else if (atomHit) {
         const a = atoms.find(x => x.id === atomHit);
-        if (a) {
-          if (a.kind === 'section-heading') {
-            preview = { kind: 'section', id: a.sourceBlockId };
-          } else if (a.kind === 'entry') {
-            preview = { kind: 'entry', id: a.sourceBlockId };
-          }
+        if (a?.kind === 'section-heading') {
+          preview = { kind: 'section', id: a.sourceBlockId };
         }
+        // Note: atomHit may be an entry atom while we're in a bullet-gap
+        // (no bulletHit, no atomFieldKey). In that case we DELIBERATELY
+        // leave preview = null rather than jumping to entry-wide highlight.
       }
       const cur = useBlockHover.getState().hovered;
       const same = (cur && preview && cur.kind === preview.kind && cur.id === preview.id) ||

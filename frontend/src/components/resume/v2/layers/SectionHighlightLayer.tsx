@@ -96,30 +96,32 @@ function bboxForBlock(
 }
 
 export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
-  // Selected block (committed) — read from selectionManager.
-  const [selected, setSelected] = useState<HoveredBlock | null>(null);
   const resume = useResumeStore((s) => s.resume);
   const sections = resume?.sections ?? EMPTY_SECTIONS;
   const hovered = useBlockHover((s) => s.hovered);
 
-  // Sync from selectionManager. We only render highlight when there's exactly
-  // one selected block (multi-block selection from keyboard ops doesn't paint
-  // a section bg — it would be unclear which "shape" to draw).
-  useEffect(() => {
-    function syncSelected(blocks: Set<BlockId>) {
-      if (blocks.size !== 1) { setSelected(null); return; }
-      const id = Array.from(blocks)[0];
-      const kind = inferKind(id, sections);
-      if (!kind) { setSelected(null); return; }
-      setSelected({ kind, id });
-    }
-    syncSelected(new Set(selectionManager.getBlocks()));
-    return selectionManager.subscribe(syncSelected);
-  }, [sections]);
+  // Subscribe to selectionManager: bump a tick to force re-render when selection
+  // changes. We DON'T capture the selected id in a state closure (which had a
+  // stale-`sections`-closure bug at first render). Instead, compute `selected`
+  // at render time below from `selectionManager.getBlocks()` + the live
+  // `sections` array.
+  const [selectionTick, setSelectionTick] = useState(0);
+  useEffect(() => selectionManager.subscribe(() => setSelectionTick(t => t + 1)), []);
 
   // Force re-render on layouts change (so bullet DOM-based bbox refreshes).
-  const [, setTick] = useState(0);
-  useEffect(() => { setTick(t => t + 1); }, [layouts]);
+  const [, setLayoutTick] = useState(0);
+  useEffect(() => { setLayoutTick(t => t + 1); }, [layouts]);
+
+  // Live-compute selected at render time (uses the latest sections + selectionManager).
+  // Reference `selectionTick` so the linter doesn't strip the dep that drives this.
+  void selectionTick;
+  const selectedIds = selectionManager.getBlocks();
+  let selected: HoveredBlock | null = null;
+  if (selectedIds.length === 1) {
+    const id = selectedIds[0];
+    const kind = inferKind(id, sections);
+    if (kind) selected = { kind, id };
+  }
 
   return (
     <div data-edit-only style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
