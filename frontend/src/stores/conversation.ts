@@ -55,10 +55,10 @@ export const useConversationStore = create<ConversationStore>()(
         if (!p?.messages) return { messages: [], appendMessage: () => {}, clearConversation: () => {} } as unknown as ConversationStore;
         if (fromVersion >= 2) return p as unknown as ConversationStore;
         const upgraded: Message[] = p.messages
-          .map((m) => {
+          .map<Message | null>((m) => {
             const base = { id: m.id ?? nextId('m'), createdAt: m.createdAt ?? Date.now() };
-            if (m.role === 'user') return { ...base, kind: 'user', content: m.content ?? '' } satisfies Message;
-            if (m.role === 'ai')   return { ...base, kind: 'ai-text', content: m.content ?? '' } satisfies Message;
+            if (m.role === 'user') return { ...base, kind: 'user' as const, content: m.content ?? '' };
+            if (m.role === 'ai')   return { ...base, kind: 'ai-text' as const, content: m.content ?? '' };
             return null;
           })
           .filter((x): x is Message => x !== null);

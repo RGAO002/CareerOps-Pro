@@ -44,12 +44,12 @@ describe('startAssistantRun', () => {
   it('on a suggestion event, double-writes: useSuggestionStore.upsert + useConversationStore.appendMessage(kind=ai-diff)', async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ runId: 'run_y' }) });
 
-    let suggestionListener: ((e: MessageEvent) => void) | null = null;
-    let completedListener: ((e: MessageEvent) => void) | null = null;
+    type Listener = (e: MessageEvent) => void;
+    const listeners: { suggestion?: Listener; completed?: Listener } = {};
     class FakeES {
-      addEventListener(type: string, fn: (e: MessageEvent) => void) {
-        if (type === 'suggestion.streamed') suggestionListener = fn;
-        if (type === 'run.completed') completedListener = fn;
+      addEventListener(type: string, fn: Listener) {
+        if (type === 'suggestion.streamed') listeners.suggestion = fn;
+        if (type === 'run.completed') listeners.completed = fn;
       }
       close() {}
     }
@@ -65,7 +65,7 @@ describe('startAssistantRun', () => {
       field: { kind: 'entry.title', id: 'e1' },
       before: 'old', after: 'new',
     };
-    suggestionListener?.(new MessageEvent('m', { data: JSON.stringify({ suggestion: sug }) }));
+    listeners.suggestion?.(new MessageEvent('m', { data: JSON.stringify({ suggestion: sug }) }));
 
     expect(useSuggestionStore.getState().byId['sug_1']).toEqual(sug);
     const msgs = useConversationStore.getState().messages;
@@ -74,7 +74,7 @@ describe('startAssistantRun', () => {
     if (msgs[0].kind === 'ai-diff') expect(msgs[0].suggestionId).toBe('sug_1');
 
     // run.completed clears activeRunId
-    completedListener?.(new MessageEvent('m', { data: JSON.stringify({ runId: 'run_y', suggestionIds: ['sug_1'], status: 'done' }) }));
+    listeners.completed?.(new MessageEvent('m', { data: JSON.stringify({ runId: 'run_y', suggestionIds: ['sug_1'], status: 'done' }) }));
     expect(useAssistantStore.getState().activeRunId).toBeNull();
   });
 });
