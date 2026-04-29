@@ -31,6 +31,30 @@ function selectableForAtom(atom: LayoutAtom): SelectableBlock | null {
   return section ? { kind: 'entry', id: atom.sourceBlockId, sectionId: section.id } : null;
 }
 
+/** Build a human-readable AI-scope label for a selected block. */
+function labelForBlock(kind: 'section' | 'entry' | 'bullet', id: BlockId): string {
+  const r = useResumeStore.getState().resume;
+  if (!r) return id.slice(0, 8);
+  if (kind === 'section') {
+    const s = r.sections.find(x => x.id === id);
+    return s?.heading || id.slice(0, 8);
+  }
+  if (kind === 'entry') {
+    for (const s of r.sections) {
+      const e = s.entries.find(x => x.id === id);
+      if (e) return `${s.heading} · ${e.title || 'entry'}`;
+    }
+  }
+  if (kind === 'bullet') {
+    for (const s of r.sections) {
+      for (const e of s.entries) {
+        if (e.bullets.some(b => b.id === id)) return `${s.heading} · bullet`;
+      }
+    }
+  }
+  return id.slice(0, 8);
+}
+
 /** Returns the section.id that an atom belongs to, or null if it's a header. */
 function sectionForAtom(atom: LayoutAtom): BlockId | null {
   const r = useResumeStore.getState().resume;
@@ -68,17 +92,20 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     setOutlineTick(t => t + 1);
   }, [layouts]);
 
-  // Section is the canonical selection unit. Behavior:
-  //   - Click on a 6-dot handle → DragController.onUp does fine-grained
-  //     selection (section / entry / bullet per the handle's block kind).
-  //     Skip here; that path wins.
-  //   - Click anywhere ELSE inside the canvas → resolve which section the
-  //     cursor's Y-coord lands in, set selectionManager to that section.
-  //     This also runs when clicking into editable text — TipTap takes focus
-  //     for typing, and we silently set the section selection alongside.
+  // Selection: clicking anywhere selects the block at the cursor's
+  // granularity (matches the hover preview's logic). Specifically:
+  //   - Click a 6-dot handle → DragController.onUp handles fine-grained
+  //     selection per the handle's block kind. Skip here; that path wins.
+  //   - Click on a bullet (text or gutter beside it) → select that bullet.
+  //   - Click on an entry's title / meta row → select that entry.
+  //   - Click on a section-heading atom (the heading row only) → select
+  //     that section.
+  //   - Click in a gap or anywhere ELSE inside the canvas → no-op (don't
+  //     change current selection — avoids surprising "click empty space
+  //     selected the whole section" behavior).
   //   - Click outside the canvas → clear selection.
-  //   - When the AI sidebar is open, mirror section selection into the
-  //     assistant's scope so the next AI request targets that section.
+  //   - When AI sidebar is open, mirror the selected block into assistant
+  //     scope so the next AI request targets it.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
@@ -91,29 +118,62 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         return;
       }
 
-      // Find the atom whose Y-band contains the cursor.
-      const rootRect = root.getBoundingClientRect();
-      const cursorY = e.clientY - rootRect.top;
-      let atomHit: AtomId | null = null;
-      for (const [id, layout] of layouts.entries()) {
-        const top = getAtomAbsoluteCoord(layout, 'edit', template).top;
-        const bottom = top + layout.height;
-        if (cursorY >= top && cursorY <= bottom) { atomHit = id; break; }
-      }
-      if (!atomHit) { selectionManager.clear(); return; }
-      const atom = atoms.find(a => a.id === atomHit);
-      if (!atom) { selectionManager.clear(); return; }
-      const sectionId = sectionForAtom(atom);
-      if (!sectionId) { selectionManager.clear(); return; }
+      // Use the same finest-granularity resolution as hover preview.
+      // bullet > entry-row > section-heading > nothing.
+      let target: { kind: 'bullet' | 'entry' | 'section'; id: BlockId } | null = null;
 
-      selectionManager.selectSingleBlock(sectionId);
-      // Mirror to AI sidebar scope only when sidebar is already open.
+      // Bullet hit-test: any rendered .resume-bullet whose Y-band contains the cursor.
+      const bulletEls = document.querySelectorAll('li.resume-bullet[data-block-id]');
+      for (const el of Array.from(bulletEls)) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) {
+          target = { kind: 'bullet', id: (el as HTMLElement).getAttribute('data-block-id') as BlockId };
+          break;
+        }
+      }
+
+      // Entry-row hit-test: title / meta wrapper Y-band.
+      if (!target) {
+        const rowEls = document.querySelectorAll('[data-row-field-key]');
+        for (const el of Array.from(rowEls)) {
+          const fk = (el as HTMLElement).getAttribute('data-row-field-key') ?? '';
+          if (!fk.startsWith('entry.title') && !fk.startsWith('entry.meta')) continue;
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (e.clientY >= r.top && e.clientY <= r.bottom) {
+            // entry.title:<entryId> / entry.meta:<entryId>
+            const entryId = fk.split(':')[1] as BlockId;
+            if (entryId) target = { kind: 'entry', id: entryId };
+            break;
+          }
+        }
+      }
+
+      // Section-heading hit-test: the section-heading atom's Y-band.
+      if (!target) {
+        const rootRect = root.getBoundingClientRect();
+        const cursorY = e.clientY - rootRect.top;
+        for (const a of atoms) {
+          if (a.kind !== 'section-heading') continue;
+          const layout = layouts.get(a.id);
+          if (!layout) continue;
+          const top = getAtomAbsoluteCoord(layout, 'edit', template).top;
+          const bottom = top + layout.height;
+          if (cursorY >= top && cursorY <= bottom) {
+            target = { kind: 'section', id: a.sourceBlockId };
+            break;
+          }
+        }
+      }
+
+      if (!target) return; // Empty zone: leave current selection alone.
+
+      selectionManager.selectSingleBlock(target.id);
+
+      // Mirror to AI sidebar scope when sidebar is open.
       const aState = useAssistantStore.getState();
       if (aState.pose === 'sidebar') {
-        const r = useResumeStore.getState().resume;
-        const section = r?.sections.find(s => s.id === sectionId);
-        const label = section?.heading || sectionId.slice(0, 8);
-        aState.openSidebarWithScope({ blockId: sectionId, label });
+        const label = labelForBlock(target.kind, target.id);
+        aState.openSidebarWithScope({ blockId: target.id, label });
       }
     }
     document.addEventListener('mousedown', onDocMouseDown);
