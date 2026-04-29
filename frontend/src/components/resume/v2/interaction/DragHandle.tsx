@@ -25,9 +25,26 @@ export function DragHandle({ block, onDropIndicator, onDoubleClick, style }: Pro
       style={{
         ...style,
         cursor: 'grab', touchAction: 'none', border: 0, background: 'transparent',
-        padding: '0 4px', color: '#999',
+        padding: '4px 2px', color: '#999',
+        // 6-dot grid per design_handoff_ai_sidebar/README.md (.r-handle)
+        width: 16, height: 20,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 3px)',
+        gridTemplateRows: 'repeat(3, 3px)',
+        gap: 2,
+        alignContent: 'center',
+        justifyContent: 'center',
+        boxSizing: 'content-box',
+        borderRadius: 4,
       }}
       aria-label="Drag to reorder"
-    >⋮⋮</button>
+    >
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+      <i style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+    </button>
   );
 }
