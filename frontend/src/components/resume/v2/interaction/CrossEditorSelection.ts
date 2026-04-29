@@ -146,82 +146,26 @@ export function editorPointFromViewport(x: number, y: number): { key: string; po
 
 export function crossEditorSelectionClientRects(root: HTMLElement): DOMRect[] {
   const rootRect = root.getBoundingClientRect();
-  const ordered = atomFocusManager.editorsInOrder();
-  const indexByKey = new Map(ordered.map((item, i) => [item.key, i] as const));
-  const editorByKey = new Map(ordered.map(item => [item.key, item.editor]));
+  const byKey = new Map(atomFocusManager.editorsInOrder().map(item => [item.key, item.editor]));
+  const rects: DOMRect[] = [];
 
-  // Sort ranges by document order so we can fill gaps between consecutive
-  // selected editors (margin between e.g. an entry's meta row and the next
-  // bullet) and produce one continuous highlight band.
-  const sortedRanges = crossEditorSelection.getRanges()
-    .slice()
-    .sort((a, b) => (indexByKey.get(a.key) ?? 0) - (indexByKey.get(b.key) ?? 0));
-
-  // Build one rect per editor in the selection. For fully-selected editors
-  // (from=0, to=docEnd), use the editor's own bbox so the highlight spans
-  // the full visual line (including line-height padding) rather than the
-  // glyph-tight client rects from the DOM Range. Partial editors (start/end
-  // of the drag) fall back to the Range bbox.
-  type PerEditor = { key: string; rect: DOMRect; index: number };
-  const perEditor: PerEditor[] = [];
-  for (const range of sortedRanges) {
-    const editor = editorByKey.get(range.key);
-    const index = indexByKey.get(range.key);
-    if (!editor || index == null) continue;
-    const docEnd = editor.state.doc.content.size;
-    const isFull = range.from <= 0 && range.to >= docEnd;
-
-    let absRect: DOMRect | null = null;
-    if (isFull) {
-      const r = editor.view.dom.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        absRect = new DOMRect(r.left, r.top, r.width, r.height);
-      }
-    } else {
-      const domRange = domRangeForEditorRange(editor, range.from, range.to);
-      if (domRange) {
-        // Union all client rects (covers wrapped lines as one band).
-        let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-        for (const cr of Array.from(domRange.getClientRects())) {
-          if (cr.width <= 0 || cr.height <= 0) continue;
-          l = Math.min(l, cr.left);
-          t = Math.min(t, cr.top);
-          r = Math.max(r, cr.right);
-          b = Math.max(b, cr.bottom);
-        }
-        if (isFinite(l)) absRect = new DOMRect(l, t, r - l, b - t);
-      }
+  for (const range of crossEditorSelection.getRanges()) {
+    const editor = byKey.get(range.key);
+    if (!editor) continue;
+    const domRange = domRangeForEditorRange(editor, range.from, range.to);
+    if (!domRange) continue;
+    for (const rect of Array.from(domRange.getClientRects())) {
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      rects.push(new DOMRect(
+        rect.left - rootRect.left,
+        rect.top - rootRect.top,
+        rect.width,
+        rect.height,
+      ));
     }
-    if (absRect) perEditor.push({ key: range.key, rect: absRect, index });
   }
 
-  // Fill vertical gaps between consecutive selected editors so the band is
-  // visually continuous (handles CSS margin-bottom on entry.meta / between
-  // bullets / etc).
-  const out: DOMRect[] = [];
-  perEditor.sort((a, b) => a.index - b.index);
-  for (let i = 0; i < perEditor.length; i++) {
-    const cur = perEditor[i].rect;
-    out.push(toLocal(cur, rootRect));
-
-    const next = perEditor[i + 1];
-    if (!next) continue;
-    if (next.index !== perEditor[i].index + 1) continue; // non-adjacent → don't bridge
-    const gapTop = cur.bottom;
-    const gapBottom = next.rect.top;
-    if (gapBottom <= gapTop + 0.5) continue; // no visible gap
-    // Bridge spans from the wider rect's left to the wider rect's right so
-    // the bridge looks like a continuation rather than a pinched stripe.
-    const left = Math.min(cur.left, next.rect.left);
-    const right = Math.max(cur.right, next.rect.right);
-    out.push(toLocal(new DOMRect(left, gapTop, right - left, gapBottom - gapTop), rootRect));
-  }
-
-  return out;
-}
-
-function toLocal(rect: DOMRect, rootRect: DOMRect): DOMRect {
-  return new DOMRect(rect.left - rootRect.left, rect.top - rootRect.top, rect.width, rect.height);
+  return rects;
 }
 
 function domRangeForEditorRange(editor: Editor, from: number, to: number): Range | null {
