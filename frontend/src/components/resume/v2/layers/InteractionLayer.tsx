@@ -69,15 +69,13 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
   }, [layouts]);
 
   // Click anywhere outside a drag handle → clear any active block selection.
-  // Drag handles handle their own toggle in onClick; skipping them here lets
-  // the toggle work cleanly without being clobbered.
+  // Drag handles set selection via DragController.onUp (built-in
+  // click-without-drag → selectSingleBlock); skipping them here lets that
+  // built-in behavior win without being clobbered by an outside-click clear.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
-      const inHandle = t?.closest('button[data-edit-only]');
-      console.log('[outside] mousedown target=', t?.tagName, 'inHandle=', !!inHandle, 'classes=', t?.className);
-      if (inHandle) return;
-      console.log('[outside] CLEARING selection');
+      if (t?.closest('button[data-edit-only]')) return;
       selectionManager.clear();
       useBlockHover.getState().setHovered(null);
     }
@@ -222,23 +220,12 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                   e.stopPropagation();
                   useAssistantStore.getState().openSidebarWithScope({ blockId: aiScopeForBlock(block), label: aiScopeForBlock(block).slice(0, 8) });
                 }}
-                // Tap-to-select for both section and entry handles. Bullets
-                // get their own onClick wired in BulletInteractionOverlay.
-                // (Headers are not selectable; selectableForAtom returns null,
-                // so this branch is unreachable for header-row blocks.)
-                onClick={block.kind === 'section' || block.kind === 'entry' ? (e) => {
-                  e.stopPropagation();
-                  console.log('[6dot] click', block.kind, block.id);
-                  const cur = new Set(selectionManager.getBlocks());
-                  if (cur.size === 1 && cur.has(block.id)) {
-                    console.log('[6dot] toggle off (was selected)');
-                    selectionManager.clear();
-                  } else {
-                    console.log('[6dot] selecting', block.id);
-                    selectionManager.selectSingleBlock(block.id);
-                  }
-                  console.log('[6dot] after:', selectionManager.getBlocks());
-                } : undefined}
+                // Selection (click-without-drag → selectSingleBlock) is
+                // already handled inside DragController.onUp. We deliberately
+                // do NOT pass onClick here — adding our own would race with
+                // DragController and toggle the just-set selection right back
+                // off. SectionHighlightLayer subscribes to selectionManager
+                // and renders the result.
               />
             </div>
             {block.kind === 'section' && (

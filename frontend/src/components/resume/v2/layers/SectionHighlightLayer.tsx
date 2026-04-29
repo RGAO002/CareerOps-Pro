@@ -121,9 +121,6 @@ export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
     const id = selectedIds[0];
     const kind = inferKind(id, sections);
     if (kind) selected = { kind, id };
-    console.log('[highlight] render: selectedIds=', selectedIds, 'inferred kind=', kind, 'sections.len=', sections.length);
-  } else if (selectedIds.length === 0) {
-    if (selectionTick > 0) console.log('[highlight] render: selectedIds empty (tick=', selectionTick, ')');
   }
 
   return (

@@ -4,7 +4,6 @@ import { DragHandle } from '../interaction/DragHandle';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId } from '../types';
 import { useAssistantStore } from '@/stores/assistant';
-import { selectionManager } from '../interaction/SelectionManager';
 
 interface Props {
   bulletId: BlockId;
@@ -48,12 +47,7 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
           e.stopPropagation();
           useAssistantStore.getState().openSidebarWithScope({ blockId: bulletId, label: bulletId.slice(0, 8) });
         }}
-        onClick={(e) => {
-          e.stopPropagation();
-          const cur = new Set(selectionManager.getBlocks());
-          if (cur.size === 1 && cur.has(bulletId)) selectionManager.clear();
-          else selectionManager.selectSingleBlock(bulletId);
-        }}
+        // Selection is handled by DragController.onUp (click-without-drag).
       />
     </div>
   );

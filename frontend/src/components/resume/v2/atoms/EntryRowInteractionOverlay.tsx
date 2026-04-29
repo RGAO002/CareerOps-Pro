@@ -5,7 +5,6 @@ import { useResumeStore } from '../store/useResumeStore';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId, SelectableBlock } from '../types';
 import { useAssistantStore } from '@/stores/assistant';
-import { selectionManager } from '../interaction/SelectionManager';
 
 interface Props {
   entryId: BlockId;
@@ -82,12 +81,7 @@ export function EntryRowInteractionOverlay({
           e.stopPropagation();
           useAssistantStore.getState().openSidebarWithScope({ blockId: entryId, label: entryId.slice(0, 8) });
         }}
-        onClick={(e) => {
-          e.stopPropagation();
-          const cur = new Set(selectionManager.getBlocks());
-          if (cur.size === 1 && cur.has(entryId)) selectionManager.clear();
-          else selectionManager.selectSingleBlock(entryId);
-        }}
+        // Selection is handled by DragController.onUp (click-without-drag).
       />
     </div>
   );
