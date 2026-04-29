@@ -12,7 +12,7 @@ import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
 import { useAssistantStore } from '@/stores/assistant';
-import { useSectionHighlight } from '@/stores/sectionHighlight';
+import { useBlockHover } from '@/stores/sectionHighlight';
 import { AskAIPill } from '@/components/ai/assistant/AskAIPill';
 
 interface Props {
@@ -68,25 +68,15 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     setOutlineTick(t => t + 1);
   }, [layouts]);
 
-  // Mirror atom hover into section-highlight store (drives hover bg in SectionHighlightLayer).
-  useEffect(() => {
-    if (hoveredAtomId == null) {
-      useSectionHighlight.getState().setHovered(null);
-      return;
-    }
-    const atom = atoms.find(a => a.id === hoveredAtomId);
-    if (!atom) { useSectionHighlight.getState().setHovered(null); return; }
-    useSectionHighlight.getState().setHovered(sectionForAtom(atom));
-  }, [hoveredAtomId, atoms]);
-
-  // Click anywhere outside a drag handle → deselect any active section. Drag
-  // handles handle their own toggle in onClick (set up below); skipping them
-  // here lets the toggle work cleanly without being clobbered.
+  // Click anywhere outside a drag handle → clear any active block selection.
+  // Drag handles handle their own toggle in onClick; skipping them here lets
+  // the toggle work cleanly without being clobbered.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (t?.closest('button[data-edit-only]')) return;
-      useSectionHighlight.getState().setSelected(null);
+      selectionManager.clear();
+      useBlockHover.getState().setHovered(null);
     }
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
@@ -144,10 +134,31 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         }
       }
       setHoverState({ atomId: atomHit, bulletId: bulletHit, atomFieldKey });
+
+      // Drive the block-hover preview at the finest available granularity:
+      //   bullet > entry > section > nothing.
+      let preview: { kind: 'section' | 'entry' | 'bullet'; id: BlockId } | null = null;
+      if (bulletHit) {
+        preview = { kind: 'bullet', id: bulletHit };
+      } else if (atomHit) {
+        const a = atoms.find(x => x.id === atomHit);
+        if (a) {
+          if (a.kind === 'section-heading') {
+            preview = { kind: 'section', id: a.sourceBlockId };
+          } else if (a.kind === 'entry') {
+            preview = { kind: 'entry', id: a.sourceBlockId };
+          }
+        }
+      }
+      const cur = useBlockHover.getState().hovered;
+      const same = (cur && preview && cur.kind === preview.kind && cur.id === preview.id) ||
+                   (cur === null && preview === null);
+      if (!same) useBlockHover.getState().setHovered(preview);
     };
     const onLeaveRoot = () => {
       setHoveredAtomId(null);
       setHoverState({ atomId: null, bulletId: null, atomFieldKey: null });
+      useBlockHover.getState().setHovered(null);
     };
     root.addEventListener('mousemove', onMove);
     root.addEventListener('mouseleave', onLeaveRoot);
@@ -196,9 +207,15 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                   e.stopPropagation();
                   useAssistantStore.getState().openSidebarWithScope({ blockId: aiScopeForBlock(block), label: aiScopeForBlock(block).slice(0, 8) });
                 }}
-                onClick={block.kind === 'section' ? (e) => {
+                // Tap-to-select for both section and entry handles. Bullets
+                // get their own onClick wired in BulletInteractionOverlay.
+                // (Headers are not selectable; selectableForAtom returns null,
+                // so this branch is unreachable for header-row blocks.)
+                onClick={block.kind === 'section' || block.kind === 'entry' ? (e) => {
                   e.stopPropagation();
-                  useSectionHighlight.getState().toggleSelected(block.id);
+                  const cur = new Set(selectionManager.getBlocks());
+                  if (cur.size === 1 && cur.has(block.id)) selectionManager.clear();
+                  else selectionManager.selectSingleBlock(block.id);
                 } : undefined}
               />
             </div>
@@ -223,35 +240,10 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
           </>
         );
       })}
-      {/* Selection outlines — drawn on top of selected blocks. Re-rendered
-          whenever selection or layouts change (selectionTick forces a relayout
-          read of getBoundingClientRect). */}
-      {Array.from(selectedBlocks).map((id) => {
-        if (typeof document === 'undefined') return null;
-        const el = document.querySelector(`[data-block-id="${id}"]`) as HTMLElement | null;
-        if (!el) return null;
-        const root = document.querySelector('[data-canvas-root]') as HTMLElement | null;
-        if (!root) return null;
-        const rect = el.getBoundingClientRect();
-        const rootRect = root.getBoundingClientRect();
-        return (
-          <div
-            key={`sel-${id}`}
-            style={{
-              position: 'absolute',
-              top: rect.top - rootRect.top - 4,
-              left: rect.left - rootRect.left - 4,
-              width: rect.width + 8,
-              height: rect.height + 8,
-              outline: '2px solid #3b82f6',
-              outlineOffset: 0,
-              borderRadius: 4,
-              pointerEvents: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        );
-      })}
+      {/* Selection visual is now rendered by SectionHighlightLayer (background
+          tint + 2px terracotta strip) — driven by the same selectionManager
+          state. This used to be a 2px blue outline; replaced per design
+          direction (highlight = "operation focus", not just "this is selected"). */}
       <DropIndicator target={dropPayload?.target ?? null} y={dropPayload?.y ?? 0} />
       <SlashMenu />
     </div>

@@ -1,25 +1,34 @@
 // frontend/src/stores/sectionHighlight.ts
 //
-// Lightweight ephemeral store for section-level visual highlight.
-// - hoveredSectionId: section the mouse is currently over (any of its atoms).
-// - selectedSectionId: section the user clicked the 6-dot of. "Active" pose.
+// Hover preview store for the resume editor.
 //
-// Both are presentation-only — they do not persist and do not affect
-// resume data, layout, or selection semantics elsewhere.
+// Semantics: `hovered` represents "if the user clicks the 6-dot at the
+// current mouse position, this block would be selected". It's a preview of
+// what selection would do — the light bg in BlockHighlightLayer.
+//
+// Selection itself lives in `selectionManager` (interaction/SelectionManager.ts);
+// this store is purely the preview cursor.
 import { create } from 'zustand';
+import type { BlockId } from '@/components/resume/v2/types';
 
-interface SectionHighlightState {
-  hoveredSectionId: string | null;
-  selectedSectionId: string | null;
-  setHovered: (id: string | null) => void;
-  setSelected: (id: string | null) => void;
-  toggleSelected: (id: string) => void;
+export type HoverableBlockKind = 'section' | 'entry' | 'bullet';
+export interface HoveredBlock {
+  kind: HoverableBlockKind;
+  id: BlockId;
 }
 
-export const useSectionHighlight = create<SectionHighlightState>((set) => ({
-  hoveredSectionId: null,
-  selectedSectionId: null,
-  setHovered: (hoveredSectionId) => set({ hoveredSectionId }),
-  setSelected: (selectedSectionId) => set({ selectedSectionId }),
-  toggleSelected: (id) => set((s) => ({ selectedSectionId: s.selectedSectionId === id ? null : id })),
+interface BlockHoverState {
+  hovered: HoveredBlock | null;
+  setHovered: (h: HoveredBlock | null) => void;
+  /** Clear only if the currently-hovered block matches the given id —
+   *  prevents stale-leave events from clobbering a fresh enter. */
+  clearIfMatches: (id: BlockId) => void;
+}
+
+export const useBlockHover = create<BlockHoverState>((set, get) => ({
+  hovered: null,
+  setHovered: (hovered) => set({ hovered }),
+  clearIfMatches: (id) => {
+    if (get().hovered?.id === id) set({ hovered: null });
+  },
 }));
