@@ -188,6 +188,22 @@
   position: relative;
 }
 
+/* Suppress the "box around text" that the global Tailwind/shadcn base
+   (`* { @apply outline-ring/50 }` in globals.css) + browser default focus
+   ring add to every contenteditable in the resume. Cursor + section-bg
+   highlight already convey focus + selection unambiguously, and the extra
+   outline reads as a stale UI artifact. */
+[data-canvas-root] [contenteditable] {
+  outline: none !important;
+}
+[data-canvas-root] [contenteditable]:focus,
+[data-canvas-root] [contenteditable]:focus-visible,
+[data-canvas-root] .ProseMirror,
+[data-canvas-root] .ProseMirror:focus,
+[data-canvas-root] .ProseMirror:focus-visible {
+  outline: none !important;
+}
+
 /* Placeholder text comes from --resume-placeholder, set per-instance via
    inline style on each EditorContent in PlainTextField / BulletField /
    ContactLinesField. Fallback to empty string keeps the rule harmless when
