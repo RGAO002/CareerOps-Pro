@@ -39,7 +39,6 @@ interface Props {
 const EMPTY_SECTIONS: SectionBlock[] = [];
 const HOVER_BG = 'oklch(0.97 0.01 60)';            // light warm
 const SELECT_BG = 'oklch(0.96 0.03 45)';           // deeper warm
-const TERRACOTTA = 'oklch(0.62 0.13 38)';
 
 interface Bbox { top: number; left: number; width: number; height: number }
 
@@ -163,20 +162,7 @@ export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
               transition: 'background 0.18s ease-out',
               pointerEvents: 'none',
             }}
-          >
-            <i
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 4,
-                bottom: 4,
-                width: 2,
-                background: TERRACOTTA,
-                borderRadius: '0 2px 2px 0',
-              }}
-            />
-          </div>
+          />
         );
       })()}
     </div>
