@@ -368,3 +368,27 @@
   --p-ease:         cubic-bezier(0.16, 1, 0.3, 1);
   --p-ease-soft:    cubic-bezier(0.25, 0.8, 0.25, 1);
 }
+
+/* AI Assistant reflow — when sidebar pose is active AND viewport is wide enough,
+   shift the editor canvas left by the sidebar width + gutter. Otherwise unchanged
+   (sidebar overlays). Per spike conclusion, LayoutEngine is unaffected because
+   the canvas is `width: 8.5in; margin: 0 auto` and just re-centers in the
+   narrowed parent. */
+.ai-host-reflow {
+  transition: padding-right 0.4s var(--p-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+@media (min-width: 1280px) {
+  body.ai-sidebar-open .ai-host-reflow { padding-right: 384px; }
+}
+@media (max-width: 1279.98px) {
+  body.ai-sidebar-open .ai-host-reflow { padding-right: 0; }
+  /* Narrow viewport: sidebar overlays. A half-opacity backdrop hints "temporary mode". */
+  body.ai-sidebar-open::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.18);
+    z-index: 39;
+    pointer-events: none;
+  }
+}

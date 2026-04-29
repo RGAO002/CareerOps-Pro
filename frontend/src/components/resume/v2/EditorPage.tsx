@@ -11,7 +11,7 @@ import { selectionManager } from './interaction/SelectionManager';
 import { getTemplate } from './templates/registry';
 import type { ResumeDoc } from './types';
 import { usePageContext } from '@/hooks/usePageContext';
-import { AISidebar } from '@/components/ai/AISidebar';
+import { useAssistantStore } from '@/stores/assistant';
 import { useSuggestionStore } from '@/stores/aiSuggestion';
 
 interface Props {
@@ -62,6 +62,15 @@ export function EditorPage({ initialResume }: Props) {
     if (resume) useSuggestionStore.getState().hydrate(resume.id);
   }, [resume?.id]);
 
+  // Add a body class while sidebar pose is active so globals.css can reflow / overlay.
+  useEffect(() => {
+    const unsub = useAssistantStore.subscribe((s) => {
+      const open = s.pose === 'sidebar';
+      document.body.classList.toggle('ai-sidebar-open', open);
+    });
+    return () => { unsub(); document.body.classList.remove('ai-sidebar-open'); };
+  }, []);
+
   if (!hydrated || !resume) {
     return (
       <AppShell>
@@ -75,7 +84,7 @@ export function EditorPage({ initialResume }: Props) {
     <>
       <AppShell>
         <EditorTopBar resumeId={resume.id} pageCount={pageCount} />
-        <div className="bg-neutral-100 py-6">
+        <div className="bg-neutral-100 py-6 ai-host-reflow">
           <ResumeDocumentCanvas
             resume={resume}
             template={template}
@@ -85,7 +94,7 @@ export function EditorPage({ initialResume }: Props) {
           />
         </div>
       </AppShell>
-      <AISidebar />
+      {/* <AISidebar /> moved to global <Assistant /> mount in AppShell. */}
     </>
   );
 }
