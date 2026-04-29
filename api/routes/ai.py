@@ -31,6 +31,9 @@ class RunRequest(BaseModel):
     userInput: str
     selection: list = []
     chatHistory: list = []
+    # v0: persona routing not implemented; field is accepted for forward
+    # compatibility with the frontend agent target chips. Backend ignores it.
+    targetAgent: str | None = None
 
 
 @router.post("/run")
