@@ -145,10 +145,16 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       // flash from "this small bullet" → "the whole entry/section" when the
       // mouse glides 1-2px between bullet rows. Solution: in those gap
       // moments, stick with the last hovered bullet (don't widen the preview).
+      // The data-row-field-key values used by EntryAtomRenderer are
+      // `entry.title:<entryId>` and `entry.meta:<entryId>` (suffixed with
+      // the entry id) — NOT bare `'title'` / `'meta'`. Use prefix matching.
+      const isEntryRow = !!atomFieldKey && (
+        atomFieldKey.startsWith('entry.title') || atomFieldKey.startsWith('entry.meta')
+      );
       let preview: { kind: 'section' | 'entry' | 'bullet'; id: BlockId } | null = null;
       if (bulletHit) {
         preview = { kind: 'bullet', id: bulletHit };
-      } else if (atomFieldKey === 'title' || atomFieldKey === 'meta') {
+      } else if (isEntryRow) {
         // Cursor is on entry's title or meta row → preview the entry.
         if (atomHit) {
           const a = atoms.find(x => x.id === atomHit);
@@ -160,7 +166,7 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
           preview = { kind: 'section', id: a.sourceBlockId };
         }
         // Note: atomHit may be an entry atom while we're in a bullet-gap
-        // (no bulletHit, no atomFieldKey). In that case we DELIBERATELY
+        // (no bulletHit, no entry row hit). In that case we DELIBERATELY
         // leave preview = null rather than jumping to entry-wide highlight.
       }
       const cur = useBlockHover.getState().hovered;
