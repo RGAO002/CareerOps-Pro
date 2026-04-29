@@ -74,7 +74,10 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
-      if (t?.closest('button[data-edit-only]')) return;
+      const inHandle = t?.closest('button[data-edit-only]');
+      console.log('[outside] mousedown target=', t?.tagName, 'inHandle=', !!inHandle, 'classes=', t?.className);
+      if (inHandle) return;
+      console.log('[outside] CLEARING selection');
       selectionManager.clear();
       useBlockHover.getState().setHovered(null);
     }
@@ -225,9 +228,16 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                 // so this branch is unreachable for header-row blocks.)
                 onClick={block.kind === 'section' || block.kind === 'entry' ? (e) => {
                   e.stopPropagation();
+                  console.log('[6dot] click', block.kind, block.id);
                   const cur = new Set(selectionManager.getBlocks());
-                  if (cur.size === 1 && cur.has(block.id)) selectionManager.clear();
-                  else selectionManager.selectSingleBlock(block.id);
+                  if (cur.size === 1 && cur.has(block.id)) {
+                    console.log('[6dot] toggle off (was selected)');
+                    selectionManager.clear();
+                  } else {
+                    console.log('[6dot] selecting', block.id);
+                    selectionManager.selectSingleBlock(block.id);
+                  }
+                  console.log('[6dot] after:', selectionManager.getBlocks());
                 } : undefined}
               />
             </div>
