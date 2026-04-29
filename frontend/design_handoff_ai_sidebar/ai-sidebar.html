@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI assistant — bar to sidebar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* canvas (light) */
+  --bg: oklch(0.985 0.004 70);
+  --paper: oklch(1 0 0);
+  --surface-1: oklch(0.97 0.005 65);
+  --surface-2: oklch(0.95 0.008 60);
+  --border: oklch(0.92 0.006 60);
+  --border-strong: oklch(0.86 0.008 55);
+  --fg: oklch(0.18 0.02 50);
+  --fg-muted: oklch(0.50 0.010 50);
+  --fg-subtle: oklch(0.65 0.008 55);
+  --terracotta: oklch(0.62 0.13 38);
+  --terracotta-deep: oklch(0.50 0.14 35);
+
+  /* assistant — fluid-friendly, legible on three-color background */
+  --p-surface:   oklch(0.18 0.022 34 / .72);
+  --p-surface-hi:oklch(0.22 0.024 34 / .82);
+  --p-border:    oklch(0.55 0.015 40 / .22);
+  --p-border2:   oklch(0.60 0.018 40 / .30);
+  --p-text:      oklch(0.96 0.010 55);
+  --p-text-body: oklch(0.86 0.012 52);
+  --p-text-mute: oklch(0.66 0.010 50);
+  --p-text-dim:  oklch(0.50 0.008 50);
+  --accent:      oklch(0.72 0.13 38);
+  --accent-warm: oklch(0.78 0.12 42);
+  --accent-muted:oklch(0.72 0.13 38 / .18);
+  --backdrop:    oklch(0.07 0.015 35 / .40);
+  --p-deep:      oklch(0.55 0.14 32);
+  --accent-deep: oklch(0.55 0.14 32);
+
+  /* three-agent palette — kept but desaturated to fit the muted vibe */
+  --recruit: oklch(0.70 0.12 35);
+  --hm:      oklch(0.68 0.10 150);
+  --coach:   oklch(0.66 0.11 260);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.25, 0.8, 0.25, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --font: "Inter", system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+*{box-sizing:border-box}
+html, body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:400 14px/1.55 var(--font);overflow:hidden}
+
+/* ─── grid ─── */
+.app{display:grid;grid-template-columns:var(--lw,224px) 1fr;height:100vh;transition:grid-template-columns .55s var(--ease)}
+.app.nav-collapse{--lw:64px}
+
+/* ─── LEFT NAV (light, unchanged) ─── */
+.nav{background:oklch(0.98 0.003 60);border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.brand{display:flex;align-items:center;gap:10px;height:60px;padding:0 16px;border-bottom:1px solid var(--border);flex-shrink:0}
+.mk{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-deep));display:grid;place-items:center;flex-shrink:0;box-shadow:inset 0 1px 0 oklch(1 0 0 / .22), 0 2px 8px oklch(.50 .12 32 / .25)}
+.mk svg{width:18px;height:22px}
+.wm{font:500 14px/1 var(--font);letter-spacing:-0.02em;white-space:nowrap;display:flex;align-items:baseline;gap:4px;transition:opacity .25s}
+.wm em{font:400 14px/1 var(--font-display);font-style:italic;color:var(--terracotta-deep)}
+.nav-collapse .wm{opacity:0;pointer-events:none}
+.nav-list{flex:1;padding:14px 10px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.nav-section{font:600 10px/1 var(--font);letter-spacing:.16em;text-transform:uppercase;color:var(--fg-subtle);padding:14px 10px 8px;white-space:nowrap;transition:opacity .25s}
+.nav-collapse .nav-section{opacity:0}
+.nav a{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:var(--fg-muted);font:500 13px/1 var(--font);text-decoration:none;position:relative;cursor:pointer;white-space:nowrap;transition:background .15s, color .15s}
+.nav a:hover{background:oklch(.94 .01 50);color:var(--fg)}
+.nav a.active{color:var(--fg);background:oklch(.94 .02 45)}
+.nav a.active::before{content:'';position:absolute;left:-10px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--terracotta);box-shadow:2px 0 10px oklch(.65 .14 42 / .45)}
+.nav a svg{width:16px;height:16px;stroke-width:1.5;flex-shrink:0}
+.nav a span{transition:opacity .25s}
+.nav-collapse .nav a span{opacity:0}
+.nav-foot{padding:10px 10px 14px;border-top:1px solid var(--border)}
+.collapse-btn{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:var(--fg-subtle);font:500 12px/1 var(--font);background:transparent;border:0;cursor:pointer;width:100%;text-align:left;white-space:nowrap}
+.collapse-btn:hover{background:oklch(.94 .01 50);color:var(--fg)}
+.collapse-btn svg{width:14px;height:14px;stroke-width:1.5;flex-shrink:0;transition:transform .55s var(--ease)}
+.nav-collapse .collapse-btn svg{transform:rotate(180deg)}
+.nav-collapse .collapse-btn span{opacity:0}
+
+/* ─── CANVAS AREA ─── */
+.canvas-area{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;transition:margin-right .65s var(--ease)}
+.app.has-sidebar .canvas-area{margin-right:368px}
+
+.topbar{height:60px;border-bottom:1px solid var(--border);background:var(--bg);padding:0 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:relative;z-index:5}
+.crumbs{font:500 13px/1 var(--font);color:var(--fg-muted);display:flex;gap:6px;align-items:center}
+.crumbs b{color:var(--fg);font-weight:600}
+.crumbs i{color:var(--fg-subtle);font-style:normal;font-size:11px}
+.save{font:500 11px/1 var(--font);color:oklch(.55 .12 150);display:inline-flex;align-items:center;gap:6px;margin-left:8px}
+.save i{width:6px;height:6px;border-radius:999px;background:currentColor;display:inline-block}
+.top-actions{display:flex;gap:8px;align-items:center}
+.ic-btn{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--fg-muted);background:transparent;border:1px solid transparent;cursor:pointer}
+.ic-btn:hover{background:var(--surface-2);color:var(--fg)}
+.ic-btn svg{width:15px;height:15px;stroke-width:1.5}
+.page-tabs{display:flex;gap:2px}
+.page-tab{padding:6px 12px;border-radius:7px;font:500 12px/1 var(--font);color:var(--fg-muted);cursor:pointer}
+.page-tab.on{background:var(--surface-2);color:var(--fg)}
+
+.canvas{flex:1;overflow-y:auto;padding:32px 0 200px;background:linear-gradient(180deg, var(--bg) 0, oklch(.96 .005 60) 100%)}
+.resume{max-width:760px;margin:0 auto;background:var(--paper);border-radius:6px;box-shadow:0 1px 3px oklch(.15 .02 50 / .04), 0 12px 40px oklch(.40 .04 42 / .07);padding:48px 56px;font-family:"Source Serif Pro",Georgia,"Times New Roman",serif;transition:max-width .55s var(--ease)}
+
+.r-header{text-align:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:18px}
+.r-name{font:600 26px/1.1 var(--font);letter-spacing:-0.02em;margin:0 0 5px;color:var(--fg)}
+.r-contact{font:400 12px/1.5 var(--font);color:var(--fg-muted)}
+.r-contact span{margin:0 5px;color:var(--fg-subtle)}
+
+.r-section{position:relative;padding:10px 0 14px;margin:0 -56px;padding-left:56px;padding-right:56px;border-radius:0;transition:background .2s}
+.r-section + .r-section{margin-top:6px}
+.r-section:hover{background:oklch(.97 .01 60)}
+.r-section.active{background:oklch(.96 .03 45)}
+.r-section.active::after{content:'';position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--terracotta);border-radius:0 2px 2px 0}
+.r-handle{position:absolute;left:24px;top:14px;width:16px;height:20px;display:grid;grid-template-columns:repeat(2,3px);grid-template-rows:repeat(3,3px);gap:2px;align-content:center;justify-content:center;opacity:0;cursor:grab;transition:opacity .15s;border-radius:4px;padding:4px 2px;box-sizing:content-box}
+.r-handle i{width:3px;height:3px;border-radius:999px;background:var(--fg-subtle)}
+.r-section:hover .r-handle{opacity:.85}
+.r-handle:hover{background:var(--surface-2);opacity:1}
+.r-h{font:600 11px/1 var(--font);letter-spacing:.18em;text-transform:uppercase;color:var(--fg);margin:0 0 8px;border-bottom:1px solid var(--border);padding-bottom:5px}
+.r-entry{margin:8px 0 10px}
+.r-entry-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.r-entry-title{font:600 13.5px/1.4 var(--font);color:var(--fg)}
+.r-entry-meta{font:400 12px/1.4 var(--font);color:var(--fg-muted);font-style:italic}
+.r-entry-sub{font:500 12.5px/1.4 var(--font);color:var(--fg-muted);margin-top:2px}
+.r-bullets{margin:5px 0 0;padding:0 0 0 16px;list-style:none}
+.r-bullets li{font:400 12.5px/1.55 "Source Serif Pro",Georgia,serif;color:var(--fg);margin:3px 0;position:relative}
+.r-bullets li::before{content:'•';position:absolute;left:-12px;color:var(--fg-subtle)}
+
+.ask-ai{position:absolute;right:18px;top:14px;display:flex;gap:5px;opacity:0;transition:opacity .15s;pointer-events:none}
+.r-section:hover .ask-ai{opacity:1;pointer-events:auto}
+.ask-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;background:var(--paper);border:1px solid var(--border);color:var(--fg-muted);font:500 11px/1 var(--font);cursor:pointer;box-shadow:0 1px 2px oklch(.15 .02 50 / .05)}
+.ask-pill:hover{background:oklch(.97 .015 50);color:var(--fg);border-color:var(--border-strong)}
+.ask-pill svg{width:11px;height:11px;stroke-width:2}
+
+/* highlight pulse on a resume block when scope is jumped to */
+.r-section.flash{animation:flashSec 1.6s var(--ease) both}
+@keyframes flashSec{
+  0%{background:oklch(.85 .12 42 / .35);box-shadow:inset 0 0 0 2px oklch(.65 .14 42 / .45)}
+  100%{background:transparent;box-shadow:none}
+}
+
+/* ─── ASSISTANT (single element, three poses) ─── */
+.assist{
+  position:fixed;
+  z-index:100;
+  /* base = sidebar */
+  left:auto; right:0; top:56px; bottom:0;
+  width:368px; height:auto;
+  border-radius:0;
+  transform:translateX(0);
+  background:oklch(0.13 0.025 34);
+  border:0;
+  border-left:1px solid var(--p-border);
+  overflow:hidden;
+  box-shadow:none;
+  transition:
+    left .55s var(--ease),
+    right .55s var(--ease),
+    top .55s var(--ease),
+    bottom .55s var(--ease),
+    width .55s var(--ease),
+    height .55s var(--ease),
+    border-radius .45s var(--ease),
+    transform .55s var(--ease),
+    border-color .35s var(--ease);
+}
+.assist .a-bar{display:none}
+.assist .a-side{display:flex}
+.assist .a-orb{display:none}
+
+/* POSE: bar */
+.assist.pose-bar{
+  left:50%; right:auto; top:auto; bottom:24px;
+  width:520px; height:48px;
+  transform:translateX(-50%);
+  border-radius:12px;
+  border:1px solid var(--p-border);
+  background:oklch(0.10 0.018 34 / .92);
+  backdrop-filter:blur(20px) saturate(1.1);
+  -webkit-backdrop-filter:blur(20px) saturate(1.1);
+  box-shadow:0 8px 28px rgba(0,0,0,.35), 0 1px 0 oklch(1 0 0 / .04) inset;
+}
+.assist.pose-bar .a-bar{display:flex}
+.assist.pose-bar .a-side{display:none}
+
+/* POSE: collapsed orb */
+.assist.pose-collapsed{
+  left:auto; top:auto;
+  right:24px; bottom:24px;
+  width:44px; height:44px;
+  border-radius:999px;
+  transform:translateX(0);
+  border:1px solid var(--p-border);
+  background:oklch(0.10 0.018 34 / .92);
+  backdrop-filter:blur(20px) saturate(1.1);
+  -webkit-backdrop-filter:blur(20px) saturate(1.1);
+  box-shadow:0 6px 18px rgba(0,0,0,.30);
+}
+.assist.pose-collapsed .a-bar, .assist.pose-collapsed .a-side{display:none}
+.assist.pose-collapsed .a-orb{display:grid}
+
+/* ─── BACKGROUND LAYER (three-color fluid, restored) ─── */
+.a-shader{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .35s var(--ease)}
+.assist.pose-sidebar .a-shader, .assist:not(.pose-bar):not(.pose-collapsed) .a-shader{opacity:1}
+.a-shader::before{
+  content:'';position:absolute;inset:-30%;
+  background:
+    radial-gradient(ellipse 42% 52% at var(--x1, 24%) var(--y1, 28%), oklch(.62 .17 38 / .55), transparent 62%),
+    radial-gradient(ellipse 42% 52% at var(--x2, 76%) var(--y2, 72%), oklch(.55 .14 152 / .42), transparent 62%),
+    radial-gradient(ellipse 40% 50% at var(--x3, 50%) var(--y3, 50%), oklch(.55 .15 268 / .40), transparent 62%);
+  filter:blur(44px) saturate(1.25);
+  animation:flow 16s var(--ease-soft) infinite alternate;
+}
+@keyframes flow{
+  0%   {--x1:24%;--y1:28%;--x2:76%;--y2:72%;--x3:50%;--y3:50%; transform:translate(0,0) scale(1)}
+  50%  {--x1:64%;--y1:20%;--x2:30%;--y2:80%;--x3:78%;--y3:42%; transform:translate(-2%, 1%) scale(1.05)}
+  100% {--x1:80%;--y1:62%;--x2:22%;--y2:30%;--x3:42%;--y3:80%; transform:translate(1%, -1%) scale(1.03)}
+}
+/* darkening scrim — moderate, lets fluid through but keeps text legible */
+.a-scrim{position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:oklch(.08 .015 34 / .55);opacity:0;transition:opacity .35s var(--ease)}
+.assist:not(.pose-bar):not(.pose-collapsed) .a-scrim{opacity:1}
+/* hide grid/edge/boot — too noisy */
+.a-grid, .a-edge, .a-boot{display:none}
+
+/* ── BAR contents ── */
+.a-bar{position:relative;display:flex;align-items:center;gap:10px;height:100%;padding:0 12px;z-index:3}
+.a-mark{flex-shrink:0;display:flex;align-items:center;gap:9px}
+.a-mark .orb{position:relative;width:24px;height:24px;border-radius:7px;background:var(--accent-muted);display:grid;place-items:center}
+.a-mark .orb svg{width:13px;height:13px;color:var(--accent-warm);stroke-width:1.5}
+
+.bar-input{flex:1;display:flex;align-items:center;gap:8px;
+  background:transparent;
+  border:0;
+  padding:0 4px;
+}
+.bar-input input{flex:1;border:0;outline:0;background:transparent;font:400 13px/1.4 var(--font);color:var(--p-text);min-width:0}
+.bar-input input::placeholder{color:var(--p-text-mute)}
+.kbd{font:500 9.5px/1 var(--font-mono);letter-spacing:.04em;color:var(--p-text-mute);padding:3px 5px;border-radius:5px;background:oklch(.18 .025 34 / .55);border:1px solid var(--p-border)}
+.bar-send{width:28px;height:28px;border-radius:8px;background:var(--accent);border:0;color:oklch(.99 .003 70);display:grid;place-items:center;cursor:pointer;flex-shrink:0;transition:filter .15s, background .15s}
+.bar-send:hover{filter:brightness(1.08)}
+.bar-send svg{width:12px;height:12px;stroke-width:2}
+.bar-context{display:inline-flex;gap:6px;align-items:center;font:500 10.5px/1 var(--font);color:var(--p-text-mute);padding:4px 8px;border-radius:6px;background:transparent;border:1px solid var(--p-border)}
+.bar-context i{width:5px;height:5px;border-radius:999px;background:var(--accent)}
+
+/* ── SIDEBAR contents ── */
+.a-side{display:none;flex-direction:column;height:100%;position:relative;z-index:3}
+
+.a-head{padding:14px 18px 0;display:flex;flex-direction:column;gap:12px;flex-shrink:0;border-bottom:1px solid var(--p-border);padding-bottom:14px}
+.a-head-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.a-head-row .left{display:flex;align-items:center;gap:10px;min-width:0}
+.a-head-row .left .label{font:600 13px/1 var(--font);letter-spacing:-0.005em;color:var(--p-text);display:block}
+.a-head-row .left small{display:none}
+.a-head-row .right{display:flex;gap:2px;flex-shrink:0}
+.mini-btn{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:transparent;border:0;color:var(--p-text-mute);cursor:pointer;transition:color .15s, background .15s}
+.mini-btn:hover{background:var(--p-surface);color:var(--p-text-body)}
+.mini-btn svg{width:14px;height:14px;stroke-width:1.5}
+
+/* segmented tabs */
+.tabs{display:flex;align-items:center;gap:2px;padding:0;background:transparent;border:0;border-radius:0}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:6px 0;margin-right:18px;border-radius:0;border:0;background:transparent;color:var(--p-text-mute);font:500 12px/1 var(--font);cursor:pointer;letter-spacing:.005em;position:relative;transition:color .15s}
+.tab:hover{color:var(--p-text-body)}
+.tab.on{color:var(--p-text);background:transparent;box-shadow:none}
+.tab.on::after{content:'';position:absolute;left:0;right:0;bottom:-14px;height:1px;background:var(--accent)}
+.tab .badge{font:500 9.5px/1 var(--font-mono);padding:2px 5px;border-radius:999px;background:var(--accent-muted);color:var(--accent-warm);letter-spacing:.04em}
+.tab.on .badge{background:var(--accent);color:oklch(.99 .003 70)}
+.tab svg{display:none}
+
+/* scope pill */
+.scope{display:inline-flex;align-items:center;gap:8px;padding:5px 6px 5px 10px;border-radius:7px;background:transparent;border:1px solid var(--p-border);font:500 11px/1.2 var(--font);color:var(--p-text-body);max-width:fit-content;cursor:pointer;transition:background .15s, border-color .15s}
+.scope:hover{background:var(--p-surface);border-color:var(--p-border2)}
+.scope .lbl{font:500 9px/1 var(--font);text-transform:uppercase;letter-spacing:.13em;color:var(--p-text-dim)}
+.scope .x{margin-left:2px;width:18px;height:18px;border-radius:5px;background:transparent;border:0;display:grid;place-items:center;cursor:pointer;color:var(--p-text-mute);transition:color .15s, background .15s}
+.scope .x:hover{background:var(--p-surface-hi);color:var(--p-text-body)}
+.scope .x svg{width:10px;height:10px;stroke-width:1.8}
+
+/* body switches by tab */
+.a-body{flex:1;overflow-y:auto;padding:18px 18px 8px;min-height:0;scrollbar-width:none}
+.a-body::-webkit-scrollbar{display:none}
+
+.day{display:none}
+
+/* messages */
+.msg{display:flex;gap:10px;margin:0 0 22px}
+.msg.you{justify-content:flex-end}
+.msg-av{display:none}
+.msg.ai{align-items:flex-start}
+.msg.ai::before{content:'';flex-shrink:0;width:6px;height:6px;border-radius:999px;background:var(--accent);margin-top:7px}
+.msg-body{max-width:90%;display:flex;flex-direction:column;gap:5px;min-width:0}
+.msg.you .msg-body{align-items:flex-end;max-width:82%}
+.bub{padding:0;font:400 13px/1.65 var(--font);color:var(--p-text-body);background:transparent;border:0;white-space:pre-line}
+.msg.you .bub{padding:9px 14px;border-radius:14px 14px 4px 14px;background:var(--p-surface-hi);border:1px solid var(--p-border2);color:oklch(0.82 0.012 52);line-height:1.55}
+.msg-meta{display:none}
+
+/* a tiny agent tag above AI messages */
+.msg-agent-tag{display:inline-flex;align-items:center;gap:6px;font:500 10px/1 var(--font);text-transform:none;letter-spacing:.005em;color:var(--p-text-mute);margin-bottom:4px}
+.msg-agent-tag i{width:5px;height:5px;border-radius:999px;display:inline-block}
+.tag-recruit i{background:var(--recruit)}
+.tag-hm i{background:var(--hm)}
+.tag-coach i{background:var(--coach)}
+
+/* diff card */
+.diff{background:var(--p-surface);border:1px solid var(--p-border);border-radius:10px;overflow:hidden;margin-top:6px}
+.diff-h{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--p-border)}
+.diff-h .who{font:500 11px/1 var(--font);color:var(--p-text-body);display:flex;align-items:center;gap:7px}
+.diff-h .who .dot{width:5px;height:5px;border-radius:999px;flex-shrink:0}
+.diff-h .who.recruit .dot{background:var(--recruit)}
+.diff-h .who.hm .dot{background:var(--hm)}
+.diff-h .who.coach .dot{background:var(--coach)}
+.diff-h .who small{color:var(--p-text-mute);font-weight:400;letter-spacing:0;text-transform:none;font-size:11px}
+.diff-tag{font:500 9.5px/1 var(--font);padding:3px 7px;border-radius:999px;letter-spacing:.04em;text-transform:uppercase;background:var(--accent-muted);color:var(--accent-warm)}
+.diff-b{padding:11px 12px;font:400 12.5px/1.6 var(--font);color:var(--p-text-body)}
+.diff-b .before{display:block;color:var(--p-text-dim);text-decoration:line-through;text-decoration-color:var(--p-text-dim);text-decoration-thickness:1px;margin-bottom:6px}
+.diff-b .after{display:block;color:var(--p-text);padding:0;background:transparent;margin:0;border-radius:0}
+.diff-f{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid var(--p-border);background:transparent;gap:10px}
+.diff-why{font:400 11px/1.45 var(--font);color:var(--p-text-mute);max-width:55%}
+.acts{display:flex;gap:4px}
+.btn{font:500 11px/1 var(--font);padding:6px 10px;border-radius:7px;border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:filter .15s, background .15s, color .15s, border-color .15s}
+.btn svg{width:10px;height:10px;stroke-width:2}
+.btn-accept{background:var(--accent);color:oklch(.99 .003 70);border-color:transparent}
+.btn-accept:hover{filter:brightness(1.08)}
+.btn-tweak{background:transparent;color:var(--p-text-body);border-color:var(--p-border2)}
+.btn-tweak:hover{background:var(--p-surface-hi);color:var(--p-text)}
+.btn-x{background:transparent;color:var(--p-text-mute);border:0;padding:6px 8px}
+.btn-x:hover{color:var(--p-text-body)}
+
+/* suggestion mini cards (for Suggestions tab) */
+.sug-list{display:flex;flex-direction:column;gap:10px}
+.sug{padding:11px 13px;background:var(--p-surface);border:1px solid var(--p-border);border-radius:10px;display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:background .15s, border-color .15s}
+.sug:hover{background:var(--p-surface-hi);border-color:var(--p-border2)}
+.sug-h{display:flex;align-items:center;justify-content:space-between;font:500 11px/1 var(--font)}
+.sug-h .left{display:flex;align-items:center;gap:7px;color:var(--p-text-body)}
+.sug-h .left .dot{width:5px;height:5px;border-radius:999px;flex-shrink:0}
+.sug-h .left b{color:var(--p-text);font-weight:500}
+.sug-h .scope-mini{font-size:11px;color:var(--p-text-mute);text-transform:none;letter-spacing:0;font-weight:400}
+.sug-body{font:400 12px/1.55 var(--font);color:var(--p-text-body)}
+.sug-body s{color:var(--p-text-dim);text-decoration-color:var(--p-text-dim)}
+.sug-body em{font-style:normal;color:var(--p-text);background:transparent;padding:0;border-radius:0;font-weight:500}
+.sug-acts{display:flex;gap:6px;align-items:center}
+.sug-meta{font:400 10.5px/1 var(--font);color:var(--p-text-dim);margin-left:auto;letter-spacing:0}
+
+/* Suggestions tab summary bar */
+.sug-summary{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 12px;background:var(--p-surface);border:1px solid var(--p-border);border-radius:10px}
+.sug-summary .count{font:600 14px/1 var(--font);color:var(--p-text)}
+.sug-summary .agents{display:flex;gap:4px;align-items:center}
+.sug-summary .agents i{width:5px;height:5px;border-radius:999px}
+.sug-summary .agents i.recruit{background:var(--recruit)}
+.sug-summary .agents i.hm{background:var(--hm)}
+.sug-summary .agents i.coach{background:var(--coach)}
+.sug-summary .right{margin-left:auto;display:flex;gap:6px}
+
+/* History list */
+.hist{display:flex;flex-direction:column;gap:1px}
+.hist-day{font:500 10.5px/1 var(--font);letter-spacing:0;text-transform:none;color:var(--p-text-mute);padding:14px 4px 8px}
+.hist-row{display:flex;gap:10px;padding:10px 12px;border-radius:9px;cursor:pointer;align-items:flex-start;transition:background .15s}
+.hist-row:hover{background:var(--p-surface)}
+.hist-row.active{background:var(--p-surface-hi)}
+.hist-thumb{width:8px;height:8px;border-radius:999px;background:var(--accent);margin-top:5px;flex-shrink:0}
+.hist-row:not(.active) .hist-thumb{background:var(--p-text-dim)}
+.hist-thumb i, .hist-thumb svg{display:none}
+.hist-info{flex:1;min-width:0}
+.hist-info .t{font:500 12.5px/1.4 var(--font);color:var(--p-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-info .s{font:400 11px/1.4 var(--font);color:var(--p-text-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.hist-meta{font:400 10.5px/1 var(--font);color:var(--p-text-dim);letter-spacing:0;flex-shrink:0;text-align:right;margin-top:3px}
+.hist-meta .pill{display:inline-block;padding:2px 7px;background:var(--accent-muted);border-radius:999px;color:var(--accent-warm);margin-top:5px;font-size:9.5px;font-weight:500}
+
+/* ── footer (sidebar input) ── */
+.a-foot{flex-shrink:0;padding:14px 18px 16px;display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--p-border);background:transparent}
+/* agent target chips */
+.targets{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.targets .lbl{display:none}
+.tgt{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--font);padding:5px 10px;border-radius:999px;background:transparent;border:1px solid var(--p-border);color:var(--p-text-mute);cursor:pointer;transition:background .15s, border-color .15s, color .15s}
+.tgt i{width:5px;height:5px;border-radius:999px}
+.tgt.recruit i{background:var(--recruit)}
+.tgt.hm i{background:var(--hm)}
+.tgt.coach i{background:var(--coach)}
+.tgt:hover{color:var(--p-text-body);border-color:var(--p-border2)}
+.tgt.on{background:var(--p-surface-hi);border-color:var(--p-border2);color:var(--p-text)}
+
+.side-input{display:flex;align-items:flex-end;gap:8px;
+  background:var(--p-surface);
+  border:1px solid var(--p-border);
+  border-radius:11px;padding:11px 12px;
+  transition:border-color .15s
+}
+.side-input:focus-within{border-color:oklch(0.62 0.12 32 / .28)}
+.side-input input{flex:1;border:0;outline:0;font:400 13px/1.5 var(--font);color:var(--p-text-body);background:transparent;min-width:0;caret-color:var(--accent-warm)}
+.side-input input::placeholder{color:var(--p-text-mute)}
+.side-input .bar-send{width:28px;height:28px;border-radius:8px}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.qc{font:500 11px/1 var(--font);padding:5px 10px;border-radius:999px;background:transparent;border:1px solid var(--p-border);color:var(--p-text-mute);cursor:pointer;transition:background .15s, color .15s}
+.qc:hover{background:var(--p-surface);color:var(--p-text-body)}
+
+/* orb pose contents */
+.a-orb{display:none;align-items:center;justify-content:center;height:100%;cursor:pointer;position:relative;z-index:3}
+.a-orb svg{width:16px;height:16px;color:var(--accent-warm);position:relative;z-index:2}
+
+/* ── flight contrail (subtle) ── */
+.contrail{position:fixed;pointer-events:none;z-index:99;height:1px;
+  background:linear-gradient(90deg, transparent, var(--accent), transparent);
+  border-radius:999px;
+  opacity:0;
+}
+.contrail.show{animation:trail .55s var(--ease) forwards}
+@keyframes trail{
+  0%{opacity:0;transform:scaleX(.1)}
+  40%{opacity:.7}
+  100%{opacity:0;transform:scaleX(1)}
+}
+
+/* ── bottom-right orb glow ── */
+.assist.pose-collapsed::before{display:none}
+
+/* ── tweaks ── */
+.tweaks{position:fixed;top:80px;left:240px;width:240px;background:var(--paper);border:1px solid var(--border);border-radius:13px;box-shadow:0 8px 32px oklch(.15 .02 50 / .14);padding:14px;font:var(--font);z-index:500;display:none}
+.tweaks h4{font:600 11px/1 var(--font);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-muted);margin:0 0 10px}
+.scenario{display:flex;flex-direction:column;gap:5px;margin-top:4px}
+.scenario button{font:500 11.5px/1.3 var(--font);padding:7px 10px;border-radius:7px;border:1px solid var(--border);background:var(--paper);color:var(--fg);cursor:pointer;text-align:left}
+.scenario button:hover{background:var(--surface-1)}
+.scenario button.on{background:oklch(.18 .02 50);color:#fff;border-color:transparent}
+.replay{margin-top:10px;padding:8px 10px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-deep));color:#1a0f08;font:500 11.5px/1 var(--font);border:0;cursor:pointer;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.replay svg{width:11px;height:11px;stroke-width:2}
+.tweaks-on .tweaks{display:block}
+
+/* hint that flashes briefly */
+.pose-hint{position:fixed;background:var(--p-surface-hi);color:var(--p-text);border:1px solid var(--p-border2);border-radius:9px;padding:7px 11px;font:400 11px/1.4 var(--font);box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:200;pointer-events:none;opacity:0;transition:opacity .3s var(--ease);display:flex;align-items:center;gap:8px;backdrop-filter:blur(12px)}
+.pose-hint b{color:var(--accent-warm);font-weight:500}
+.pose-hint.show{opacity:1}
+.pose-hint .px{font:500 9.5px/1 var(--font-mono);padding:3px 5px;border-radius:4px;background:var(--p-surface);color:var(--p-text-mute);border:1px solid var(--p-border)}
+
+/* hide tab content based on .a-side dataset attr */
+.tab-pane{display:none}
+.assist[data-tab="chat"] .tab-pane.chat{display:block}
+.assist[data-tab="suggestions"] .tab-pane.suggestions{display:block}
+.assist[data-tab="history"] .tab-pane.history{display:block}
+
+/* hide foot (input+targets) when on history */
+.assist[data-tab="history"] .a-foot{display:none}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- LEFT NAV -->
+  <aside class="nav">
+    <div class="brand">
+      <div class="mk">
+        <svg viewBox="0 0 18 22" fill="none">
+          <rect x="2" y="3" width="11" height="15" rx="1.4" fill="oklch(1 0 0 / .85)"/>
+          <rect x="4" y="6" width="6" height="1" rx=".5" fill="oklch(.55 .14 28)"/>
+          <rect x="4" y="8.5" width="7" height="1" rx=".5" fill="oklch(.55 .14 28 / .6)"/>
+          <rect x="4" y="11" width="4" height="1" rx=".5" fill="oklch(.55 .14 28 / .6)"/>
+          <path d="M11 11 L15.5 6.5 L14 7 L15 8.5 Z" fill="oklch(.95 .06 50)"/>
+        </svg>
+      </div>
+      <div class="wm">CareerOps<em>Pro</em></div>
+    </div>
+    <div class="nav-list">
+      <div class="nav-section">Workspace</div>
+      <nav>
+        <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+        <a id="navEditor" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Editor</span></a>
+        <a id="navTracker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Tracker</span></a>
+        <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg><span>Interview</span></a>
+        <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="13" y="6" width="3" height="12"/></svg><span>Insights</span></a>
+      </nav>
+      <div class="nav-section">Resources</div>
+      <nav>
+        <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="21" x2="4" y2="14"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg><span>Preferences</span></a>
+      </nav>
+    </div>
+    <div class="nav-foot">
+      <button class="collapse-btn" id="collapseBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg><span>Collapse</span></button>
+    </div>
+  </aside>
+
+  <!-- CANVAS -->
+  <main class="canvas-area" id="canvasArea">
+    <header class="topbar">
+      <div class="crumbs"><span>Resumes</span><i>›</i><b>Mei R · PM · v3</b><span class="save"><i></i>Saved</span></div>
+      <div class="page-tabs">
+        <div class="page-tab on">Editor</div>
+        <div class="page-tab">Analysis</div>
+        <div class="page-tab">Versions</div>
+      </div>
+      <div class="top-actions">
+        <button class="ic-btn" title="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <button class="ic-btn" title="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
+        <button class="ic-btn" title="Export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+      </div>
+    </header>
+
+    <div class="canvas">
+      <div class="resume" id="resume">
+        <div class="r-header">
+          <h1 class="r-name">Mei Rui</h1>
+          <div class="r-contact">San Francisco, CA<span>·</span>mei.rui@stanford.edu<span>·</span>(415) 555-0142<span>·</span>linkedin.com/in/meirui</div>
+        </div>
+        <section class="r-section" data-section="summary" id="sec-summary">
+          <div class="r-handle"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="ask-ai"><button class="ask-pill" data-section="summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>Ask AI</button></div>
+          <h2 class="r-h">Summary</h2>
+          <p style="font:400 12.5px/1.55 'Source Serif Pro',serif;margin:0;color:var(--fg)">Product Manager with 3 years of experience driving growth at early-stage SaaS companies. Led cross-functional teams to launch features that improved user retention and conversion.</p>
+        </section>
+        <section class="r-section active" data-section="experience" id="sec-experience">
+          <div class="r-handle"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="ask-ai"><button class="ask-pill" data-section="experience"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>Ask AI</button></div>
+          <h2 class="r-h">Experience</h2>
+          <div class="r-entry">
+            <div class="r-entry-row"><span class="r-entry-title">Growth PM</span><span class="r-entry-meta">Mar 2023 – Present</span></div>
+            <div class="r-entry-sub">Linear Labs · San Francisco, CA</div>
+            <ul class="r-bullets">
+              <li>Led launch of new onboarding flow improving activation by 18%</li>
+              <li>Owned roadmap prioritization across 3 squads, aligning stakeholders from design, engineering, and customer success</li>
+              <li>Ran weekly experiments and A/B tests across signup funnel</li>
+            </ul>
+          </div>
+          <div class="r-entry">
+            <div class="r-entry-row"><span class="r-entry-title">Associate PM</span><span class="r-entry-meta">Jul 2021 – Feb 2023</span></div>
+            <div class="r-entry-sub">Brex · New York, NY</div>
+            <ul class="r-bullets">
+              <li>Shipped 4 customer-facing features used by 12k+ businesses</li>
+              <li>Defined product metrics and built dashboards in Looker</li>
+            </ul>
+          </div>
+        </section>
+        <section class="r-section" data-section="education" id="sec-education">
+          <div class="r-handle"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="ask-ai"><button class="ask-pill" data-section="education"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>Ask AI</button></div>
+          <h2 class="r-h">Education</h2>
+          <div class="r-entry">
+            <div class="r-entry-row"><span class="r-entry-title">Stanford University</span><span class="r-entry-meta">2019 – 2021</span></div>
+            <div class="r-entry-sub">M.S. Management Science &amp; Engineering</div>
+          </div>
+        </section>
+        <section class="r-section" data-section="skills" id="sec-skills">
+          <div class="r-handle"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="ask-ai"><button class="ask-pill" data-section="skills"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>Ask AI</button></div>
+          <h2 class="r-h">Skills</h2>
+          <p style="font:400 12.5px/1.55 'Source Serif Pro',serif;margin:0;color:var(--fg)"><b>Product:</b> A/B testing, SQL, Looker, Mixpanel, Figma, Linear<br><b>Languages:</b> English (native), Mandarin (native), Spanish (conversational)</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── THE ASSISTANT ── -->
+  <div class="assist pose-bar" id="assist" data-tab="chat">
+    <div class="a-shader"></div>
+    <div class="a-grid"></div>
+    <div class="a-scrim"></div>
+    <div class="a-edge"></div>
+    <div class="a-boot"></div>
+
+    <!-- BAR pose -->
+    <div class="a-bar">
+      <div class="a-mark">
+        <div class="orb">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>
+        </div>
+      </div>
+      <span class="bar-context"><i></i>Editor · Mei R · v3</span>
+      <div class="bar-input">
+        <input id="barInput" placeholder="Ask anything about your job search…">
+        <span class="kbd">⌘K</span>
+        <button class="bar-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+
+    <!-- SIDEBAR pose -->
+    <div class="a-side">
+      <div class="a-head">
+        <div class="a-head-row">
+          <div class="left">
+            <div class="a-mark">
+              <div class="orb">
+                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>
+              </div>
+            </div>
+            <div><span class="label">AI assistant</span><small>Three agents · standing by</small></div>
+          </div>
+          <div class="right">
+            <button class="mini-btn" title="New thread" id="newThread"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            <button class="mini-btn" title="Send back to bottom" id="dock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg></button>
+            <button class="mini-btn" title="Minimize" id="minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          </div>
+        </div>
+        <div class="tabs" id="tabs">
+          <button class="tab on" data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat</button>
+          <button class="tab" data-tab="suggestions">Suggestions<span class="badge">5</span></button>
+          <button class="tab" data-tab="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>History</button>
+        </div>
+        <div class="scope" id="scopePill" title="Click to jump to this section in the resume">
+          <span class="lbl">Scope</span>
+          <span class="val" id="scopeVal">Experience · Linear Labs</span>
+          <button class="x" title="Clear scope" id="scopeClear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+      </div>
+
+      <div class="a-body" id="aiBody">
+        <!-- CHAT TAB -->
+        <div class="tab-pane chat">
+          <div class="day">Today · 4:12 PM</div>
+
+          <div class="msg you">
+            <div class="msg-av">M</div>
+            <div class="msg-body">
+              <div class="bub">Help me make my Linear Labs bullets stronger</div>
+              <div class="msg-meta">You</div>
+            </div>
+          </div>
+
+          <div class="msg ai">
+            <div class="msg-av"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+            <div class="msg-body">
+              <span class="msg-agent-tag tag-hm"><i></i>Hiring Manager</span>
+              <div class="bub">First two bullets are solid. The third reads soft — let me tighten it.</div>
+              <div class="diff">
+                <div class="diff-h">
+                  <div class="who hm"><span class="dot"></span>Hiring Manager <small>· bullet 1</small></div>
+                  <span class="diff-tag">Rewrite</span>
+                </div>
+                <div class="diff-b">
+                  <span class="before">Led launch of new onboarding flow improving activation by 18%</span>
+                  <span class="after">Led 0-to-1 launch of redesigned onboarding, lifting D7 activation 18% across 12k weekly signups.</span>
+                </div>
+                <div class="diff-f">
+                  <span class="diff-why">Quantifies team + scale.</span>
+                  <div class="acts">
+                    <button class="btn btn-accept"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg>Accept</button>
+                    <button class="btn btn-tweak">Tweak</button>
+                    <button class="btn btn-x">×</button>
+                  </div>
+                </div>
+              </div>
+              <div class="msg-meta">4:12 PM</div>
+            </div>
+          </div>
+
+          <div class="msg you">
+            <div class="msg-av">M</div>
+            <div class="msg-body">
+              <div class="bub">And the third one?</div>
+              <div class="msg-meta">You</div>
+            </div>
+          </div>
+
+          <div class="msg ai">
+            <div class="msg-av"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+            <div class="msg-body">
+              <span class="msg-agent-tag tag-coach"><i></i>Career Coach</span>
+              <div class="diff">
+                <div class="diff-h">
+                  <div class="who coach"><span class="dot"></span>Career Coach <small>· bullet 3</small></div>
+                  <span class="diff-tag">Rewrite</span>
+                </div>
+                <div class="diff-b">
+                  <span class="before">Ran weekly experiments and A/B tests across signup funnel</span>
+                  <span class="after">Designed weekly A/B tests across the signup funnel, lifting trial-to-paid conversion 11% over Q2.</span>
+                </div>
+                <div class="diff-f">
+                  <span class="diff-why">Closes with a measurable outcome.</span>
+                  <div class="acts">
+                    <button class="btn btn-accept"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg>Accept</button>
+                    <button class="btn btn-tweak">Tweak</button>
+                    <button class="btn btn-x">×</button>
+                  </div>
+                </div>
+              </div>
+              <div class="msg-meta">just now</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUGGESTIONS TAB -->
+        <div class="tab-pane suggestions">
+          <div class="sug-summary">
+            <span class="count">5</span>
+            <span style="font:500 11px/1.3 var(--font);color:var(--p-text-mute)">pending changes from</span>
+            <span class="agents"><i class="recruit"></i><i class="hm"></i><i class="coach"></i></span>
+            <div class="right">
+              <button class="btn btn-accept"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg>Accept all</button>
+              <button class="btn btn-tweak">Reject all</button>
+            </div>
+          </div>
+          <div class="sug-list">
+            <div class="sug">
+              <div class="sug-h">
+                <span class="left"><span class="dot" style="background:var(--hm);color:var(--hm)"></span><b>Hiring Manager</b><span class="scope-mini">· Linear Labs · bullet 1</span></span>
+              </div>
+              <div class="sug-body"><s>Led launch of new onboarding flow improving activation by 18%</s> → <em>Led 0-to-1 launch of redesigned onboarding, lifting D7 activation 18% across 12k weekly signups.</em></div>
+              <div class="sug-acts">
+                <button class="btn btn-accept">Accept</button>
+                <button class="btn btn-tweak">Tweak</button>
+                <button class="btn btn-x">Reject</button>
+                <span class="sug-meta">2 min ago</span>
+              </div>
+            </div>
+            <div class="sug">
+              <div class="sug-h">
+                <span class="left"><span class="dot" style="background:var(--coach);color:var(--coach)"></span><b>Career Coach</b><span class="scope-mini">· Linear Labs · bullet 3</span></span>
+              </div>
+              <div class="sug-body"><s>Ran weekly experiments and A/B tests across signup funnel</s> → <em>Designed weekly A/B tests across the signup funnel, lifting trial-to-paid conversion 11% over Q2.</em></div>
+              <div class="sug-acts">
+                <button class="btn btn-accept">Accept</button>
+                <button class="btn btn-tweak">Tweak</button>
+                <button class="btn btn-x">Reject</button>
+                <span class="sug-meta">just now</span>
+              </div>
+            </div>
+            <div class="sug">
+              <div class="sug-h">
+                <span class="left"><span class="dot" style="background:var(--recruit);color:var(--recruit)"></span><b>Recruiter</b><span class="scope-mini">· Summary</span></span>
+              </div>
+              <div class="sug-body"><s>3 years of experience driving growth</s> → <em>3 years shipping growth features at Series A and B SaaS, with measurable retention and conversion lifts</em></div>
+              <div class="sug-acts">
+                <button class="btn btn-accept">Accept</button>
+                <button class="btn btn-tweak">Tweak</button>
+                <button class="btn btn-x">Reject</button>
+                <span class="sug-meta">5 min ago</span>
+              </div>
+            </div>
+            <div class="sug">
+              <div class="sug-h">
+                <span class="left"><span class="dot" style="background:var(--hm);color:var(--hm)"></span><b>Hiring Manager</b><span class="scope-mini">· Brex · bullet 1</span></span>
+              </div>
+              <div class="sug-body"><s>Shipped 4 customer-facing features used by 12k+ businesses</s> → <em>Shipped 4 customer-facing features adopted by 12k+ SMBs, contributing to $1.2M ARR expansion.</em></div>
+              <div class="sug-acts">
+                <button class="btn btn-accept">Accept</button>
+                <button class="btn btn-tweak">Tweak</button>
+                <button class="btn btn-x">Reject</button>
+                <span class="sug-meta">5 min ago</span>
+              </div>
+            </div>
+            <div class="sug">
+              <div class="sug-h">
+                <span class="left"><span class="dot" style="background:var(--recruit);color:var(--recruit)"></span><b>Recruiter</b><span class="scope-mini">· Skills</span></span>
+              </div>
+              <div class="sug-body">+ insert <em>Spanish (B1, conversational)</em> with concrete CEFR level — recruiters filter on this</div>
+              <div class="sug-acts">
+                <button class="btn btn-accept">Accept</button>
+                <button class="btn btn-tweak">Tweak</button>
+                <button class="btn btn-x">Reject</button>
+                <span class="sug-meta">7 min ago</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HISTORY TAB -->
+        <div class="tab-pane history">
+          <div class="hist">
+            <div class="hist-day">Today</div>
+            <div class="hist-row active">
+              <div class="hist-thumb"><i></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Make Linear Labs bullets stronger</div>
+                <div class="s">5 changes · accepted 0</div>
+              </div>
+              <div class="hist-meta">just now<div class="pill">live</div></div>
+            </div>
+            <div class="hist-row">
+              <div class="hist-thumb"><i style="--rot:120deg"></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Tighten summary for senior PM</div>
+                <div class="s">2 changes · accepted 2</div>
+              </div>
+              <div class="hist-meta">1h ago</div>
+            </div>
+            <div class="hist-day">Yesterday</div>
+            <div class="hist-row">
+              <div class="hist-thumb"><i style="--rot:240deg"></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Tailor for Stripe APM role</div>
+                <div class="s">12 changes · accepted 9</div>
+              </div>
+              <div class="hist-meta">Yesterday</div>
+            </div>
+            <div class="hist-row">
+              <div class="hist-thumb"><i style="--rot:60deg"></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Quantify Brex bullets</div>
+                <div class="s">3 changes · accepted 3</div>
+              </div>
+              <div class="hist-meta">Yesterday</div>
+            </div>
+            <div class="hist-day">Last week</div>
+            <div class="hist-row">
+              <div class="hist-thumb"><i style="--rot:180deg"></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Reorder skills section</div>
+                <div class="s">1 change · accepted 1</div>
+              </div>
+              <div class="hist-meta">Wed</div>
+            </div>
+            <div class="hist-row">
+              <div class="hist-thumb"><i style="--rot:300deg"></i><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg></div>
+              <div class="hist-info">
+                <div class="t">Add measurable outcomes throughout</div>
+                <div class="s">8 changes · accepted 6</div>
+              </div>
+              <div class="hist-meta">Mon</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="a-foot">
+        <div class="targets">
+          <span class="lbl">Ask</span>
+          <button class="tgt on" data-agent="all">All agents</button>
+          <button class="tgt recruit" data-agent="recruit"><i></i>Recruiter</button>
+          <button class="tgt hm" data-agent="hm"><i></i>HM</button>
+          <button class="tgt coach" data-agent="coach"><i></i>Coach</button>
+        </div>
+        <div class="side-input">
+          <input id="sideInput" placeholder="Reply or @ an agent…">
+          <button class="bar-send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+        <div class="quick">
+          <button class="qc">Add metrics</button>
+          <button class="qc">Tighten</button>
+          <button class="qc">For Stripe APM</button>
+          <button class="qc">More technical</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORB pose -->
+    <div class="a-orb" id="orbBtn" title="Bring back assistant">
+      <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5"/></svg>
+    </div>
+  </div>
+
+  <!-- contrail (drawn during transitions) -->
+  <div class="contrail" id="contrail"></div>
+
+  <!-- tweaks -->
+  <div class="tweaks">
+    <h4>Demo controls</h4>
+    <div class="scenario">
+      <button data-pose="bar" class="on">Bar (default)</button>
+      <button data-pose="sidebar">Sidebar (editor mode)</button>
+      <button data-pose="collapsed">Collapsed orb</button>
+    </div>
+    <button class="replay" id="replay">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      Replay flight
+    </button>
+  </div>
+</div>
+
+<!-- pose hint -->
+<div class="pose-hint" id="hint"><span id="hintText">Brought your assistant over.</span><span class="px" id="hintShort">⌘\</span></div>
+
+<script>
+  const app = document.getElementById('app');
+  const assist = document.getElementById('assist');
+  const hint = document.getElementById('hint');
+  const hintText = document.getElementById('hintText');
+  const contrail = document.getElementById('contrail');
+
+  function drawContrail(fromRect, toRect){
+    if(!fromRect || !toRect) return;
+    const fx = fromRect.left + fromRect.width / 2;
+    const fy = fromRect.top + fromRect.height / 2;
+    const tx = toRect.left + toRect.width / 2;
+    const ty = toRect.top + toRect.height / 2;
+    const dx = tx - fx, dy = ty - fy;
+    const dist = Math.hypot(dx, dy);
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    contrail.style.left = fx + 'px';
+    contrail.style.top = fy + 'px';
+    contrail.style.width = dist + 'px';
+    contrail.style.transform = `rotate(${ang}deg)`;
+    contrail.style.transformOrigin = '0 50%';
+    contrail.classList.remove('show');
+    void contrail.offsetWidth;
+    contrail.classList.add('show');
+  }
+
+  function setPose(pose, opts={}){
+    const before = assist.getBoundingClientRect();
+    assist.classList.remove('pose-bar','pose-sidebar','pose-collapsed');
+    assist.classList.add('pose-' + pose);
+    document.querySelectorAll('.scenario button').forEach(b => b.classList.toggle('on', b.dataset.pose === pose));
+
+    if(pose === 'sidebar'){
+      app.classList.add('has-sidebar','nav-collapse');
+    } else {
+      app.classList.remove('has-sidebar','nav-collapse');
+    }
+
+    // Trigger contrail + boot ring on the next frame after layout updates
+    requestAnimationFrame(()=>{
+      const after = assist.getBoundingClientRect();
+      drawContrail(before, after);
+      // boot ring on dock to sidebar/orb
+      if(pose === 'sidebar' || pose === 'collapsed'){
+        assist.classList.remove('booting');
+        void assist.offsetWidth;
+        assist.classList.add('booting');
+        setTimeout(()=>assist.classList.remove('booting'), 1200);
+      }
+    });
+
+    if(opts.hintText){
+      hintText.textContent = opts.hintText;
+      const ah = assist.getBoundingClientRect();
+      // place near assistant
+      hint.style.right = Math.max(20, window.innerWidth - ah.right + 12) + 'px';
+      hint.style.top = (ah.top + 8) + 'px';
+      hint.classList.add('show');
+      clearTimeout(hint._t);
+      hint._t = setTimeout(()=>hint.classList.remove('show'), 2200);
+    }
+  }
+
+  // open sidebar from "Ask AI" pills
+  document.querySelectorAll('.ask-pill').forEach(p=>{
+    p.addEventListener('click',()=>{
+      const sec = p.dataset.section;
+      const labels = {summary:'Summary', experience:'Experience · Linear Labs', education:'Education · Stanford', skills:'Skills'};
+      document.getElementById('scopeVal').textContent = labels[sec] || sec;
+      assist.dataset.tab = 'chat';
+      document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab === 'chat'));
+      setPose('sidebar', {hintText:'Brought your assistant over.'});
+    });
+  });
+
+  // tab switching
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click',()=>{
+      const tabName = t.dataset.tab;
+      assist.dataset.tab = tabName;
+      document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b === t));
+    });
+  });
+
+  // agent target chips
+  document.querySelectorAll('.tgt').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      document.querySelectorAll('.tgt').forEach(o=>o.classList.toggle('on', o === t));
+    });
+  });
+
+  // scope pill click → jump to section + flash
+  document.getElementById('scopePill').addEventListener('click', (e)=>{
+    if(e.target.closest('.x')) return;
+    const val = document.getElementById('scopeVal').textContent.toLowerCase();
+    let id = 'sec-experience';
+    if(val.startsWith('summary')) id = 'sec-summary';
+    else if(val.startsWith('education')) id = 'sec-education';
+    else if(val.startsWith('skills')) id = 'sec-skills';
+    const el = document.getElementById(id);
+    if(el){
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+      const canvas = document.querySelector('.canvas');
+      const top = el.getBoundingClientRect().top - document.querySelector('.topbar').getBoundingClientRect().bottom + canvas.scrollTop - 24;
+      canvas.scrollTo({top, behavior:'smooth'});
+    }
+  });
+  document.getElementById('scopeClear').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    document.getElementById('scopeVal').textContent = 'All sections';
+  });
+
+  // dock & minimize
+  document.getElementById('dock').addEventListener('click', ()=>setPose('bar', {hintText:'Back to bottom.'}));
+  document.getElementById('minimize').addEventListener('click', ()=>setPose('collapsed', {hintText:'Tucked away.'}));
+  document.getElementById('orbBtn').addEventListener('click', ()=>setPose('sidebar', {hintText:'Welcome back.'}));
+
+  // tweaks scenario buttons
+  document.querySelectorAll('.scenario button').forEach(b=>{
+    b.addEventListener('click',()=>setPose(b.dataset.pose));
+  });
+
+  // replay flight
+  document.getElementById('replay').addEventListener('click', ()=>{
+    setPose('bar');
+    setTimeout(()=>setPose('sidebar', {hintText:'Brought your assistant over.'}), 700);
+  });
+
+  // collapse btn
+  document.getElementById('collapseBtn').addEventListener('click', ()=>{
+    app.classList.toggle('nav-collapse');
+  });
+
+  // nav route faking
+  document.getElementById('navTracker').addEventListener('click', e=>{
+    e.preventDefault();
+    document.getElementById('navTracker').classList.add('active');
+    document.getElementById('navEditor').classList.remove('active');
+    setPose('bar', {hintText:'Switched to Tracker — bar is back.'});
+  });
+  document.getElementById('navEditor').addEventListener('click', e=>{
+    e.preventDefault();
+    document.getElementById('navEditor').classList.add('active');
+    document.getElementById('navTracker').classList.remove('active');
+  });
+
+  // shortcut
+  window.addEventListener('keydown', (e)=>{
+    if((e.metaKey || e.ctrlKey) && e.key === '\\'){
+      e.preventDefault();
+      const isBar = assist.classList.contains('pose-bar');
+      setPose(isBar ? 'sidebar' : 'bar', {hintText: isBar ? 'Brought your assistant over.' : 'Back to bottom.'});
+    }
+  });
+
+  // edit-mode protocol
+  window.addEventListener('message', (e)=>{
+    const msg = e.data;
+    if(!msg || typeof msg !== 'object') return;
+    if(msg.type === '__activate_edit_mode'){ document.body.classList.add('tweaks-on'); }
+    if(msg.type === '__deactivate_edit_mode'){ document.body.classList.remove('tweaks-on'); }
+  });
+  try{ window.parent.postMessage({type:'__edit_mode_available'}, '*'); }catch(e){}
+
+  // Auto-demo
+  setTimeout(()=>setPose('sidebar', {hintText:'Watch your assistant walk over.'}), 1100);
+</script>
+</body>
+</html>
