@@ -375,6 +375,33 @@
   --p-ease-soft:    cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
+/* ─── Sidebar fluid shader (CSS radial-gradient version, per design_handoff
+       `.a-shader::before`). Replaces the opaque WebGL FluidCanvas: the
+       gradients fade to TRANSPARENT, so the sidebar's translucent base lets
+       the host content / page color show through as a glass effect. ─── */
+.a-shader {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.a-shader::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background:
+    radial-gradient(ellipse 42% 52% at 24% 28%, oklch(0.62 0.17 38 / 0.55), transparent 62%),
+    radial-gradient(ellipse 42% 52% at 76% 72%, oklch(0.55 0.14 152 / 0.42), transparent 62%),
+    radial-gradient(ellipse 40% 50% at 50% 50%, oklch(0.55 0.15 268 / 0.40), transparent 62%);
+  filter: blur(44px) saturate(1.25);
+  animation: a-flow 16s var(--p-ease-soft) infinite alternate;
+}
+@keyframes a-flow {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-3%, 2%) scale(1.06); }
+  100% { transform: translate(2%, -2%) scale(1.04); }
+}
+
 /* AI Assistant reflow — when sidebar pose is active AND viewport is wide enough,
    shift the editor canvas left by the sidebar width + gutter. Otherwise unchanged
    (sidebar overlays). Per spike conclusion, LayoutEngine is unaffected because

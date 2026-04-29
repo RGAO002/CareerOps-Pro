@@ -4,7 +4,6 @@ import { SidebarPose } from '../poses/SidebarPose';
 import { useAssistantStore } from '@/stores/assistant';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/editor' }));
-vi.mock('@/components/landing/FluidCanvas', () => ({ FluidCanvas: () => <div data-testid="fluid" /> }));
 vi.mock('../tabs/ChatTab',        () => ({ ChatTab:        () => <div data-testid="tab-chat" /> }));
 vi.mock('../tabs/SuggestionsTab', () => ({ SuggestionsTab: () => <div data-testid="tab-sug" /> }));
 vi.mock('../tabs/HistoryTab',     () => ({ HistoryTab:     () => <div data-testid="tab-hist" /> }));
@@ -14,9 +13,10 @@ beforeEach(() => {
 });
 
 describe('<SidebarPose>', () => {
-  it('renders the FluidCanvas, AI assistant header, three tabs, and the input', () => {
-    render(<SidebarPose />);
-    expect(screen.getByTestId('fluid')).toBeInTheDocument();
+  it('renders the CSS shader bg, AI assistant header, three tabs, and the input', () => {
+    const { container } = render(<SidebarPose />);
+    // The translucent CSS shader element (.a-shader) replaces the WebGL FluidCanvas.
+    expect(container.querySelector('.a-shader')).toBeTruthy();
     expect(screen.getByText('AI assistant')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /chat/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /suggestions/i })).toBeInTheDocument();

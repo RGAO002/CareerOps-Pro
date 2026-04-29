@@ -2,7 +2,6 @@
 'use client';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FluidCanvas } from '@/components/landing/FluidCanvas';
 import { useAssistantStore, type AssistantTab } from '@/stores/assistant';
 import { useResumeStore } from '@/components/resume/v2/store/useResumeStore';
 import { useConversationStore } from '@/stores/conversation';
@@ -55,25 +54,29 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        // FluidCanvas paints the whole bg; this base color is just the fallback
-        // for the brief moment before WebGL initializes.
-        background: 'var(--p-sidebar-base)',
+        // Translucent dark base — lets the host content peek through with the
+        // glass effect, just like the design. The CSS .a-shader gradients on
+        // top fade to transparent so the see-through quality is preserved.
+        background: 'oklch(0.13 0.025 34 / 0.42)',
+        // Backdrop blur produces the actual frosted-glass feel. Without this,
+        // the see-through area shows the host content too sharply and breaks
+        // the depth illusion.
+        backdropFilter: 'blur(28px) saturate(1.4)',
+        WebkitBackdropFilter: 'blur(28px) saturate(1.4)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {/* Three-color WebGL fluid (warm terracotta / sage green / deep blue
-          blobs). brightness=2.4 cranks the shader past its landing default
-          so the orbs read as distinct color bands in this narrow tall
-          panel — matches the design's vibrant look. */}
-      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} brightness={2.4} />
-      {/* Light gradient scrim — design `.a-scrim`: top 0.25 → bottom 0.42,
-          keeps text legible without flattening the fluid. */}
+      {/* CSS three-color radial-gradient shader (design `.a-shader`). Fades
+          to transparent so the translucent panel reads as glass. */}
+      <div aria-hidden className="a-shader" />
+      {/* Subtle gradient scrim for legibility. Lower alphas because the bg
+          is already darkened by translucency + backdrop-blur. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.25) 0%, oklch(0.14 0.020 34 / 0.42) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.18) 0%, oklch(0.14 0.020 34 / 0.32) 100%)',
       }} />
 
       {/* Header row */}
