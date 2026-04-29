@@ -12,6 +12,7 @@ import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
 import { useAssistantStore } from '@/stores/assistant';
+import { useSectionHighlight } from '@/stores/sectionHighlight';
 import { AskAIPill } from '@/components/ai/assistant/AskAIPill';
 
 interface Props {
@@ -28,6 +29,17 @@ function selectableForAtom(atom: LayoutAtom): SelectableBlock | null {
   // entry → find its section
   const section = r.sections.find(s => s.entries.some(e => e.id === atom.sourceBlockId));
   return section ? { kind: 'entry', id: atom.sourceBlockId, sectionId: section.id } : null;
+}
+
+/** Returns the section.id that an atom belongs to, or null if it's a header. */
+function sectionForAtom(atom: LayoutAtom): BlockId | null {
+  const r = useResumeStore.getState().resume;
+  if (!r) return null;
+  if (atom.kind === 'header') return null;
+  if (atom.kind === 'section-heading') return atom.sourceBlockId;
+  // entry atom — sourceBlockId is an entry id; find its section
+  const section = r.sections.find(s => s.entries.some(e => e.id === atom.sourceBlockId));
+  return section?.id ?? null;
 }
 
 function aiScopeForBlock(block: SelectableBlock): BlockId {
@@ -55,6 +67,17 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
   useEffect(() => {
     setOutlineTick(t => t + 1);
   }, [layouts]);
+
+  // Mirror atom hover into section-highlight store (drives hover bg in SectionHighlightLayer).
+  useEffect(() => {
+    if (hoveredAtomId == null) {
+      useSectionHighlight.getState().setHovered(null);
+      return;
+    }
+    const atom = atoms.find(a => a.id === hoveredAtomId);
+    if (!atom) { useSectionHighlight.getState().setHovered(null); return; }
+    useSectionHighlight.getState().setHovered(sectionForAtom(atom));
+  }, [hoveredAtomId, atoms]);
 
   // Document-level hover detection: figure out which atom the cursor is over.
   // We use mousemove + Y-coordinate matching against atom layouts, NOT
@@ -159,6 +182,10 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                   e.stopPropagation();
                   useAssistantStore.getState().openSidebarWithScope({ blockId: aiScopeForBlock(block), label: aiScopeForBlock(block).slice(0, 8) });
                 }}
+                onClick={block.kind === 'section' ? (e) => {
+                  e.stopPropagation();
+                  useSectionHighlight.getState().toggleSelected(block.id);
+                } : undefined}
               />
             </div>
             {block.kind === 'section' && (

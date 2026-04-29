@@ -10,6 +10,7 @@ import { PageBackgroundLayer } from './layers/PageBackgroundLayer';
 import { AtomContentLayer } from './layers/AtomContentLayer';
 import { PrintFlowPlaceholders } from './layers/PrintFlowPlaceholders';
 import { InteractionLayer } from './layers/InteractionLayer';
+import { SectionHighlightLayer } from './layers/SectionHighlightLayer';
 import { atomFocusManager } from './interaction/AtomFocusManager';
 import type { ResumeDoc, CanvasMode, LayoutAtom, AtomId, EditableField } from './types';
 import type { TemplateConfig } from './layout/normalize-template';
@@ -121,6 +122,9 @@ export function ResumeDocumentCanvas({ resume, template, mode, hideInteractionLa
     >
       <PrintFlowPlaceholders pageCount={layout.pageCount} mode={mode} template={norm} />
       <PageBackgroundLayer pageCount={layout.pageCount} mode={mode} template={norm} />
+      {mode === 'edit' && !hideInteractionLayer && (
+        <SectionHighlightLayer atoms={atoms} layouts={layout.atomLayouts} template={norm} />
+      )}
       <AtomContentLayer
         atoms={atoms}
         layouts={layout.atomLayouts}

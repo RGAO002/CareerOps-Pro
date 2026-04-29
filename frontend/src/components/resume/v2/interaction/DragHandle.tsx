@@ -8,10 +8,14 @@ interface Props {
   block: SelectableBlock;
   onDropIndicator: (p: DropIndicatorPayload) => void;
   onDoubleClick?: React.MouseEventHandler<HTMLButtonElement>;
+  /** Fires only on a click (mouseup with no drag movement). Used by callers
+   *  that want a tap-to-select affordance on top of drag (e.g. selecting a
+   *  section when its 6-dot handle is clicked without dragging). */
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   style?: React.CSSProperties;
 }
 
-export function DragHandle({ block, onDropIndicator, onDoubleClick, style }: Props) {
+export function DragHandle({ block, onDropIndicator, onDoubleClick, onClick, style }: Props) {
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <button
@@ -22,6 +26,7 @@ export function DragHandle({ block, onDropIndicator, onDoubleClick, style }: Pro
         startDrag(e.nativeEvent, ref.current, block, onDropIndicator);
       }}
       onDoubleClick={onDoubleClick}
+      onClick={onClick}
       style={{
         ...style,
         cursor: 'grab', touchAction: 'none', border: 0, background: 'transparent',
