@@ -112,22 +112,33 @@ export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
   const [, setLayoutTick] = useState(0);
   useEffect(() => { setLayoutTick(t => t + 1); }, [layouts]);
 
-  // Live-compute selected at render time (uses the latest sections + selectionManager).
-  // Reference `selectionTick` so the linter doesn't strip the dep that drives this.
+  // Live-compute selected blocks at render time. Multi-selection is supported
+  // (Cmd+A → selects all blocks in section/document).
   void selectionTick;
   const selectedIds = selectionManager.getBlocks();
-  let selected: HoveredBlock | null = null;
-  if (selectedIds.length === 1) {
-    const id = selectedIds[0];
+  const selectedBlocks: HoveredBlock[] = [];
+  for (const id of selectedIds) {
     const kind = inferKind(id, sections);
-    if (kind) selected = { kind, id };
+    if (kind) selectedBlocks.push({ kind, id });
   }
+  // When multi-selection includes a section AND blocks inside it, the
+  // section's bbox covers everything — drop the redundant inner bboxes
+  // to keep the bg from double-painting.
+  const selectedSectionIds = new Set(selectedBlocks.filter(b => b.kind === 'section').map(b => b.id));
+  const renderable = selectedBlocks.filter((b) => {
+    if (b.kind === 'section') return true;
+    // Skip an entry/bullet whose containing section is already in selection.
+    const sec = sectionContaining(b, sections);
+    return !sec || !selectedSectionIds.has(sec);
+  });
+  // For the hover-redundancy check below, we only consider the singleton case.
+  const singleSelected: HoveredBlock | null = renderable.length === 1 ? renderable[0] : null;
 
   return (
     <div data-edit-only style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' }}>
       {hovered && (() => {
-        // Don't paint hover if it's redundant with the selection.
-        if (selected && selected.id === hovered.id) return null;
+        // Don't paint hover if it's redundant with a singleton selection.
+        if (singleSelected && singleSelected.id === hovered.id) return null;
         const box = bboxForBlock(hovered.kind, hovered.id, atoms, layouts, template);
         if (!box) return null;
         return (
@@ -147,11 +158,12 @@ export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
         );
       })()}
 
-      {selected && (() => {
-        const box = bboxForBlock(selected.kind, selected.id, atoms, layouts, template);
+      {renderable.map((sel) => {
+        const box = bboxForBlock(sel.kind, sel.id, atoms, layouts, template);
         if (!box) return null;
         return (
           <div
+            key={`sel-${sel.kind}-${sel.id}`}
             style={{
               position: 'absolute',
               top: box.top - 4,
@@ -178,7 +190,7 @@ export function SectionHighlightLayer({ atoms, layouts, template }: Props) {
             />
           </div>
         );
-      })()}
+      })}
     </div>
   );
 }
@@ -189,6 +201,22 @@ function inferKind(id: BlockId, sections: SectionBlock[]): 'section' | 'entry' |
     for (const e of s.entries) {
       if (e.id === id) return 'entry';
       for (const b of e.bullets) if (b.id === id) return 'bullet';
+    }
+  }
+  return null;
+}
+
+/** Section id that contains a given block, or null if it's a section itself /
+ *  unknown. Used to suppress redundant inner-block bg paints when a selected
+ *  multi-set already includes the parent section. */
+function sectionContaining(b: HoveredBlock, sections: SectionBlock[]): BlockId | null {
+  if (b.kind === 'section') return null;
+  for (const s of sections) {
+    if (b.kind === 'entry' && s.entries.some(e => e.id === b.id)) return s.id;
+    if (b.kind === 'bullet') {
+      for (const e of s.entries) {
+        if (e.bullets.some(bu => bu.id === b.id)) return s.id;
+      }
     }
   }
   return null;
