@@ -11,7 +11,7 @@ import { getAtomAbsoluteCoord } from '../layout/coords';
 import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
-import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
+import { useAssistantStore } from '@/stores/assistant';
 import { AskAIPill } from '@/components/ai/assistant/AskAIPill';
 
 interface Props {
@@ -154,7 +154,7 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                 onDropIndicator={setDropPayload}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  useAISidebarUIStore.getState().open(aiScopeForBlock(block));
+                  useAssistantStore.getState().openSidebarWithScope({ blockId: aiScopeForBlock(block), label: aiScopeForBlock(block).slice(0, 8) });
                 }}
               />
             </div>
