@@ -130,17 +130,25 @@ export function SidebarPose() {
         {tab === 'history' && <HistoryTab />}
       </div>
 
-      {/* Footer (hidden on history) */}
+      {/* Footer (hidden on history). Per design `.a-foot`:
+            padding 14/18/16, gap 10, transparent bg, top border. */}
       {tab !== 'history' && (
-        <div style={{ position: 'relative', zIndex: 3, padding: '10px 14px 14px', borderTop: '1px solid var(--p-border)', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+        <div style={{ position: 'relative', zIndex: 3, padding: '14px 18px 16px', borderTop: '1px solid var(--p-border)', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
           <AgentChips />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 6px 6px 12px', borderRadius: 10, background: 'var(--p-surface)', border: '1px solid var(--p-border)' }}>
+          {/* `.side-input` — surface bg, hairline border, radius 11, padding 11/12 */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '11px 12px', borderRadius: 11, background: 'var(--p-surface)', border: '1px solid var(--p-border)' }}>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(); }}
               placeholder="Reply or @ an agent…"
-              style={{ flex: 1, border: 0, outline: 'none', background: 'transparent', font: '400 13px/1.4 Inter, sans-serif', color: 'var(--p-text)', minWidth: 0 }}
+              style={{
+                flex: 1, border: 0, outline: 'none', background: 'transparent',
+                font: '400 13px/1.5 Inter, sans-serif',
+                color: 'var(--p-text-body)',
+                caretColor: 'var(--p-accent-warm)',
+                minWidth: 0,
+              }}
             />
             <MiniButton ariaLabel="Send" onClick={onSubmit} variant="solid">
               <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2}>

@@ -9,12 +9,16 @@ const CHIPS: Array<{ key: AssistantTargetAgent; label: string; dotVar: string | 
   { key: 'coach',   label: 'Coach',       dotVar: 'var(--p-coach)' },
 ];
 
+/**
+ * Per design (.targets / .tgt): pill chips, hairline border, 5×5 dot for
+ * persona color, hover lifts text + border, active uses surface-hi bg with
+ * brighter text. Caller-side "Ask:" label hidden by design (labels none).
+ */
 export function AgentChips() {
   const target = useAssistantStore((s) => s.targetAgent);
   const setTargetAgent = useAssistantStore((s) => s.setTargetAgent);
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', font: '500 10.5px/1 Inter, sans-serif' }}>
-      <span style={{ color: 'var(--p-text-mute)', marginRight: 2 }}>Ask:</span>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       {CHIPS.map((c) => {
         const active = target === c.key;
         return (
@@ -24,14 +28,25 @@ export function AgentChips() {
             onClick={() => setTargetAgent(c.key)}
             aria-pressed={active}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 8px',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '5px 10px',
               borderRadius: 999,
-              border: '1px solid var(--p-border)',
+              border: `1px solid ${active ? 'var(--p-border2)' : 'var(--p-border)'}`,
               background: active ? 'var(--p-surface-hi)' : 'transparent',
               color: active ? 'var(--p-text)' : 'var(--p-text-mute)',
+              font: '500 11px/1 Inter, sans-serif',
               cursor: 'pointer',
-              transition: 'background 0.15s, color 0.15s',
+              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              if (active) return;
+              e.currentTarget.style.color = 'var(--p-text-body)';
+              e.currentTarget.style.borderColor = 'var(--p-border2)';
+            }}
+            onMouseLeave={(e) => {
+              if (active) return;
+              e.currentTarget.style.color = 'var(--p-text-mute)';
+              e.currentTarget.style.borderColor = 'var(--p-border)';
             }}
           >
             {c.dotVar && <i style={{ width: 5, height: 5, borderRadius: 999, background: c.dotVar }} />}
