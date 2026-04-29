@@ -63,10 +63,18 @@ def post_run(req: RunRequest):
                 clients=clients,
                 run_id=run_id,            # use pre-allocated id
             )
-        except Exception:
-            # Orchestrator already wrote run.error to the queue + persisted
-            # status='error'; nothing more to do here.
-            pass
+        except Exception as exc:
+            # The orchestrator handles most errors internally, but exceptions
+            # before its guarded section must not leave the run forever
+            # "running" with an open SSE queue.
+            runs.update(
+                run_id,
+                status="error",
+                error=str(exc),
+                completed_at=int(time.time() * 1000),
+            )
+            event_queue.emit(run_id, "run.error", {"runId": run_id, "error": str(exc)})
+            event_queue.close(run_id)
 
     threading.Thread(target=_worker, daemon=True, name=f"ai-run-{run_id}").start()
     return {"runId": run_id}
@@ -128,6 +136,9 @@ def _replay_from_state(run_id: str, state: dict):
     Used when the SSE consumer attaches AFTER the run already finished and
     the queue has been GC'd. One-shot, exits immediately."""
     yield _sse("run.started", {"runId": run_id, "createdAt": state.get("created_at")})
+    if state.get("status") == "error":
+        yield _sse("run.error", {"runId": run_id, "error": state.get("error") or "AI run failed"})
+        return
     decision = state.get("coordinator_decision") or {}
     if decision.get("kind") == "answer":
         yield _sse("agent.narration", {"agentId": "Coordinator", "text": decision.get("text", "")})

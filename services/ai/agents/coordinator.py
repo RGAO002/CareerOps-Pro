@@ -6,7 +6,10 @@ calls `dispatch_to`, we return a dispatch decision; if it just replies in
 text, we return an answer decision (Coordinator is "answering, no dispatch").
 """
 from __future__ import annotations
+import json
 from typing import Optional
+
+from services.ai.tools import read_tools
 
 _SYSTEM = """\
 You are the Coordinator of a multi-agent resume editing assistant.
@@ -81,24 +84,74 @@ def run(state: dict, llm_client) -> dict:
     user_msg = {"role": "user", "content": _render_user_turn(state)}
     chat = list(state.get("chat_history", []))
     chat.append(user_msg)
-    out = llm_client.invoke(
-        system=_SYSTEM,
-        messages=chat,
-        tools=_read_tool_schemas(),
-    )
-    for tc in out["tool_calls"]:
-        if tc["name"] == "dispatch_to":
-            return {
-                "kind": "dispatch",
-                "target": tc["args"]["agent"],
-                "focus": tc["args"]["focus"],
-                "brief": tc["args"]["brief"],
-            }
-    # No dispatch → answer in text. (Read-tool calls during the answer happen
-    # in a separate read-tool-execution loop in the orchestrator; for v0 the
-    # Coordinator's first turn is one-shot — read tools are exercised only when
-    # the answer requires them, in a follow-up turn the orchestrator handles.)
-    return {"kind": "answer", "text": out["text"]}
+    for _ in range(3):
+        out = llm_client.invoke(
+            system=_SYSTEM,
+            messages=chat,
+            tools=_read_tool_schemas(),
+        )
+        read_results = []
+        for tc in out["tool_calls"]:
+            if tc["name"] == "dispatch_to":
+                return {
+                    "kind": "dispatch",
+                    "target": tc["args"]["agent"],
+                    "focus": tc["args"]["focus"],
+                    "brief": tc["args"]["brief"],
+                }
+            if tc["name"] in _READ_TOOL_NAMES:
+                read_results.append({
+                    "tool": tc["name"],
+                    "result": _execute_read_tool(tc["name"], tc.get("args", {}), state),
+                })
+
+        if read_results:
+            chat.append({"role": "assistant", "content": out.get("text") or ""})
+            chat.append({
+                "role": "user",
+                "content": "Read tool results:\n" + json.dumps(read_results, ensure_ascii=False, indent=2),
+            })
+            continue
+
+        text = out.get("text") or "我没有找到可以执行的简历修改建议。"
+        return {"kind": "answer", "text": text}
+
+    return {
+        "kind": "answer",
+        "text": "我读取了上下文，但没有形成明确的下一步。请更具体地说明你想改哪一段。",
+    }
+
+
+_READ_TOOL_NAMES = {
+    "get_current_resume",
+    "get_resume_block",
+    "list_user_resumes",
+    "get_resume_by_id",
+    "get_application_history",
+    "get_application_by_id",
+}
+
+
+def _execute_read_tool(name: str, args: dict, state: dict):
+    resume_id = state["resume_id"]
+    if name == "get_current_resume":
+        return read_tools.get_current_resume(resume_id)
+    if name == "get_resume_block":
+        return read_tools.get_resume_block(resume_id, args["block_id"])
+    if name == "list_user_resumes":
+        return read_tools.list_user_resumes()
+    if name == "get_resume_by_id":
+        return read_tools.get_resume_by_id(args["resume_id"])
+    if name == "get_application_history":
+        return read_tools.get_application_history(
+            status=args.get("status"),
+            company=args.get("company"),
+            since=args.get("since"),
+            limit=args.get("limit", 50),
+        )
+    if name == "get_application_by_id":
+        return read_tools.get_application_by_id(args["job_id"])
+    return None
 
 
 def _render_user_turn(state: dict) -> str:

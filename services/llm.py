@@ -5,9 +5,6 @@ Supports OpenAI, Anthropic, and Google Gemini models via LangChain.
 """
 import os
 import json
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 # ── Provider detection ────────────────────────────────────────
 PROVIDER_OPENAI = "openai"
@@ -65,12 +62,14 @@ def get_llm(model_choice, api_key=None, *, provider=None):
     prov = provider or detect_provider(model_choice)
 
     if prov == PROVIDER_ANTHROPIC:
+        from langchain_anthropic import ChatAnthropic
         final_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not final_key:
             raise ValueError("Anthropic API Key missing.")
         return ChatAnthropic(model=model_choice, api_key=final_key)
 
     if prov == PROVIDER_GOOGLE:
+        from langchain_google_genai import ChatGoogleGenerativeAI
         final_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not final_key:
             raise ValueError("Google API Key missing. Set GOOGLE_API_KEY env var.")
@@ -78,6 +77,7 @@ def get_llm(model_choice, api_key=None, *, provider=None):
         return _GeminiWrapper(llm)
 
     # Default: OpenAI
+    from langchain_openai import ChatOpenAI
     final_key = api_key or os.getenv("OPENAI_API_KEY")
     if not final_key:
         raise ValueError("OpenAI API Key missing.")

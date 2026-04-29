@@ -1,8 +1,6 @@
 """LLM wrapper — verifies request shape + tool-call parsing.
 
-Uses a stub `BaseChatModel` to avoid hitting Anthropic in unit tests. Real-
-provider integration is exercised in tests/services/ai/test_orchestrator.py
-behind a `requires_anthropic_api_key` marker.
+Uses a stub `BaseChatModel` to avoid hitting OpenAI in unit tests.
 """
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -37,6 +35,16 @@ def test_invoke_returns_text_reply_when_no_tool_calls():
     assert out == {"text": "hello there", "tool_calls": []}
 
 
+def test_invoke_extracts_text_blocks():
+    stub = _StubModel(AIMessage(content=[
+        {"type": "text", "text": "hello"},
+        {"type": "text", "text": " there"},
+    ]))
+    client = llm.LLMClient(model=stub)
+    out = client.invoke(system="x", messages=[], tools=[])
+    assert out["text"] == "hello there"
+
+
 def test_invoke_returns_tool_calls_when_present():
     stub = _StubModel(AIMessage(
         content="",
@@ -59,3 +67,23 @@ def test_invoke_passes_system_as_first_message():
     assert isinstance(stub.captured_messages[0], SystemMessage)
     assert stub.captured_messages[0].content == "SYS"
     assert isinstance(stub.captured_messages[1], HumanMessage)
+
+
+def test_to_openai_tools_converts_native_tool_schema():
+    native = [{
+        "name": "update_bullet",
+        "description": "Update a bullet",
+        "input_schema": {
+            "type": "object",
+            "properties": {"block_id": {"type": "string"}},
+            "required": ["block_id"],
+        },
+    }]
+    assert llm._to_openai_tools(native) == [{
+        "type": "function",
+        "function": {
+            "name": "update_bullet",
+            "description": "Update a bullet",
+            "parameters": native[0]["input_schema"],
+        },
+    }]

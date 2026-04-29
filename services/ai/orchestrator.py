@@ -122,7 +122,8 @@ def run_orchestration(
         runs.update(run_id, status="done", applied_suggestion_ids=applied,
                     completed_at=int(time.time() * 1000))
         event_queue.emit(run_id, "run.completed",
-                         {"runId": run_id, "suggestionIds": applied, "status": "done"})
+                         {"runId": run_id, "resumeId": resume_id,
+                          "suggestionIds": applied, "status": "done"})
         return run_id
     except Exception as exc:
         runs.update(run_id, status="error", error=str(exc),

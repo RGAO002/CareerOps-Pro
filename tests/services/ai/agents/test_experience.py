@@ -17,7 +17,7 @@ class _Stub:
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     resume = {
-        "id": "r1", "header": {"id": "h", "name": "F", "contact_lines": []},
+        "id": "r1", "schema_version": 2, "header": {"id": "h", "name": "F", "contact_lines": []},
         "sections": [
             {"id": "s1", "role": "experience", "heading": "Experience",
              "entries": [{"id": "e1", "title": "T", "meta": "M",
@@ -58,6 +58,7 @@ def test_experience_rejects_skills_section_target(setup):
     # tests scope guard at the section level — we'll add a synthetic entry on s2 first).
     p = setup[0] / "r1.json"
     r = json.loads(p.read_text())
+    r["schema_version"] = 2
     r["sections"][1]["entries"].append({"id": "e_sk", "title": "T", "meta": "",
                                          "bullets": [{"id": "b_sk", "content": {"type": "doc", "content": [{"type": "paragraph"}]}}]})
     p.write_text(json.dumps(r))

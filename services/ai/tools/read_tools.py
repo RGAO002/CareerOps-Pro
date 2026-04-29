@@ -5,20 +5,23 @@ Spec § 3.1. Backed by:
   - `services/job_tracker.py` (existing job applications store)
 """
 from __future__ import annotations
-import json
-from pathlib import Path
 from typing import Optional
 
+from api.services import resume_store
 from services import job_tracker
 
-RESUMES_DIR = Path(__file__).resolve().parents[3] / "saved_sessions" / "resumes"
+RESUMES_DIR = resume_store.RESUMES_DIR
 
 
 def _load_resume(resume_id: str) -> Optional[dict]:
-    p = RESUMES_DIR / f"{resume_id}.json"
-    if not p.exists():
+    original_dir = resume_store.RESUMES_DIR
+    resume_store.RESUMES_DIR = RESUMES_DIR
+    try:
+        return resume_store.load_dict(resume_id)
+    except (FileNotFoundError, ValueError):
         return None
-    return json.loads(p.read_text())
+    finally:
+        resume_store.RESUMES_DIR = original_dir
 
 
 def get_current_resume(resume_id: str) -> Optional[dict]:
@@ -48,16 +51,14 @@ def get_resume_block(resume_id: str, block_id: str) -> Optional[dict]:
 
 def list_user_resumes() -> list:
     """Lightweight summary of all resumes — id / title / updated_at / target_*."""
+    original_dir = resume_store.RESUMES_DIR
+    resume_store.RESUMES_DIR = RESUMES_DIR
+    try:
+        resumes = resume_store.list_all_dict()
+    finally:
+        resume_store.RESUMES_DIR = original_dir
     out = []
-    if not RESUMES_DIR.exists():
-        return out
-    for p in sorted(RESUMES_DIR.glob("*.json")):
-        if p.name.endswith(".suggestions.json"):
-            continue  # skip our sidecar
-        try:
-            r = json.loads(p.read_text())
-        except Exception:
-            continue
+    for r in resumes:
         out.append({
             "id": r.get("id"),
             "title": r.get("title"),

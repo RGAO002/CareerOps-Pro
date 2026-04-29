@@ -55,3 +55,30 @@ def test_coordinator_dispatches_to_experience_for_section_tailor():
         "args": {"agent": "ExperienceAgent", "focus": "s1", "brief": "tailor for JD"},
     }]))
     assert decision["target"] == "ExperienceAgent"
+
+
+def test_coordinator_executes_read_tool_then_answers(monkeypatch):
+    class TwoStep:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, *, system, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                return {"text": "", "tool_calls": [{"name": "get_current_resume", "args": {}}]}
+            assert "Read tool results" in messages[-1]["content"]
+            return {"text": "You have 1 bullet.", "tool_calls": []}
+
+    monkeypatch.setattr(
+        coordinator.read_tools,
+        "get_current_resume",
+        lambda resume_id: {"id": resume_id, "sections": [{"entries": [{"bullets": [1]}]}]},
+    )
+
+    decision = coordinator.run({
+        "run_id": "run_1", "resume_id": "r1",
+        "user_input": "how many bullets?",
+        "selection": [], "chat_history": [],
+        "skeleton": {"sections": []},
+    }, TwoStep())
+    assert decision == {"kind": "answer", "text": "You have 1 bullet."}

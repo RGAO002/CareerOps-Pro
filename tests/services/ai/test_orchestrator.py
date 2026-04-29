@@ -16,7 +16,7 @@ class _Stub:
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     resume = {
-        "id": "r1", "header": {"id": "h", "name": "F", "contact_lines": []},
+        "id": "r1", "schema_version": 2, "header": {"id": "h", "name": "F", "contact_lines": []},
         "sections": [{"id": "s1", "role": "experience", "heading": "Experience",
                       "entries": [{"id": "e1", "title": "T", "meta": "M",
                                    "bullets": [{"id": "b1", "content": {"type": "doc", "content": [{"type": "paragraph"}]}}]}]}],

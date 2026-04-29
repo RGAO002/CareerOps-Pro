@@ -19,7 +19,7 @@ def _client(tool_calls):
 
 def test_polish_emits_update_bullet_suggestion(tmp_path, monkeypatch):
     resume = {
-        "id": "r1", "header": {"id": "h", "name": "F", "contact_lines": []},
+        "id": "r1", "schema_version": 2, "header": {"id": "h", "name": "F", "contact_lines": []},
         "sections": [{"id": "s1", "role": "experience", "heading": "E",
                       "entries": [{"id": "e1", "title": "T", "meta": "M",
                                    "bullets": [{"id": "b1", "content": {"type": "doc", "content": [{"type": "paragraph"}]}}]}]}],

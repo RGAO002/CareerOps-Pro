@@ -11,19 +11,18 @@ Spec § 3.3. Each tool:
 `ctx` is `{resumeId, agentId, runId}` injected by the orchestrator.
 """
 from __future__ import annotations
-import json
 import time
 import uuid
-from pathlib import Path
 from typing import Optional
 
+from api.services import resume_store
 from services.ai import suggestions
 from services.ai.types import (
     Suggestion, UpdateSuggestion, InsertSuggestion,
     DeleteSuggestion, MoveSuggestion, EditableField,
 )
 
-RESUMES_DIR = Path(__file__).resolve().parents[3] / "saved_sessions" / "resumes"
+RESUMES_DIR = resume_store.RESUMES_DIR
 
 
 class ToolError(Exception):
@@ -32,10 +31,16 @@ class ToolError(Exception):
 
 
 def _load(resume_id: str) -> dict:
-    p = RESUMES_DIR / f"{resume_id}.json"
-    if not p.exists():
+    original_dir = resume_store.RESUMES_DIR
+    resume_store.RESUMES_DIR = RESUMES_DIR
+    try:
+        return resume_store.load_dict(resume_id)
+    except FileNotFoundError:
         raise ToolError(f"resume {resume_id} not found")
-    return json.loads(p.read_text())
+    except ValueError as exc:
+        raise ToolError(str(exc))
+    finally:
+        resume_store.RESUMES_DIR = original_dir
 
 
 def _new_sid() -> str:
