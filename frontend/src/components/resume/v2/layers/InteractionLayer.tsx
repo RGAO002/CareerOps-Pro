@@ -1,10 +1,17 @@
 // frontend/src/components/resume/v2/layers/InteractionLayer.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DragHandle } from '../interaction/DragHandle';
 import { DropIndicator } from '../interaction/DropIndicator';
 import { SlashMenu } from '../interaction/SlashMenu';
 import { selectionManager } from '../interaction/SelectionManager';
+import { atomFocusManager } from '../interaction/AtomFocusManager';
+import {
+  crossEditorSelection,
+  crossEditorSelectionClientRects,
+  editorPointFromViewport,
+  editorRangesBetween,
+} from '../interaction/CrossEditorSelection';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import { setHoverState } from '../interaction/hover-state';
 import { getAtomAbsoluteCoord } from '../layout/coords';
@@ -73,6 +80,7 @@ function aiScopeForBlock(block: SelectableBlock): BlockId {
 export function InteractionLayer({ atoms, layouts, template }: Props) {
   const [dropPayload, setDropPayload] = useState<DropIndicatorPayload>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<BlockId>>(new Set());
+  const [crossSelectionTick, setCrossSelectionTick] = useState(0);
   // Track the atom whose content the user is hovering — used to fade in the
   // ⋮⋮ drag handle and + / × buttons only for that row.
   const [hoveredAtomId, setHoveredAtomId] = useState<AtomId | null>(null);
@@ -86,6 +94,10 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       setOutlineTick(t => t + 1);
     });
   }, []);
+
+  useEffect(() => crossEditorSelection.subscribe(() => {
+    setCrossSelectionTick(t => t + 1);
+  }), []);
 
   // Outlines reposition when layouts change (atoms move during pagination).
   useEffect(() => {
@@ -115,6 +127,15 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       if (!root || !t || !root.contains(t)) {
         selectionManager.clear();
         useBlockHover.getState().setHovered(null);
+        return;
+      }
+
+      // Plain text drag/click inside TipTap must remain native browser text
+      // selection. Only Cmd/Ctrl-click and Shift-click inside text are routed
+      // to block multi-select/range-select.
+      if (t.closest('.ProseMirror') && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+        startCrossEditorSelectionDrag(e);
+        selectionManager.clear();
         return;
       }
 
@@ -174,7 +195,18 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         return;
       }
 
-      selectionManager.selectSingleBlock(target.id);
+      if (e.shiftKey) {
+        selectionManager.extendBlockSelection(target.id, allBlockIdsInDocOrder());
+        window.getSelection()?.removeAllRanges();
+        crossEditorSelection.clear();
+      } else if (e.metaKey || e.ctrlKey) {
+        selectionManager.toggleBlock(target.id);
+        window.getSelection()?.removeAllRanges();
+        crossEditorSelection.clear();
+      } else {
+        selectionManager.selectSingleBlock(target.id);
+        crossEditorSelection.clear();
+      }
 
       // Mirror to AI sidebar scope when sidebar is open.
       const aState = useAssistantStore.getState();
@@ -186,6 +218,14 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [atoms, layouts, template]);
+
+  const crossSelectionRects = useMemo(() => {
+    void crossSelectionTick;
+    if (typeof document === 'undefined') return [];
+    const root = document.querySelector('[data-canvas-root][data-mode="edit"]') as HTMLElement | null;
+    if (!root) return [];
+    return crossEditorSelectionClientRects(root);
+  }, [crossSelectionTick, layouts]);
 
   // Document-level hover detection: figure out which atom the cursor is over.
   // We use mousemove + Y-coordinate matching against atom layouts, NOT
@@ -363,8 +403,99 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
           tint + 2px terracotta strip) — driven by the same selectionManager
           state. This used to be a 2px blue outline; replaced per design
           direction (highlight = "operation focus", not just "this is selected"). */}
+      {crossSelectionRects.map((rect, index) => (
+        <div
+          key={`cross-sel-${index}`}
+          style={{
+            position: 'absolute',
+            left: rect.x,
+            top: rect.y,
+            width: rect.width,
+            height: rect.height,
+            background: 'rgba(59, 130, 246, 0.28)',
+            borderRadius: 2,
+            pointerEvents: 'none',
+          }}
+        />
+      ))}
       <DropIndicator target={dropPayload?.target ?? null} y={dropPayload?.y ?? 0} />
       <SlashMenu />
     </div>
   );
+}
+
+function startCrossEditorSelectionDrag(e: MouseEvent): void {
+  const start = editorPointFromViewport(e.clientX, e.clientY);
+  if (!start) {
+    crossEditorSelection.clear();
+    return;
+  }
+  crossEditorSelection.clear();
+
+  // CRITICAL: block the browser's native text-selection from kicking off on
+  // this same mousedown. Without preventDefault here, two selection systems
+  // run in parallel — ours via the overlay, and the browser's via the
+  // contenteditable mousedown→drag→mouseup gesture. They render at
+  // different times and the native selection visibly oscillates whenever
+  // the cursor crosses into a different contenteditable (single-line
+  // PlainText fields like section heading / entry title / entry meta are
+  // especially affected because cross-editor native selection there snaps
+  // to whatever text node the browser picks). The user perceives that as
+  // "selection jumping". Suppressing the native default at the source
+  // makes ours the only visualization.
+  e.preventDefault();
+  // Restore the focus the native default would have produced — without
+  // this, clicking into a field stops focusing the editor (so subsequent
+  // typing has nowhere to go). Focus at the resolved start position so
+  // the caret is exactly where the user clicked.
+  const startEditor = atomFocusManager.editorsInOrder().find(({ key }) => key === start.key)?.editor;
+  if (startEditor) {
+    startEditor.commands.focus(start.pos);
+    // The focus command places a 0-width selection at start.pos. Our
+    // cross-editor overlay will take over for any drag; this focus is just
+    // for caret placement on a tap-without-drag.
+  }
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let dragging = false;
+
+  const onMove = (ev: MouseEvent) => {
+    if (!dragging) {
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      dragging = true;
+    }
+    ev.preventDefault();
+
+    const end = editorPointFromViewport(ev.clientX, ev.clientY);
+    if (!end) return;
+    // Defensive: clear any native selection that snuck in (some browsers
+    // start one despite preventDefault on mousedown if focus changes).
+    window.getSelection()?.removeAllRanges();
+    crossEditorSelection.setRanges(editorRangesBetween(start, end));
+  };
+
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('blur', onUp);
+  };
+
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  window.addEventListener('blur', onUp);
+}
+
+function allBlockIdsInDocOrder(): BlockId[] {
+  const r = useResumeStore.getState().resume;
+  if (!r) return [];
+  const ids: BlockId[] = [];
+  for (const section of r.sections) {
+    ids.push(section.id);
+    for (const entry of section.entries) {
+      ids.push(entry.id);
+      for (const bullet of entry.bullets) ids.push(bullet.id);
+    }
+  }
+  return ids;
 }
