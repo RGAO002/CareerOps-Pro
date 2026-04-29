@@ -215,8 +215,13 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         aState.openSidebarWithScope({ blockId: target.id, label });
       }
     }
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
+    // Capture phase: must beat TipTap's own mousedown handlers attached to
+    // the .ProseMirror element. Otherwise TipTap commits a ProseMirror
+    // selection in the clicked editor before we route the gesture into
+    // cross-editor drag, and that ProseMirror selection later races our
+    // overlay when the cursor crosses into another editor.
+    document.addEventListener('mousedown', onDocMouseDown, true);
+    return () => document.removeEventListener('mousedown', onDocMouseDown, true);
   }, [atoms, layouts, template]);
 
   const crossSelectionRects = useMemo(() => {
@@ -432,19 +437,23 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
   }
   crossEditorSelection.clear();
 
-  // CRITICAL: block the browser's native text-selection from kicking off on
-  // this same mousedown. Without preventDefault here, native selection
-  // races our overlay and oscillates when crossing into different
-  // contenteditables (especially PlainText fields).
+  // CRITICAL: block the browser's native text-selection AND the TipTap
+  // view's own mousedown/mousemove handlers from running on this gesture.
+  // - preventDefault: stops the browser's native selection start.
+  // - stopPropagation: stops the event from reaching ProseMirror's
+  //   handlers attached to the contenteditable.
+  // Why bubble phase isn't enough: TipTap registers mousedown/mousemove on
+  // .ProseMirror elements. In bubble phase (the default), those handlers
+  // run on the target BEFORE our window-level listener. By that time
+  // TipTap has already updated its internal ProseMirror selection. When
+  // the cursor later crosses into a different (especially single-line
+  // PlainText) editor, ProseMirror has no cross-editor semantics and
+  // re-anchors selection to whatever text node the browser picks, which
+  // appears as the overlay "jumping". Capture-phase listeners + stop
+  // propagation guarantee TipTap's handlers never run during this drag.
   e.preventDefault();
+  e.stopPropagation();
 
-  // Don't focus a TipTap editor here. If we focus on mousedown, TipTap
-  // owns a ProseMirror selection in that editor and tries to maintain /
-  // extend it as the user drags. Once the cursor crosses into another
-  // editor, ProseMirror selection has no cross-editor semantics — it gets
-  // re-anchored or partially commits to whatever text node the browser
-  // picks, producing visible "jumps" in the overlay. We focus only on
-  // mouseup if the click was a tap (no drag).
   const startEditor = atomFocusManager.editorsInOrder().find(({ key }) => key === start.key)?.editor;
   // Blur whatever editor was previously focused so its ProseMirror selection
   // doesn't leak into the drag visualization either.
@@ -455,11 +464,15 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
   let dragging = false;
 
   const onMove = (ev: MouseEvent) => {
+    // Capture phase: we run before any element-level handler. Block the
+    // event from reaching TipTap's view handlers AND from default action.
+    ev.preventDefault();
+    ev.stopPropagation();
+
     if (!dragging) {
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
       dragging = true;
     }
-    ev.preventDefault();
 
     const end = editorPointFromViewport(ev.clientX, ev.clientY);
     if (!end) return;
@@ -468,9 +481,14 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
     crossEditorSelection.setRanges(editorRangesBetween(start, end));
   };
 
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
+  const onUp = (ev: MouseEvent | Event) => {
+    if (ev instanceof MouseEvent) {
+      // Capture-phase mouseup: also intercept so TipTap can't kick off any
+      // post-drag selection commit.
+      ev.stopPropagation();
+    }
+    window.removeEventListener('mousemove', onMove, true);
+    window.removeEventListener('mouseup', onUp, true);
     window.removeEventListener('blur', onUp);
     if (!dragging && startEditor) {
       // Tap, not drag — place caret at the click point so the user can
@@ -479,8 +497,10 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
     }
   };
 
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
+  // Listen in CAPTURE PHASE so we run before any element-level handler
+  // (TipTap registers handlers on the editor element itself).
+  window.addEventListener('mousemove', onMove, true);
+  window.addEventListener('mouseup', onUp, true);
   window.addEventListener('blur', onUp);
 }
 
