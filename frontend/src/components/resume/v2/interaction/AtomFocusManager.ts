@@ -80,6 +80,16 @@ export class AtomFocusManager {
     return null;
   }
 
+  /** Field key (e.g. `bullet.content:abc123`, `entry.title:xyz`) of the
+   *  currently-focused editor, or null. Used by selection-sync to track
+   *  which block is "active" purely from cursor position. */
+  currentFieldKey(): string | null {
+    for (const [key, ed] of this.editors.entries()) {
+      if (ed.isFocused) return key;
+    }
+    return null;
+  }
+
   focusNext(field: EditableField): void {
     const k = fieldKey(field);
     const i = this.order.indexOf(k);

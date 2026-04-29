@@ -13,23 +13,27 @@ export function isEditorRoot(target: EventTarget | null): boolean {
   return !!target.closest('[data-canvas-root][data-mode="edit"]');
 }
 
+/** True when the current pathname is the resume editor route. Used to gate
+ *  document-wide shortcuts (Cmd+A) so they don't fire elsewhere in the app. */
+function onResumeEditorRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.pathname.startsWith('/resume/');
+}
+
 export function installKeyboardRouter(): () => void {
   function onKeyDown(e: KeyboardEvent): void {
-    if (!isEditorRoot(e.target)) return;
     const meta = e.metaKey || e.ctrlKey;
 
-    // Cmd+A semantics:
-    //   1. Cursor active in a TipTap field AND a block is currently selected
-    //      → select all blocks belonging to the section that block is in
-    //      (each text field is its own TipTap instance, so native Cmd+A
-    //      can't span fields; promoting to block-level selection covers it).
-    //   2. No TipTap focus            → select every block in the document.
-    //   3. TipTap focus, no selection → fall through to TipTap's native
-    //      select-all (don't intercept).
-    if (meta && e.key === 'a' && !e.shiftKey) {
+    // Cmd+A semantics — runs BEFORE the editor-root gate so it works even
+    // when nothing is focused (e.target = body), which would otherwise let
+    // the browser's native page-wide select-all fire and grab sidebar text.
+    // Gate on the route instead: only intercept on /resume/[id] pages.
+    if (meta && e.key === 'a' && !e.shiftKey && onResumeEditorRoute()) {
       const focused = atomFocusManager.currentEditor();
       const selected = selectionManager.getBlocks();
 
+      // Case 1: cursor active in TipTap AND a block is selected → select
+      // all blocks in that block's section.
       if (focused && selected.length > 0) {
         const sectionId = findSectionForBlock(selected[0]);
         if (sectionId) {
@@ -40,15 +44,19 @@ export function installKeyboardRouter(): () => void {
         }
       }
 
+      // Case 2: no TipTap focus → select every block in the document.
       if (!focused) {
         e.preventDefault();
         selectAllBlocks();
         return;
       }
 
-      // TipTap focused, no selection — let native select-all run.
+      // Case 3: TipTap focused but nothing selected — fall through to
+      // TipTap's native (per-field) select-all.
       return;
     }
+
+    if (!isEditorRoot(e.target)) return;
 
     // Cmd+Z / Cmd+Shift+Z
     if (meta && e.key === 'z' && !e.shiftKey) {
