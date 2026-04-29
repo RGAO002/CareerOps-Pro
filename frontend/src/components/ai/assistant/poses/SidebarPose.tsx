@@ -55,33 +55,38 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        // Translucent dark base — lets the host content peek through with the
-        // glass effect, just like the design. The CSS .a-shader gradients on
-        // top fade to transparent so the see-through quality is preserved.
-        background: 'oklch(0.13 0.025 34 / 0.42)',
-        // Backdrop blur produces the actual frosted-glass feel. Without this,
-        // the see-through area shows the host content too sharply and breaks
-        // the depth illusion.
-        backdropFilter: 'blur(28px) saturate(1.4)',
-        WebkitBackdropFilter: 'blur(28px) saturate(1.4)',
+        // Truly translucent dark base — host content shows through behind
+        // the panel. Lower alpha than before since the FluidCanvas no longer
+        // adds opaque coverage (blend mode: screen, see below).
+        background: 'oklch(0.13 0.025 34 / 0.32)',
+        // Frosted-glass: blur the host content behind so it's visible but
+        // not distracting. Heavier blur + saturation makes the see-through
+        // feel intentional rather than incidental.
+        backdropFilter: 'blur(34px) saturate(1.5)',
+        WebkitBackdropFilter: 'blur(34px) saturate(1.5)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {/* WebGL three-color fluid (the original 三色小球 animation). The
-          shader output is opaque, so we wrap it in CSS opacity 0.78 — that
-          makes the canvas itself see-through, letting the panel's
-          translucent bg + backdrop-blur produce the glass effect. */}
-      <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 0, opacity: 0.78, pointerEvents: 'none' }}>
-        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.6} />
+      {/* WebGL three-color fluid (the original 三色小球). Use
+          `mix-blend-mode: screen` so only the BRIGHT pixels (the colored
+          orbs) add to the bg — the dark vignette pixels become invisible
+          instead of obscuring the translucent panel. Result: orbs glow over
+          a properly see-through panel. brightness cranked because screen
+          blending darkens perceived intensity. */}
+      <div aria-hidden style={{
+        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+        mixBlendMode: 'screen',
+      }}>
+        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={2.2} />
       </div>
-      {/* Subtle gradient scrim for legibility. Lower alphas because the bg
-          is already darkened by translucency + backdrop-blur. */}
+      {/* Light text-legibility scrim — kept very subtle so the see-through
+          quality isn't flattened. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.18) 0%, oklch(0.14 0.020 34 / 0.32) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.10 0.018 34 / 0.18) 0%, oklch(0.10 0.018 34 / 0.30) 100%)',
       }} />
 
       {/* Header row */}
