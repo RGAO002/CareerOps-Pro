@@ -35,10 +35,6 @@ export function HeaderRowInteractionOverlay({
     <div
       data-edit-only
       data-row-handle-field={rowKey}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        useAISidebarUIStore.getState().open(headerId);
-      }}
       style={{
         position: 'absolute',
         left: -28,
@@ -53,7 +49,14 @@ export function HeaderRowInteractionOverlay({
         zIndex: 5,
       }}
     >
-      <DragHandle block={block} onDropIndicator={onDropIndicator ?? (() => {})} />
+      <DragHandle
+        block={block}
+        onDropIndicator={onDropIndicator ?? (() => {})}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          useAISidebarUIStore.getState().open(headerId);
+        }}
+      />
     </div>
   );
 }

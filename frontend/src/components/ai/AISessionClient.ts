@@ -58,7 +58,24 @@ export function runSSEStream(runId: string, cb: AISessionCallbacks): () => void 
 
   es.addEventListener('run.completed', (e: MessageEvent) => {
     const data = JSON.parse(e.data);
-    cb.onCompleted(data.runId, data.suggestionIds || [], data.status || 'done');
+    const suggestionIds: string[] = data.suggestionIds || [];
+    if (data.resumeId || suggestionIds.length > 0) {
+      const resumeId =
+        data.resumeId ||
+        suggestionIds
+          .map((id) => useSuggestionStore.getState().byId[id]?.resumeId)
+          .find(Boolean);
+      if (resumeId) {
+        useSuggestionStore.getState().hydrate(resumeId).catch(() => {});
+      }
+    }
+    cb.onCompleted(data.runId, suggestionIds, data.status || 'done');
+    es.close();
+  });
+
+  es.addEventListener('run.error', (e: MessageEvent) => {
+    const data = JSON.parse(e.data);
+    cb.onError?.(data.error || 'AI run failed');
     es.close();
   });
 

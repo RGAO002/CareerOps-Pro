@@ -62,4 +62,11 @@ describe('runSSEStream', () => {
     FakeEventSource.instances[0].emit('run.completed', { runId: 'run_1', suggestionIds: ['a'], status: 'done' });
     expect(completed).toEqual(['run_1']);
   });
+
+  it('forwards run.error to onError', () => {
+    const errors: unknown[] = [];
+    runSSEStream('run_1', { onNarration: () => {}, onCompleted: () => {}, onError: (e) => errors.push(e) });
+    FakeEventSource.instances[0].emit('run.error', { runId: 'run_1', error: 'boom' });
+    expect(errors).toEqual(['boom']);
+  });
 });

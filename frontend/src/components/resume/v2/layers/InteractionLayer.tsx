@@ -11,6 +11,7 @@ import { getAtomAbsoluteCoord } from '../layout/coords';
 import { useResumeStore } from '../store/useResumeStore';
 import type { LayoutAtom, AtomLayout, AtomId, SelectableBlock, BlockId } from '../types';
 import type { NormalizedTemplate } from '../layout/normalize-template';
+import { useAISidebarUIStore } from '@/stores/aiSidebarUI';
 
 interface Props {
   atoms: LayoutAtom[];
@@ -26,6 +27,10 @@ function selectableForAtom(atom: LayoutAtom): SelectableBlock | null {
   // entry → find its section
   const section = r.sections.find(s => s.entries.some(e => e.id === atom.sourceBlockId));
   return section ? { kind: 'entry', id: atom.sourceBlockId, sectionId: section.id } : null;
+}
+
+function aiScopeForBlock(block: SelectableBlock): BlockId {
+  return block.kind === 'header-row' ? block.headerId : block.id;
 }
 
 export function InteractionLayer({ atoms, layouts, template }: Props) {
@@ -142,7 +147,14 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
               pointerEvents: isHovered ? 'auto' : 'none',
             }}
           >
-            <DragHandle block={block} onDropIndicator={setDropPayload} />
+            <DragHandle
+              block={block}
+              onDropIndicator={setDropPayload}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                useAISidebarUIStore.getState().open(aiScopeForBlock(block));
+              }}
+            />
           </div>
         );
       })}

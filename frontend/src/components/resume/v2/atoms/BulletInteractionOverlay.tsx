@@ -26,10 +26,6 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
   return (
     <div
       data-edit-only
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        useAISidebarUIStore.getState().open(bulletId);
-      }}
       style={{
         position: 'absolute',
         left: -28,
@@ -42,7 +38,14 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
         pointerEvents: hovered ? 'auto' : 'none',
       }}
     >
-      <DragHandle block={block} onDropIndicator={onDropIndicator ?? (() => {})} />
+      <DragHandle
+        block={block}
+        onDropIndicator={onDropIndicator ?? (() => {})}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          useAISidebarUIStore.getState().open(bulletId);
+        }}
+      />
     </div>
   );
 }

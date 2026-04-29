@@ -9,6 +9,8 @@ import { getHoverState, subscribeHover } from '../interaction/hover-state';
 import {
   getDragPreview,
   subscribeDragPreview,
+  getRecentlyDroppedId,
+  subscribeRecentlyDropped,
   type DragPreview,
 } from '../interaction/drag-preview-state';
 import { useResumeStore } from '../store/useResumeStore';
@@ -61,10 +63,16 @@ export function EntryAtomRenderer({ entry, sectionRole, mode }: Props) {
   // Bullet drag preview: shift sibling bullets to make room (Notion-style).
   const [preview, setPreview] = useState<DragPreview>(getDragPreview());
   useEffect(() => subscribeDragPreview(setPreview), []);
+  const [recentlyDroppedId, setRecentlyDroppedIdState] = useState<BlockId | null>(
+    getRecentlyDroppedId(),
+  );
+  useEffect(() => subscribeRecentlyDropped(setRecentlyDroppedIdState), []);
 
   const bulletPreview = preview && preview.kind === 'bullet' && preview.dstEntryId === entry.id
     ? preview : null;
   const draggedBulletId = preview?.kind === 'bullet' ? preview.draggedBulletId : null;
+  const recentlyDroppedInEntry = recentlyDroppedId !== null
+    && entry.bullets.some(b => b.id === recentlyDroppedId);
 
   function bulletShift(bulletIdx: number, bulletId: BlockId): number {
     if (!bulletPreview) return 0;
@@ -169,6 +177,10 @@ export function EntryAtomRenderer({ entry, sectionRole, mode }: Props) {
         {entry.bullets.map((b, idx) => {
           const dragged = draggedBulletId === b.id;
           const shift = bulletShift(idx, b.id);
+          const justDropped = recentlyDroppedId === b.id;
+          const transition = recentlyDroppedInEntry
+            ? 'none'
+            : 'transform 0.18s ease-out, opacity 0.12s ease-out';
           return (
             <li
               key={b.id}
@@ -178,10 +190,11 @@ export function EntryAtomRenderer({ entry, sectionRole, mode }: Props) {
               style={{
                 position: 'relative',
                 transform: `translateY(${shift}px)`,
-                transition: 'transform 0.18s ease-out, opacity 0.12s ease-out',
+                transition,
+                animation: justDropped ? 'bullet-settle 0.18s ease-out' : undefined,
                 opacity: dragged ? 0 : 1,
                 visibility: dragged ? 'hidden' : 'visible',
-                willChange: preview ? 'transform, opacity' : undefined,
+                willChange: (preview || justDropped) ? 'transform, opacity' : undefined,
               }}
             >
               {mode === 'edit' && (
