@@ -6,57 +6,16 @@ import { selectionManager } from './SelectionManager';
 import { deleteBullet, deleteEntry, deleteSection } from '../store/actions/deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from '../store/actions/duplicateBlock';
 import { makeOrigin } from '../store/source-of-truth';
-import type { BlockId } from '../types';
 
 export function isEditorRoot(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return !!target.closest('[data-canvas-root][data-mode="edit"]');
 }
 
-/** True when the current pathname is the resume editor route. Used to gate
- *  document-wide shortcuts (Cmd+A) so they don't fire elsewhere in the app. */
-function onResumeEditorRoute(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.location.pathname.startsWith('/resume/');
-}
-
 export function installKeyboardRouter(): () => void {
   function onKeyDown(e: KeyboardEvent): void {
-    const meta = e.metaKey || e.ctrlKey;
-
-    // Cmd+A semantics — runs BEFORE the editor-root gate so it works even
-    // when nothing is focused (e.target = body), which would otherwise let
-    // the browser's native page-wide select-all fire and grab sidebar text.
-    // Gate on the route instead: only intercept on /resume/[id] pages.
-    if (meta && e.key === 'a' && !e.shiftKey && onResumeEditorRoute()) {
-      const focused = atomFocusManager.currentEditor();
-      const selected = selectionManager.getBlocks();
-
-      // Case 1: cursor active in TipTap AND a block is selected → select
-      // all blocks in that block's section.
-      if (focused && selected.length > 0) {
-        const sectionId = findSectionForBlock(selected[0]);
-        if (sectionId) {
-          e.preventDefault();
-          focused.commands.blur();
-          selectAllBlocksInSection(sectionId);
-          return;
-        }
-      }
-
-      // Case 2: no TipTap focus → select every block in the document.
-      if (!focused) {
-        e.preventDefault();
-        selectAllBlocks();
-        return;
-      }
-
-      // Case 3: TipTap focused but nothing selected — fall through to
-      // TipTap's native (per-field) select-all.
-      return;
-    }
-
     if (!isEditorRoot(e.target)) return;
+    const meta = e.metaKey || e.ctrlKey;
 
     // Cmd+Z / Cmd+Shift+Z
     if (meta && e.key === 'z' && !e.shiftKey) {
@@ -108,48 +67,6 @@ export function installKeyboardRouter(): () => void {
 
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
-}
-
-function selectAllBlocks(): void {
-  const r = useResumeStore.getState().resume;
-  if (!r) return;
-  const ids: BlockId[] = [];
-  for (const s of r.sections) {
-    ids.push(s.id);
-    for (const e of s.entries) {
-      ids.push(e.id);
-      for (const b of e.bullets) ids.push(b.id);
-    }
-  }
-  selectionManager.setBlocks(ids);
-}
-
-function selectAllBlocksInSection(sectionId: BlockId): void {
-  const r = useResumeStore.getState().resume;
-  if (!r) return;
-  const sec = r.sections.find(s => s.id === sectionId);
-  if (!sec) return;
-  const ids: BlockId[] = [sec.id];
-  for (const e of sec.entries) {
-    ids.push(e.id);
-    for (const b of e.bullets) ids.push(b.id);
-  }
-  selectionManager.setBlocks(ids);
-}
-
-/** Given any block id (section / entry / bullet), return the section.id it
- *  belongs to. */
-function findSectionForBlock(id: BlockId): BlockId | null {
-  const r = useResumeStore.getState().resume;
-  if (!r) return null;
-  for (const s of r.sections) {
-    if (s.id === id) return s.id;
-    for (const e of s.entries) {
-      if (e.id === id) return s.id;
-      if (e.bullets.some(b => b.id === id)) return s.id;
-    }
-  }
-  return null;
 }
 
 function deleteSelectedBlocks(): void {
