@@ -375,31 +375,55 @@
   --p-ease-soft:    cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-/* ─── Sidebar fluid shader (CSS radial-gradient version, per design_handoff
-       `.a-shader::before`). Replaces the opaque WebGL FluidCanvas: the
-       gradients fade to TRANSPARENT, so the sidebar's translucent base lets
-       the host content / page color show through as a glass effect. ─── */
+/* ─── Sidebar fluid shader — three independently-drifting radial blobs
+       (per design_handoff `.a-shader`). Each blob is its own div with a
+       single centered radial-gradient that fades to TRANSPARENT, so the
+       translucent panel underneath shows through. Each blob has its own
+       keyframe animation with a different phase so they actually appear
+       to drift relative to each other (CSS custom-property interpolation
+       without @property would just snap, hence three layers). ─── */
 .a-shader {
   position: absolute;
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+  filter: blur(44px) saturate(1.3);
 }
-.a-shader::before {
-  content: '';
+.a-shader > i {
   position: absolute;
-  inset: -30%;
-  background:
-    radial-gradient(ellipse 42% 52% at 24% 28%, oklch(0.62 0.17 38 / 0.55), transparent 62%),
-    radial-gradient(ellipse 42% 52% at 76% 72%, oklch(0.55 0.14 152 / 0.42), transparent 62%),
-    radial-gradient(ellipse 40% 50% at 50% 50%, oklch(0.55 0.15 268 / 0.40), transparent 62%);
-  filter: blur(44px) saturate(1.25);
-  animation: a-flow 16s var(--p-ease-soft) infinite alternate;
+  display: block;
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
 }
-@keyframes a-flow {
-  0%   { transform: translate(0, 0) scale(1); }
-  50%  { transform: translate(-3%, 2%) scale(1.06); }
-  100% { transform: translate(2%, -2%) scale(1.04); }
+.a-shader .blob-warm  {
+  background: radial-gradient(circle at 50% 50%, oklch(0.62 0.17 38 / 0.65), transparent 62%);
+  animation: a-blob-warm 14s ease-in-out infinite alternate;
+}
+.a-shader .blob-green {
+  background: radial-gradient(circle at 50% 50%, oklch(0.55 0.14 152 / 0.55), transparent 62%);
+  animation: a-blob-green 18s ease-in-out infinite alternate;
+}
+.a-shader .blob-blue  {
+  background: radial-gradient(circle at 50% 50%, oklch(0.55 0.15 268 / 0.55), transparent 62%);
+  animation: a-blob-blue 22s ease-in-out infinite alternate;
+}
+@keyframes a-blob-warm {
+  0%   { transform: translate(-15%, -10%) scale(1.0); }
+  50%  { transform: translate(40%,  20%)  scale(1.15); }
+  100% { transform: translate(10%,  60%)  scale(1.05); }
+}
+@keyframes a-blob-green {
+  0%   { transform: translate(50%,  60%)  scale(1.0); }
+  50%  { transform: translate(-10%, 30%)  scale(1.1); }
+  100% { transform: translate(60%, -10%)  scale(1.05); }
+}
+@keyframes a-blob-blue {
+  0%   { transform: translate(20%,  20%)  scale(1.0); }
+  50%  { transform: translate(60%,  50%)  scale(1.15); }
+  100% { transform: translate(-10%, 70%)  scale(1.0); }
 }
 
 /* AI Assistant reflow — when sidebar pose is active AND viewport is wide enough,

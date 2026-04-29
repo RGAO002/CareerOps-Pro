@@ -2,6 +2,7 @@
 'use client';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { FluidCanvas } from '@/components/landing/FluidCanvas';
 import { useAssistantStore, type AssistantTab } from '@/stores/assistant';
 import { useResumeStore } from '@/components/resume/v2/store/useResumeStore';
 import { useConversationStore } from '@/stores/conversation';
@@ -69,9 +70,13 @@ export function SidebarPose() {
         overflow: 'hidden',
       }}
     >
-      {/* CSS three-color radial-gradient shader (design `.a-shader`). Fades
-          to transparent so the translucent panel reads as glass. */}
-      <div aria-hidden className="a-shader" />
+      {/* WebGL three-color fluid (the original 三色小球 animation). The
+          shader output is opaque, so we wrap it in CSS opacity 0.78 — that
+          makes the canvas itself see-through, letting the panel's
+          translucent bg + backdrop-blur produce the glass effect. */}
+      <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 0, opacity: 0.78, pointerEvents: 'none' }}>
+        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.6} />
+      </div>
       {/* Subtle gradient scrim for legibility. Lower alphas because the bg
           is already darkened by translucency + backdrop-blur. */}
       <div aria-hidden style={{
