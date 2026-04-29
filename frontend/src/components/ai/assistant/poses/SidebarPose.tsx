@@ -55,15 +55,23 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        background: 'var(--p-sidebar-base)',
+        // Translucent base — the FluidCanvas + scrim do the heavy lifting,
+        // and a touch of transparency lets the three-orb animation breathe
+        // (matches the original global AIChatPanel feel).
+        background: 'oklch(0.13 0.025 34 / 0.78)',
+        backdropFilter: 'blur(20px) saturate(1.1)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.1)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={1} brightness={1.0} />
-      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'oklch(0.08 0.015 34 / 0.55)', zIndex: 1, pointerEvents: 'none' }} />
+      {/* Three-color WebGL fluid (warm orange / muted green / soft blue blobs).
+          speed=3 + brightness=1.45 matches the original AIChatPanel hero feel. */}
+      <FluidCanvas className="absolute inset-0 z-0" forceAnimate speed={3} brightness={1.45} />
+      {/* Soft scrim — keeps text legible without flattening the fluid. */}
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'oklch(0.08 0.015 34 / 0.42)', zIndex: 1, pointerEvents: 'none' }} />
 
       {/* Header row */}
       <div style={{ position: 'relative', zIndex: 3, padding: '14px 18px 0', borderBottom: '1px solid var(--p-border)', paddingBottom: 14, flexShrink: 0 }}>
