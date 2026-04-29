@@ -39,10 +39,6 @@ export function HeaderRowInteractionOverlay({
         position: 'absolute',
         left: -28,
         top: 0,
-        // Vertically center the 18px handle on the row's first text line.
-        height: '1lh',
-        display: 'flex',
-        alignItems: 'center',
         opacity: hovered ? 1 : 0,
         transition: 'opacity 0.15s',
         pointerEvents: hovered ? 'auto' : 'none',

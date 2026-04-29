@@ -49,11 +49,12 @@ export function EntryRowInteractionOverlay({
       style={{
         position: 'absolute',
         left: -28,
+        // entry.title is 14px/1.3 (line ~18.2px) and entry.meta is 12px/1.3
+        // (line ~15.6px). The handle is 18px tall. Pin to top:0 — overflowing
+        // very slightly below the meta baseline is fine; using `1lh` here
+        // caused the handle to render with the wrapper line-box of canvas-root
+        // (21px) which produced a visible vertical wiggle on hover.
         top: 0,
-        // Vertically center the 18px handle on the row's first text line.
-        height: '1lh',
-        display: 'flex',
-        alignItems: 'center',
         opacity: hovered ? 1 : 0,
         transition: 'opacity 0.15s',
         pointerEvents: hovered ? 'auto' : 'none',
