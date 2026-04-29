@@ -433,28 +433,22 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
   crossEditorSelection.clear();
 
   // CRITICAL: block the browser's native text-selection from kicking off on
-  // this same mousedown. Without preventDefault here, two selection systems
-  // run in parallel — ours via the overlay, and the browser's via the
-  // contenteditable mousedown→drag→mouseup gesture. They render at
-  // different times and the native selection visibly oscillates whenever
-  // the cursor crosses into a different contenteditable (single-line
-  // PlainText fields like section heading / entry title / entry meta are
-  // especially affected because cross-editor native selection there snaps
-  // to whatever text node the browser picks). The user perceives that as
-  // "selection jumping". Suppressing the native default at the source
-  // makes ours the only visualization.
+  // this same mousedown. Without preventDefault here, native selection
+  // races our overlay and oscillates when crossing into different
+  // contenteditables (especially PlainText fields).
   e.preventDefault();
-  // Restore the focus the native default would have produced — without
-  // this, clicking into a field stops focusing the editor (so subsequent
-  // typing has nowhere to go). Focus at the resolved start position so
-  // the caret is exactly where the user clicked.
+
+  // Don't focus a TipTap editor here. If we focus on mousedown, TipTap
+  // owns a ProseMirror selection in that editor and tries to maintain /
+  // extend it as the user drags. Once the cursor crosses into another
+  // editor, ProseMirror selection has no cross-editor semantics — it gets
+  // re-anchored or partially commits to whatever text node the browser
+  // picks, producing visible "jumps" in the overlay. We focus only on
+  // mouseup if the click was a tap (no drag).
   const startEditor = atomFocusManager.editorsInOrder().find(({ key }) => key === start.key)?.editor;
-  if (startEditor) {
-    startEditor.commands.focus(start.pos);
-    // The focus command places a 0-width selection at start.pos. Our
-    // cross-editor overlay will take over for any drag; this focus is just
-    // for caret placement on a tap-without-drag.
-  }
+  // Blur whatever editor was previously focused so its ProseMirror selection
+  // doesn't leak into the drag visualization either.
+  atomFocusManager.currentEditor()?.commands.blur();
 
   const startX = e.clientX;
   const startY = e.clientY;
@@ -469,8 +463,7 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
 
     const end = editorPointFromViewport(ev.clientX, ev.clientY);
     if (!end) return;
-    // Defensive: clear any native selection that snuck in (some browsers
-    // start one despite preventDefault on mousedown if focus changes).
+    // Defensive: clear any native selection that snuck in.
     window.getSelection()?.removeAllRanges();
     crossEditorSelection.setRanges(editorRangesBetween(start, end));
   };
@@ -479,6 +472,11 @@ function startCrossEditorSelectionDrag(e: MouseEvent): void {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     window.removeEventListener('blur', onUp);
+    if (!dragging && startEditor) {
+      // Tap, not drag — place caret at the click point so the user can
+      // type immediately.
+      startEditor.commands.focus(start.pos);
+    }
   };
 
   window.addEventListener('mousemove', onMove);
