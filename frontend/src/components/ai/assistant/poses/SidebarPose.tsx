@@ -68,12 +68,20 @@ export function SidebarPose() {
         overflow: 'hidden',
       }}
     >
-      {/* WebGL three-color fluid. mix-blend-mode: screen drops dark vignette
-          pixels and only adds the bright orb colors on top of the lighter
-          panel base — produces the design's glowy effect. */}
+      {/* WebGL three-color fluid (the original 三色小球). Two finishing
+          touches make it feel like the design's premium frosted look:
+            (1) `filter: blur(40px) saturate(1.3)` on the canvas itself —
+                design's CSS shader has `blur(44px)` baked in; without
+                blurring our WebGL output, the orbs read as crisp blobs
+                instead of soft color washes. The blur turns them into a
+                diffuse glow that bleeds into the bg.
+            (2) `mix-blend-mode: screen` so dark vignette pixels drop out
+                and only the brightened orb light "adds" to the lighter
+                panel base. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
         mixBlendMode: 'screen',
+        filter: 'blur(40px) saturate(1.3)',
       }}>
         <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.8} />
       </div>
