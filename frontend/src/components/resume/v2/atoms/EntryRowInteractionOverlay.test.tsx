@@ -20,14 +20,14 @@ beforeEach(() => {
 });
 
 describe('EntryRowInteractionOverlay', () => {
-  it('renders the ⋮⋮ drag handle for an existing entry', () => {
+  it('renders the 6-dot drag handle for an existing entry', () => {
     const { container } = render(
       <EntryRowInteractionOverlay entryId="e1" field="title" hovered={true} />,
     );
-    // DragHandle renders a single button with the ⋮⋮ glyph
+    // DragHandle renders a single button with 6 round dot children (2x3 grid)
     const btn = container.querySelector('button');
     expect(btn).not.toBeNull();
-    expect(btn?.textContent).toBe('⋮⋮');
+    expect(btn?.querySelectorAll('i').length).toBe(6);
   });
 
   it('hidden state: opacity 0 and pointer-events none (handle present but not clickable)', () => {

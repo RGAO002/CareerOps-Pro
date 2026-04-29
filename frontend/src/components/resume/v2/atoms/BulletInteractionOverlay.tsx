@@ -30,9 +30,11 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
         position: 'absolute',
         left: -28,
         top: 0,
+        // Vertically center the 18px handle on the bullet's first text line.
+        // 1lh = the element's current line-height (matches bullet font line-box).
+        height: '1lh',
         display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
+        alignItems: 'center',
         opacity: hovered ? 1 : 0,
         transition: 'opacity 0.15s',
         pointerEvents: hovered ? 'auto' : 'none',
