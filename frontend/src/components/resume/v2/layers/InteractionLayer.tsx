@@ -68,20 +68,57 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
     setOutlineTick(t => t + 1);
   }, [layouts]);
 
-  // Click anywhere outside a drag handle → clear any active block selection.
-  // Drag handles set selection via DragController.onUp (built-in
-  // click-without-drag → selectSingleBlock); skipping them here lets that
-  // built-in behavior win without being clobbered by an outside-click clear.
+  // Section is the canonical selection unit. Behavior:
+  //   - Click on a 6-dot handle → DragController.onUp does fine-grained
+  //     selection (section / entry / bullet per the handle's block kind).
+  //     Skip here; that path wins.
+  //   - Click anywhere ELSE inside the canvas → resolve which section the
+  //     cursor's Y-coord lands in, set selectionManager to that section.
+  //     This also runs when clicking into editable text — TipTap takes focus
+  //     for typing, and we silently set the section selection alongside.
+  //   - Click outside the canvas → clear selection.
+  //   - When the AI sidebar is open, mirror section selection into the
+  //     assistant's scope so the next AI request targets that section.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (t?.closest('button[data-edit-only]')) return;
-      selectionManager.clear();
-      useBlockHover.getState().setHovered(null);
+
+      const root = document.querySelector('[data-canvas-root]') as HTMLElement | null;
+      if (!root || !t || !root.contains(t)) {
+        selectionManager.clear();
+        useBlockHover.getState().setHovered(null);
+        return;
+      }
+
+      // Find the atom whose Y-band contains the cursor.
+      const rootRect = root.getBoundingClientRect();
+      const cursorY = e.clientY - rootRect.top;
+      let atomHit: AtomId | null = null;
+      for (const [id, layout] of layouts.entries()) {
+        const top = getAtomAbsoluteCoord(layout, 'edit', template).top;
+        const bottom = top + layout.height;
+        if (cursorY >= top && cursorY <= bottom) { atomHit = id; break; }
+      }
+      if (!atomHit) { selectionManager.clear(); return; }
+      const atom = atoms.find(a => a.id === atomHit);
+      if (!atom) { selectionManager.clear(); return; }
+      const sectionId = sectionForAtom(atom);
+      if (!sectionId) { selectionManager.clear(); return; }
+
+      selectionManager.selectSingleBlock(sectionId);
+      // Mirror to AI sidebar scope only when sidebar is already open.
+      const aState = useAssistantStore.getState();
+      if (aState.pose === 'sidebar') {
+        const r = useResumeStore.getState().resume;
+        const section = r?.sections.find(s => s.id === sectionId);
+        const label = section?.heading || sectionId.slice(0, 8);
+        aState.openSidebarWithScope({ blockId: sectionId, label });
+      }
     }
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, []);
+  }, [atoms, layouts, template]);
 
   // Document-level hover detection: figure out which atom the cursor is over.
   // We use mousemove + Y-coordinate matching against atom layouts, NOT

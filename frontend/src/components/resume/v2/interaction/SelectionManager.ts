@@ -55,7 +55,9 @@ export class SelectionManager {
   getBlocks(): BlockId[] { return Array.from(this.blockSelection); }
 
   notifyTipTapFocus(): void {
-    if (this.state === 'block-selection') this.clear();
+    // Block selection now coexists with TipTap text-editing focus — this
+    // supports the "click anywhere in a section selects the section AND keeps
+    // text editable" pattern. Just record the focus state; do not clear blocks.
     this.state = 'tiptap-text';
   }
 

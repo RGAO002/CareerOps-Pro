@@ -28,9 +28,13 @@ describe('SelectionManager', () => {
     mgr.selectSingleBlock('x');
     expect((last as Set<string> | null)?.has('x')).toBe(true);
   });
-  it('notifyTipTapFocus clears block selection', () => {
+  it('notifyTipTapFocus preserves block selection (they coexist now)', () => {
     mgr.selectSingleBlock('a');
     mgr.notifyTipTapFocus();
-    expect(mgr.getBlocks()).toEqual([]);
+    // Block selection survives — section + TipTap text-edit focus are
+    // intentionally allowed to coexist (click anywhere in section selects it
+    // AND keeps text editable).
+    expect(mgr.getBlocks()).toEqual(['a']);
+    expect(mgr.state).toBe('tiptap-text');
   });
 });
