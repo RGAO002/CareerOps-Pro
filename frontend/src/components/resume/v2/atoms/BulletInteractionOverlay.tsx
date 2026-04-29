@@ -29,12 +29,13 @@ export function BulletInteractionOverlay({ bulletId, entryId, hovered = false, o
       style={{
         position: 'absolute',
         left: -28,
+        // Pin to top:0. We previously used `height: 1lh; display: flex;
+        // alignItems: center` here for vertical centering, but `1lh` resolves
+        // against the wrapper's inherited font metrics, which differ between
+        // regular bullets and summary "plain" bullets — producing visible
+        // shape distortion on hover. A 1-2px alignment imperfection is
+        // preferable to the deformation.
         top: 0,
-        // Vertically center the 18px handle on the bullet's first text line.
-        // 1lh = the element's current line-height (matches bullet font line-box).
-        height: '1lh',
-        display: 'flex',
-        alignItems: 'center',
         opacity: hovered ? 1 : 0,
         transition: 'opacity 0.15s',
         pointerEvents: hovered ? 'auto' : 'none',
