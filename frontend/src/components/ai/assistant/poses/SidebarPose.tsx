@@ -55,13 +55,13 @@ export function SidebarPose() {
       style={{
         position: 'fixed', top: 56, right: 0, bottom: 0,
         width: 368, borderRadius: 0,
-        // EXACT design-spec values — `.assist` bg is `oklch(0.22 0.028 34 / .55)`
-        // and `backdrop-filter: blur(24px) saturate(1.3)`. The lighter base
-        // (0.22 vs the v1 0.13) is what gives the panel its premium see-through
-        // feel — too-dark bg flattens everything to murky glass.
-        background: 'oklch(0.22 0.028 34 / 0.55)',
-        backdropFilter: 'blur(24px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.3)',
+        // FULL transparent test — the panel itself adds zero color; only
+        // the FluidCanvas orbs and the (light) scrim are visible. This lets
+        // you see how transparent the look CAN go before legibility breaks.
+        background: 'transparent',
+        // Light backdrop blur so host content behind the sidebar is softened.
+        backdropFilter: 'blur(20px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.2)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
@@ -85,11 +85,12 @@ export function SidebarPose() {
       }}>
         <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.8} />
       </div>
-      {/* Subtle scrim — design `.a-scrim` uses `linear-gradient(180deg,
-          oklch(.14 .020 34 / .25), oklch(.14 .020 34 / .42))`. */}
+      {/* Minimal scrim — kept very low so the sidebar reads as nearly
+          transparent. Bumps slightly at the bottom where the input lives so
+          placeholder/typing stays legible. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, oklch(0.14 0.020 34 / 0.25) 0%, oklch(0.14 0.020 34 / 0.42) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.10 0.018 34 / 0.05) 0%, oklch(0.10 0.018 34 / 0.18) 100%)',
       }} />
 
       {/* Header row */}
