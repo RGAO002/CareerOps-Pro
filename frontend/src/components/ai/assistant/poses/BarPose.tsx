@@ -46,7 +46,10 @@ export function BarPose() {
         position: 'fixed',
         bottom: 24,
         left: '50%',
-        transform: 'translateX(-50%)',
+        // NOTE: do NOT use `transform: translateX(-50%)` here — Framer Motion's
+        // layoutId controls the transform property and will override it. Use
+        // marginLeft = -width/2 instead.
+        marginLeft: -260,
         width: 520,
         height: 48,
         borderRadius: 12,

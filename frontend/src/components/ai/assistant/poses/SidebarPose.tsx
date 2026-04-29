@@ -34,7 +34,10 @@ export function SidebarPose() {
     const text = input.trim();
     if (!text || isStreaming) return;
     const resume = useResumeStore.getState().resume;
-    if (!resume) return;
+    if (!resume) {
+      useConversationStore.getState().appendMessage({ kind: 'ai-text', content: 'AI 仅在加载简历后可用（resume 未在 store 中找到）。' });
+      return;
+    }
     useConversationStore.getState().appendMessage({ kind: 'user', content: text });
     setInput('');
     try {
