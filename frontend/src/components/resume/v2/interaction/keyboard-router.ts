@@ -6,6 +6,7 @@ import { selectionManager } from './SelectionManager';
 import { deleteBullet, deleteEntry, deleteSection } from '../store/actions/deleteBlock';
 import { duplicateBullet, duplicateEntry, duplicateSection } from '../store/actions/duplicateBlock';
 import { makeOrigin } from '../store/source-of-truth';
+import type { BlockId } from '../types';
 
 export function isEditorRoot(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -16,6 +17,38 @@ export function installKeyboardRouter(): () => void {
   function onKeyDown(e: KeyboardEvent): void {
     if (!isEditorRoot(e.target)) return;
     const meta = e.metaKey || e.ctrlKey;
+
+    // Cmd+A semantics:
+    //   1. Cursor active in a TipTap field AND a block is currently selected
+    //      → select all blocks belonging to the section that block is in
+    //      (each text field is its own TipTap instance, so native Cmd+A
+    //      can't span fields; promoting to block-level selection covers it).
+    //   2. No TipTap focus            → select every block in the document.
+    //   3. TipTap focus, no selection → fall through to TipTap's native
+    //      select-all (don't intercept).
+    if (meta && e.key === 'a' && !e.shiftKey) {
+      const focused = atomFocusManager.currentEditor();
+      const selected = selectionManager.getBlocks();
+
+      if (focused && selected.length > 0) {
+        const sectionId = findSectionForBlock(selected[0]);
+        if (sectionId) {
+          e.preventDefault();
+          focused.commands.blur();
+          selectAllBlocksInSection(sectionId);
+          return;
+        }
+      }
+
+      if (!focused) {
+        e.preventDefault();
+        selectAllBlocks();
+        return;
+      }
+
+      // TipTap focused, no selection — let native select-all run.
+      return;
+    }
 
     // Cmd+Z / Cmd+Shift+Z
     if (meta && e.key === 'z' && !e.shiftKey) {
@@ -67,6 +100,48 @@ export function installKeyboardRouter(): () => void {
 
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
+}
+
+function selectAllBlocks(): void {
+  const r = useResumeStore.getState().resume;
+  if (!r) return;
+  const ids: BlockId[] = [];
+  for (const s of r.sections) {
+    ids.push(s.id);
+    for (const e of s.entries) {
+      ids.push(e.id);
+      for (const b of e.bullets) ids.push(b.id);
+    }
+  }
+  selectionManager.setBlocks(ids);
+}
+
+function selectAllBlocksInSection(sectionId: BlockId): void {
+  const r = useResumeStore.getState().resume;
+  if (!r) return;
+  const sec = r.sections.find(s => s.id === sectionId);
+  if (!sec) return;
+  const ids: BlockId[] = [sec.id];
+  for (const e of sec.entries) {
+    ids.push(e.id);
+    for (const b of e.bullets) ids.push(b.id);
+  }
+  selectionManager.setBlocks(ids);
+}
+
+/** Given any block id (section / entry / bullet), return the section.id it
+ *  belongs to. */
+function findSectionForBlock(id: BlockId): BlockId | null {
+  const r = useResumeStore.getState().resume;
+  if (!r) return null;
+  for (const s of r.sections) {
+    if (s.id === id) return s.id;
+    for (const e of s.entries) {
+      if (e.id === id) return s.id;
+      if (e.bullets.some(b => b.id === id)) return s.id;
+    }
+  }
+  return null;
 }
 
 function deleteSelectedBlocks(): void {

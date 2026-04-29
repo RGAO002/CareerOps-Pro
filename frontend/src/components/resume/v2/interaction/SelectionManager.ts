@@ -20,6 +20,14 @@ export class SelectionManager {
     this.emit();
   }
 
+  /** Replace block selection with the given ids. Used by document-level
+   *  "select all" (Cmd+A escalation). */
+  setBlocks(ids: BlockId[]): void {
+    this.blockSelection = new Set(ids);
+    this.state = ids.length > 0 ? 'block-selection' : 'none';
+    this.emit();
+  }
+
   toggleBlock(id: BlockId): void {
     const next = new Set(this.blockSelection);
     if (next.has(id)) next.delete(id);

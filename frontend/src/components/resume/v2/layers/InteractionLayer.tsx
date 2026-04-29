@@ -165,7 +165,14 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
         }
       }
 
-      if (!target) return; // Empty zone: leave current selection alone.
+      if (!target) {
+        // Empty zone inside canvas (gap between sections / between bullets
+        // not on any row) → treat as a "click in empty space" and clear
+        // selection, mirroring the click-outside-canvas behavior above.
+        selectionManager.clear();
+        useBlockHover.getState().setHovered(null);
+        return;
+      }
 
       selectionManager.selectSingleBlock(target.id);
 
