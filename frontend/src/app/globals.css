@@ -334,3 +334,37 @@
     animation: none !important;
   }
 }
+
+/* ─── AI Assistant tokens (per design_handoff_ai_sidebar/README.md §Design Tokens) ─── */
+:root {
+  /* Surface — assistant (translucent, sits on FluidCanvas) */
+  --p-surface:      oklch(0.18 0.022 34 / 0.72);
+  --p-surface-hi:   oklch(0.22 0.024 34 / 0.82);
+  --p-border:       oklch(0.55 0.015 40 / 0.22);
+  --p-border2:      oklch(0.60 0.018 40 / 0.30);
+
+  /* Sidebar / Bar / Orb base colors */
+  --p-sidebar-base: oklch(0.13 0.025 34);
+  --p-bar-base:     oklch(0.10 0.018 34 / 0.92);
+
+  /* Type — assistant */
+  --p-text:         oklch(0.96 0.010 55);
+  --p-text-body:    oklch(0.86 0.012 52);
+  --p-text-mute:    oklch(0.66 0.010 50);
+  --p-text-dim:     oklch(0.50 0.008 50);
+
+  /* Accents */
+  --p-accent:       oklch(0.72 0.13 38);
+  --p-accent-warm:  oklch(0.78 0.12 42);
+  --p-accent-muted: oklch(0.72 0.13 38 / 0.18);
+  --p-accent-deep:  oklch(0.55 0.14 32);
+
+  /* Three-agent palette (v0: tokens defined, only used in chip dots; AI message rows do NOT show per-agent dot yet) */
+  --p-recruit:      oklch(0.70 0.12 35);
+  --p-hm:           oklch(0.68 0.10 150);
+  --p-coach:        oklch(0.66 0.11 260);
+
+  /* Easing */
+  --p-ease:         cubic-bezier(0.16, 1, 0.3, 1);
+  --p-ease-soft:    cubic-bezier(0.25, 0.8, 0.25, 1);
+}
