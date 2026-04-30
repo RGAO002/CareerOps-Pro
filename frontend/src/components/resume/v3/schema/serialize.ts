@@ -32,22 +32,17 @@ function pmNodeToRow(node: PMNode): ResumeRow {
   const kind = node.type.name.replace('_', '.') as ResumeRow['kind'];
   const id = node.attrs.id as RowId;
   const semanticGroupId = (node.attrs.semanticGroupId ?? undefined) as GroupId | undefined;
+  const alignRaw = node.attrs.align as string | null | undefined;
+  const align = (alignRaw === 'center' || alignRaw === 'right' || alignRaw === 'left') ? alignRaw : undefined;
 
   if (kind === 'plain' || kind === 'bullet') {
-    // The PM row has `content: 'inline*'` (raw inline children, no paragraph wrapper).
-    // For persisted RichText, we synthesize a {type:'doc', content:[{type:'paragraph', content: inline}]}
-    // wrapper so the persisted JSON is a valid ProseMirror doc and is portable across
-    // different content rules (e.g. clipboard, AI prompt context, future schemas).
-    // Empty inline content persists as { type:'doc', content: [] } (no paragraph) to keep
-    // round-trip byte-identical with the empty-row input shape from hydrateInitialState.
     const inline = (node.content.toJSON() ?? []) as unknown[];
-    const persisted = inline.length === 0
-      ? []
-      : [{ type: 'paragraph', content: inline }];
+    const persisted = inline.length === 0 ? [] : [{ type: 'paragraph', content: inline }];
     return {
       id,
       kind,
       content: { type: 'doc', content: persisted },
+      ...(align ? { align } : {}),
       ...(semanticGroupId ? { semanticGroupId } : {}),
     } as ResumeRow;
   }
@@ -55,12 +50,14 @@ function pmNodeToRow(node: PMNode): ResumeRow {
     const text = node.textContent;
     const linkUrl = node.attrs.linkUrl as string | undefined;
     const content = linkUrl ? { type: 'link' as const, label: text, url: linkUrl } : { type: 'text' as const, value: text };
-    return { id, kind, content };
+    return { id, kind, content, ...(align ? { align } : {}) } as ResumeRow;
   }
-  // Plain-text kinds.
   const text = node.textContent;
-  const align = node.attrs.align as ResumeRow extends { content: { align?: infer A } } ? A : undefined;
-  const base: { text: string; align?: typeof align } = { text };
-  if (align) base.align = align;
-  return { id, kind, content: base, ...(semanticGroupId ? { semanticGroupId } : {}) } as ResumeRow;
+  return {
+    id,
+    kind,
+    content: { text },
+    ...(align ? { align } : {}),
+    ...(semanticGroupId ? { semanticGroupId } : {}),
+  } as ResumeRow;
 }

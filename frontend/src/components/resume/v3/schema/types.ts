@@ -30,14 +30,17 @@ export type RowKind =
   | 'plain'
   | 'bullet';
 
+// Per-row text alignment. Applies to the row's content; lives at the row level
+// in the v3 doc shape and as a PM node attr in the editor. Round-trips to v2's
+// `alignments[fieldKey]` map via v2Adapter.
 export type ResumeRow =
-  | { id: RowId; kind: 'header.name';     content: PlainText }
-  | { id: RowId; kind: 'header.contact';  content: ContactItem }
-  | { id: RowId; kind: 'section.heading'; content: PlainText; semanticGroupId: GroupId }
-  | { id: RowId; kind: 'entry.title';     content: PlainText; semanticGroupId: GroupId }
-  | { id: RowId; kind: 'entry.meta';      content: PlainText; semanticGroupId: GroupId }
-  | { id: RowId; kind: 'plain';           content: RichText;  semanticGroupId?: GroupId }
-  | { id: RowId; kind: 'bullet';          content: RichText;  semanticGroupId?: GroupId };
+  | { id: RowId; kind: 'header.name';     content: PlainText;   align?: Align }
+  | { id: RowId; kind: 'header.contact';  content: ContactItem; align?: Align }
+  | { id: RowId; kind: 'section.heading'; content: PlainText;   align?: Align; semanticGroupId: GroupId }
+  | { id: RowId; kind: 'entry.title';     content: PlainText;   align?: Align; semanticGroupId: GroupId }
+  | { id: RowId; kind: 'entry.meta';      content: PlainText;   align?: Align; semanticGroupId: GroupId }
+  | { id: RowId; kind: 'plain';           content: RichText;    align?: Align; semanticGroupId?: GroupId }
+  | { id: RowId; kind: 'bullet';          content: RichText;    align?: Align; semanticGroupId?: GroupId };
 
 export type SectionRole =
   | 'experience' | 'education' | 'skills' | 'projects'

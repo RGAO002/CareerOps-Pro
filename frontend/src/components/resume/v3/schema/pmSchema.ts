@@ -55,6 +55,12 @@ interface MakeRowOpts {
   withSemanticGroupId: boolean;
 }
 
+const ALIGN_VALUES = new Set(['left', 'center', 'right']);
+function normalizeAlign(v: unknown): 'left' | 'center' | 'right' | null {
+  if (typeof v !== 'string') return null;
+  return ALIGN_VALUES.has(v) ? (v as 'left' | 'center' | 'right') : null;
+}
+
 function makeRowNode(opts: MakeRowOpts) {
   const { name, kindDataAttr, content, allowMarks, defining, withSemanticGroupId } = opts;
 
@@ -67,8 +73,17 @@ function makeRowNode(opts: MakeRowOpts) {
     marks: allowMarks ? undefined : '',
 
     addAttributes() {
-      const attrs: Record<string, { default: unknown }> = {
+      const attrs: Record<string, { default: unknown; parseHTML?: (el: HTMLElement) => unknown; renderHTML?: (attrs: Record<string, unknown>) => Record<string, string> | null }> = {
         id: { default: '' },
+        // align — per-row text alignment, round-trips to v2's alignments map.
+        align: {
+          default: null,
+          parseHTML: (el) => normalizeAlign(el.getAttribute('data-align')),
+          renderHTML: (a) => {
+            const align = normalizeAlign(a.align);
+            return align ? { 'data-align': align, style: `text-align: ${align}` } : {};
+          },
+        },
       };
       if (withSemanticGroupId) {
         attrs.semanticGroupId = { default: null };
@@ -82,15 +97,17 @@ function makeRowNode(opts: MakeRowOpts) {
 
     renderHTML({ node }) {
       const gid = (node.attrs.semanticGroupId as string | null) ?? '';
-      return [
-        'div',
-        {
-          'data-row-kind': kindDataAttr,
-          'data-row-id': node.attrs.id,
-          'data-group-id': gid,
-        },
-        0,
-      ];
+      const align = normalizeAlign(node.attrs.align);
+      const dom: Record<string, string> = {
+        'data-row-kind': kindDataAttr,
+        'data-row-id': node.attrs.id,
+        'data-group-id': gid,
+      };
+      if (align) {
+        dom['data-align'] = align;
+        dom.style = `text-align: ${align}`;
+      }
+      return ['div', dom, 0];
     },
 
     // T19: wire React NodeView. Each PM node renders through ReactNodeViewRenderer,

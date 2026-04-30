@@ -15,6 +15,10 @@ export function hydrateInitialState(doc: ResumeDocV3, schema: Schema): { docJSON
 export function rowToPMNodeJSON(row: ResumeRow, schema: Schema) {
   const attrs: Record<string, unknown> = { id: row.id };
   if ('semanticGroupId' in row && row.semanticGroupId) attrs.semanticGroupId = row.semanticGroupId;
+  // align — per-row text alignment. Pulled from row.align (v2 alignments map
+  // round-trip lives in v2Adapter); for plain-text rows we also accept
+  // legacy row.content.align below.
+  if (row.align) attrs.align = row.align;
 
   // The PM node type name is derived from kind (e.g. 'header.name' → 'header_name').
   const nodeName = row.kind.replace('.', '_');

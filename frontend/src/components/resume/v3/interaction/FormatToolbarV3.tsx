@@ -3,6 +3,9 @@
 import * as React from 'react';
 import type { Editor } from '@tiptap/core';
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Bold,
   Highlighter,
   Italic,
@@ -12,6 +15,34 @@ import {
   Underline as UnderlineIcon,
   Undo2,
 } from 'lucide-react';
+
+// Helper: set the `align` attr on every top-level row in the current
+// selection. Used by the 3 align toolbar buttons.
+function setRowAlign(editor: Editor | null, align: 'left' | 'center' | 'right' | null): void {
+  if (!editor) return;
+  const { state, view } = editor;
+  const { from, to } = state.selection;
+  const tr = state.tr;
+  let touched = false;
+  state.doc.nodesBetween(from, to, (node, pos, parent) => {
+    if (parent === state.doc && node.type.spec.group === 'row') {
+      tr.setNodeAttribute(pos, 'align', align);
+      touched = true;
+    }
+    return false; // don't recurse into row children
+  });
+  if (touched) view.dispatch(tr);
+}
+
+// Helper: read the align attr off the row containing the current selection.
+function currentRowAlign(editor: Editor | null): 'left' | 'center' | 'right' | null {
+  if (!editor) return null;
+  const $from = editor.state.selection.$from;
+  if ($from.depth < 1) return null;
+  const node = $from.node(1);
+  const v = node.attrs.align as string | null | undefined;
+  return (v === 'left' || v === 'center' || v === 'right') ? v : null;
+}
 
 const COLOR_PALETTE = [
   { label: 'Default', value: null },
@@ -96,6 +127,7 @@ export function FormatToolbarV3({ editor }: Props) {
   const active = (mark: string, attrs?: Record<string, unknown>) => !!editor && editor.isActive(mark, attrs);
   const canUndo = canRunEditorCommand(editor, 'undo');
   const canRedo = canRunEditorCommand(editor, 'redo');
+  const rowAlign = currentRowAlign(editor);
   const noFocusSteal = (event: React.MouseEvent) => event.preventDefault();
   const btn = (isActive = false, disabled = false) =>
     `v3-toolbar-button${isActive ? ' v3-toolbar-button-active' : ''}${disabled ? ' v3-toolbar-button-disabled' : ''}`;
@@ -184,6 +216,24 @@ export function FormatToolbarV3({ editor }: Props) {
           }}
         />
       </MenuButton>
+
+      {sep}
+
+      <button type="button" className={btn(rowAlign === 'left' || rowAlign === null)} aria-label="Align left"
+        title="Align left" onMouseDown={noFocusSteal}
+        onClick={() => { setRowAlign(editor, null); editor?.view.focus(); }}>
+        <AlignLeft className="size-3.5" strokeWidth={2} />
+      </button>
+      <button type="button" className={btn(rowAlign === 'center')} aria-label="Align center"
+        title="Align center" onMouseDown={noFocusSteal}
+        onClick={() => { setRowAlign(editor, 'center'); editor?.view.focus(); }}>
+        <AlignCenter className="size-3.5" strokeWidth={2} />
+      </button>
+      <button type="button" className={btn(rowAlign === 'right')} aria-label="Align right"
+        title="Align right" onMouseDown={noFocusSteal}
+        onClick={() => { setRowAlign(editor, 'right'); editor?.view.focus(); }}>
+        <AlignRight className="size-3.5" strokeWidth={2} />
+      </button>
 
       {sep}
 

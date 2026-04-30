@@ -37,6 +37,8 @@ export function RowContainer(props: RowContainerProps) {
   const rowId = (node.attrs.id as string) || '';
   // F4: tolerate missing semanticGroupId.
   const groupId = (node.attrs.semanticGroupId as string | null | undefined) ?? '';
+  const alignRaw = node.attrs.align as string | null | undefined;
+  const align = (alignRaw === 'center' || alignRaw === 'right' || alignRaw === 'left') ? alignRaw : null;
 
   return (
     <NodeViewWrapper
@@ -44,6 +46,7 @@ export function RowContainer(props: RowContainerProps) {
       data-row-kind={kindDataAttr}
       data-row-id={rowId}
       data-group-id={groupId}
+      data-align={align ?? undefined}
     >
       <span
         className="row-handle"
@@ -52,7 +55,11 @@ export function RowContainer(props: RowContainerProps) {
         aria-hidden="true"
       />
       {prefix}
-      <NodeViewContent as="div" className="row-content" />
+      <NodeViewContent
+        as="div"
+        className="row-content"
+        style={align ? { textAlign: align } : undefined}
+      />
       {suffix}
     </NodeViewWrapper>
   );
