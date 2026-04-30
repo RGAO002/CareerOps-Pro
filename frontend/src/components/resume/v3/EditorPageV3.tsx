@@ -12,8 +12,8 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
+import { UndoRedo } from '@tiptap/extensions';
 import { Extension } from '@tiptap/core';
-import { history } from '@tiptap/pm/history';
 import { keymap } from '@tiptap/pm/keymap';
 import type { Editor } from '@tiptap/core';
 import type { Schema } from '@tiptap/pm/model';
@@ -54,12 +54,13 @@ const V3Doc = Document.extend({
   content: '(header_name | header_contact | section_heading | entry_title | entry_meta | plain | bullet)+',
 });
 
-const HistoryExt = Extension.create({
-  name: 'v3EditorHistory',
-  addProseMirrorPlugins() {
-    return [history()];
-  },
-});
+// In Tiptap 3 the History extension was renamed UndoRedo and lives in
+// @tiptap/extensions. It registers BOTH the PM history plugin AND the
+// chain commands (undo/redo) AND the default Mod-Z / Mod-Shift-Z keymap.
+// The previous raw `history()` from @tiptap/pm/history only added the
+// plugin, so toolbar undo/redo buttons + the Cmd+Z keybind silently
+// no-op'd because chain().undo() / chain().redo() weren't registered.
+const HistoryExt = UndoRedo;
 
 const GroupsExt = Extension.create({
   name: 'v3EditorGroups',
