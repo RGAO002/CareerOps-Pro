@@ -361,9 +361,14 @@
 
 @media print {
   .v3-topbar,
-  [data-edit-only],
-  .v3-editor-canvas-root .row-handle {
+  [data-edit-only] {
     display: none !important;
+  }
+
+  .v3-editor-canvas-root .row-handle[data-edit-only] {
+    display: block !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
   }
 
   .v3-editor-stage {
