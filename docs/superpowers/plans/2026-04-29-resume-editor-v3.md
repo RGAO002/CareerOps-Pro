@@ -120,12 +120,12 @@ frontend/src/components/resume/v3/
     e2e/                            ← Playwright cross-row + drag + PDF + AI apply
 
 frontend/src/components/resume/v3-poc/   ← M1 PoC artifacts (deleted after M5 productionizes)
-  PocPage.tsx
-  PocEditor.tsx
-  pmSchemaMin.ts
+  PocEditor.tsx                         ← Tiptap Node extensions for 3 row kinds inline
+  PocPrintCanvas.tsx
   layout-min.ts
   PaginationPluginMin.ts
   PageChromeLayerMin.tsx
+  poc.css
 
 frontend/eslint-rules/                   ← custom ESLint rules (created in M4)
   no-global-pointer-capture.js
@@ -375,8 +375,12 @@ Create `frontend/src/components/resume/v3-poc/poc.css`:
   top: 0;
 }
 .pagination-break {
+  /* Height is set per-instance inline by PaginationPlugin (Task 4). The
+     value must be: (remaining unused content space on the breaking page)
+     + bottomMargin + screenGap + topMargin. Constant CSS won't work
+     because remaining-space varies per break (a tall row breaking early
+     leaves more whitespace at the page bottom). */
   display: block;
-  height: calc(var(--page-margin-bottom) + var(--page-break-screen-gap) + var(--page-margin-top));
   break-before: page;
   pointer-events: none;
   user-select: none;
@@ -393,7 +397,7 @@ Create `frontend/src/components/resume/v3-poc/poc.css`:
     box-shadow: none;
     max-width: none;
   }
-  .pagination-break { height: 0; }
+  .pagination-break { height: 0 !important; }   /* override per-instance inline height on print */
 }
 ```
 
@@ -586,18 +590,26 @@ export interface LayoutInput {
   pageHeightPx: number;                 // e.g. 11in × dpi
   marginTopPx: number;                  // var(--page-margin-top)
   marginBottomPx: number;               // var(--page-margin-bottom)
+  screenGapPx: number;                  // var(--page-break-screen-gap) — visual gap between page cards on screen
 }
 
 export interface PageBreak {
   /** PM document position immediately after this row ends — where to insert the widget decoration. */
   afterRowIndex: number;
   pageIndex: number;
+  /** Per-break inline height for the screen widget decoration. Equals the
+   *  unused vertical space at the bottom of the breaking page (which depends
+   *  on the breaking row's height) PLUS bottomMargin + screenGap + topMargin
+   *  for the next page. This is what makes the next page's first row line up
+   *  with the next .page-card on screen. On print this value is ignored
+   *  (CSS @media print sets `height: 0`; @page handles real margins). */
+  screenHeightPx: number;
 }
 
 export interface PageGeometry {
   pageIndex: number;
-  topPx: number;                        // distance from canvas top to page card top
-  heightPx: number;                     // page card visual height
+  topPx: number;                        // distance from canvas top to this page-card's top edge
+  heightPx: number;                     // page card visual height (always pageHeightPx)
 }
 
 export interface LayoutOutput {
@@ -606,40 +618,53 @@ export interface LayoutOutput {
 }
 
 export function computeLayout(input: LayoutInput): LayoutOutput {
-  const { rowElements, pageHeightPx, marginTopPx, marginBottomPx } = input;
+  const { rowElements, pageHeightPx, marginTopPx, marginBottomPx, screenGapPx } = input;
   const contentHeightPerPage = pageHeightPx - marginTopPx - marginBottomPx;
 
   const pageBreaks: PageBreak[] = [];
   const pageGeometries: PageGeometry[] = [];
   let pageIndex = 0;
-  let yWithinPage = 0;                  // distance from current page's top of content area
-  let pageTopPx = 0;                    // canvas Y where current page card's top starts
+  let yWithinContent = 0;               // distance from current page's CONTENT top (= page-card top + topMargin)
+  let pageTopPx = 0;                    // canvas Y where current page card's top edge sits (screen)
+
+  // Page 1's card top is at the editor wrapper's first row's top minus topMargin.
+  // For PoC: page 1 starts at y=0 (canvas root coordinate), card top = 0.
+  // (Production task M5 may translate by editor-wrapper offsetTop.)
+  pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
 
   for (let i = 0; i < rowElements.length; i++) {
     const rect = rowElements[i].getBoundingClientRect();
     const rowHeight = rect.height;
 
     // If this row would overflow current page's content area, break before it.
-    if (yWithinPage + rowHeight > contentHeightPerPage && yWithinPage > 0) {
-      // Close current page geometry.
-      pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
-      // Emit break.
-      pageBreaks.push({ afterRowIndex: i - 1, pageIndex });
-      // Start new page.
+    if (yWithinContent + rowHeight > contentHeightPerPage && yWithinContent > 0) {
+      // Compute remaining space at bottom of breaking page (this is the WHITE
+      // space that the row could not fit into). The screen widget must occupy
+      // at least this much PLUS the page-to-page margins to keep the next row
+      // visually aligned with the next page-card.
+      const remainingContentSpace = contentHeightPerPage - yWithinContent;
+      const screenHeightPx = remainingContentSpace + marginBottomPx + screenGapPx + marginTopPx;
+
+      pageBreaks.push({ afterRowIndex: i - 1, pageIndex, screenHeightPx });
+
+      // Move to next page.
       pageIndex += 1;
-      pageTopPx += pageHeightPx;        // visual stacking; real DOM offset uses CSS vars
-      yWithinPage = 0;
+      // The next page-card's top sits where the breaking page's bottom ended,
+      // plus the screen gap (cards are visually separated). On screen, that's
+      // exactly: previous pageTop + the widget's screenHeightPx (which contains
+      // the gap by construction).
+      pageTopPx += screenHeightPx;
+      pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
+      yWithinContent = 0;
     }
-    yWithinPage += rowHeight;
+    yWithinContent += rowHeight;
   }
-  // Close last page.
-  pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
 
   return { pageBreaks, pageGeometries };
 }
 ```
 
-Note: `pageTopPx` is conceptual — in screen mode the actual DOM Y of page card top is determined by editor wrapper padding + cumulative break decoration heights. PaginationPlugin (Task 4) does the real translation. PoC LayoutEngine returns pure measurement output.
+Note: `pageTopPx` is computed cumulatively from per-break heights, so PageChromeLayer can render cards at exactly the screen positions where break decorations push the next row to. PaginationPlugin (Task 4) reads this directly — single SoT preserved.
 
 - [ ] **Step 2: Write the failing unit test**
 
@@ -658,22 +683,47 @@ function makeElement(heightPx: number): HTMLElement {
 }
 
 describe('computeLayout', () => {
+  const baseInput = { pageHeightPx: 1000, marginTopPx: 100, marginBottomPx: 100, screenGapPx: 32 };
+
   it('places all rows on one page when total height fits', () => {
     const rows = [makeElement(100), makeElement(200), makeElement(300)];
-    const out = computeLayout({ rowElements: rows, pageHeightPx: 1000, marginTopPx: 100, marginBottomPx: 100 });
+    const out = computeLayout({ ...baseInput, rowElements: rows });
     expect(out.pageBreaks).toEqual([]);
     expect(out.pageGeometries).toHaveLength(1);
+    expect(out.pageGeometries[0]).toEqual({ pageIndex: 0, topPx: 0, heightPx: 1000 });
   });
-  it('breaks to a new page when next row would overflow', () => {
-    // contentHeight = 1000 - 200 = 800. rows: 400 + 400 fits, 400 more does not.
+
+  it('breaks to a new page when next row would overflow; emits per-break screen height', () => {
+    // contentHeight = 1000 - 200 = 800. Rows 400 + 400 = 800 fits exactly, 400 more does not.
     const rows = [makeElement(400), makeElement(400), makeElement(400)];
-    const out = computeLayout({ rowElements: rows, pageHeightPx: 1000, marginTopPx: 100, marginBottomPx: 100 });
-    expect(out.pageBreaks).toEqual([{ afterRowIndex: 1, pageIndex: 0 }]);
+    const out = computeLayout({ ...baseInput, rowElements: rows });
+
+    expect(out.pageBreaks).toHaveLength(1);
+    expect(out.pageBreaks[0].afterRowIndex).toBe(1);
+    expect(out.pageBreaks[0].pageIndex).toBe(0);
+    // remaining space = 800 - 800 = 0. screenHeightPx = 0 + 100 + 32 + 100 = 232.
+    expect(out.pageBreaks[0].screenHeightPx).toBe(232);
+
     expect(out.pageGeometries).toHaveLength(2);
+    expect(out.pageGeometries[0]).toEqual({ pageIndex: 0, topPx: 0, heightPx: 1000 });
+    // Page 2's card top = pageTopPx after first break = 0 + 232 = 232.
+    expect(out.pageGeometries[1]).toEqual({ pageIndex: 1, topPx: 232, heightPx: 1000 });
   });
-  it('handles a single row that exceeds page height (allowed: stays on its page, no infinite loop)', () => {
+
+  it('break that happens early because next row is tall produces larger screen height', () => {
+    // contentHeight = 800. Row 1 = 400 (fits). Row 2 = 600 (would overflow → break before it).
+    // Remaining space at break = 800 - 400 = 400. screenHeightPx = 400 + 100 + 32 + 100 = 632.
+    const rows = [makeElement(400), makeElement(600)];
+    const out = computeLayout({ ...baseInput, rowElements: rows });
+
+    expect(out.pageBreaks).toHaveLength(1);
+    expect(out.pageBreaks[0].screenHeightPx).toBe(632);
+    expect(out.pageGeometries[1].topPx).toBe(632);
+  });
+
+  it('handles a single row that exceeds page height (no infinite loop)', () => {
     const rows = [makeElement(2000)];
-    const out = computeLayout({ rowElements: rows, pageHeightPx: 1000, marginTopPx: 100, marginBottomPx: 100 });
+    const out = computeLayout({ ...baseInput, rowElements: rows });
     expect(out.pageBreaks).toEqual([]);
     expect(out.pageGeometries).toHaveLength(1);
   });
@@ -762,6 +812,7 @@ export function createPaginationPluginMin() {
         if (!canvasRoot) return;
         const marginTopPx = getMarginPx(canvasRoot, '--page-margin-top');
         const marginBottomPx = getMarginPx(canvasRoot, '--page-margin-bottom');
+        const screenGapPx = getMarginPx(canvasRoot, '--page-break-screen-gap');
 
         const rowElements = Array.from(view.dom.querySelectorAll(':scope > .row')) as HTMLElement[];
         const layout: LayoutOutput = computeLayout({
@@ -769,6 +820,7 @@ export function createPaginationPluginMin() {
           pageHeightPx: PAGE_HEIGHT_PX,
           marginTopPx,
           marginBottomPx,
+          screenGapPx,
         });
 
         // Map afterRowIndex → PM doc position (after that row's node).
@@ -781,11 +833,13 @@ export function createPaginationPluginMin() {
 
         const decorations = layout.pageBreaks.map((b) => {
           const pos = posAtRowEnd[b.afterRowIndex];
+          // Per-break height: dynamic, set as inline style. Print CSS forces 0 via !important.
           return Decoration.widget(pos, () => {
             const el = document.createElement('div');
             el.className = 'pagination-break';
             el.setAttribute('contenteditable', 'false');
             el.setAttribute('aria-hidden', 'true');
+            el.style.height = `${b.screenHeightPx}px`;
             return el;
           }, { side: 1, key: `break-${b.pageIndex}` });
         });
@@ -1154,12 +1208,16 @@ test.describe('PoC A — Print fidelity', () => {
 
     // Render page 2 at high DPI and find first non-empty pixel from top.
     const page2 = await pdf.getPage(2);
-    const viewport = page2.getViewport({ scale: 4 });
+    // pdfjs viewport is in PDF units = points (72 per inch). At scale=N, the
+    // canvas is N × points-per-inch px per inch = N × 72 pixels per inch.
+    // For 0.75in topMargin at scale=4 → expected raster Y = 0.75 × 72 × 4 = 216.
+    const SCALE = 4;
+    const viewport = page2.getViewport({ scale: SCALE });
     const canvas = await renderPdfPageToCanvas(page2, viewport);
     const firstNonEmptyY = findFirstNonEmptyRow(canvas);
 
-    // 0.75in topMargin × 4 scale × 96 dpi ≈ 288 px. Allow ±4 px (≈ 0.04in / 1px @ 96dpi).
-    const expectedTopMarginPx = 0.75 * 96 * 4;
+    const PDF_PT_PER_IN = 72;
+    const expectedTopMarginPx = 0.75 * PDF_PT_PER_IN * SCALE;   // 216
     expect(firstNonEmptyY).toBeGreaterThan(expectedTopMarginPx - 4);
     expect(firstNonEmptyY).toBeLessThan(expectedTopMarginPx + 12);
   });
@@ -1918,14 +1976,18 @@ git commit -m "feat(v3): GroupOps applyGroupOps + gcUnreferencedGroups + tests"
 
 **Architectural note (discovered while writing Task 14 tests):**
 
-The spec § 2.6 originally specified auto-GC inside `GroupsPlugin.apply` on `tr.docChanged`. That's incompatible with PM's undo model — PM history only restores doc Steps, not plugin state. If the plugin auto-GCs a group on row deletion, undo replays the inverse step but the plugin's `apply` runs from the CURRENT (post-GC) state — it can't restore a group it already dropped.
+The spec § 2.6 originally specified auto-GC inside `GroupsPlugin.apply` on `tr.docChanged`. That's incompatible with PM's undo model — PM history only restores doc Steps, NOT plugin state and NOT arbitrary `tr.setMeta` keys. The undo transaction has the inverse doc Step but no inverse `groupOps`. If the plugin auto-GCs a group on row deletion, undo replays the inverse step but the plugin's `apply` runs from the CURRENT (post-GC) state with no `groupOps` meta — it can't restore the group.
 
-Resolution: **GC moves to serialize time** (Task 17). Plugin's `apply` only handles explicit ops (`groupsHydrate`, `groupOps`). Orphaned groups linger in plugin state during a session — that's fine because:
-- Save/serialize drops them via `gcUnreferencedGroups` at output time
-- AI context assembly skips groups whose anchor rows are missing
-- A session typically lasts minutes; the in-memory orphan-set is small
+**Resolution — operate the plugin in monotonic-grow / orphan-tolerant mode:**
 
-When v3 production code deletes a row whose group should also vanish (e.g. backspace empty entry.title → entry group gone), it issues an explicit `{type: 'delete', groupId}` paired with the doc step via `dispatchWithGroups`. That makes the deletion atomic AND reversible.
+- Plugin `apply` only handles explicit ops: `groupsHydrate` (full-state seed) and `groupOps` (incremental ops). No auto-GC.
+- Group create on row insert: emit `{type:'create', group}` paired with the doc step. After undo, doc step reverts but group lingers as orphan (PM doesn't restore the meta). Orphans are tolerated.
+- Group delete on row delete: **DO NOT emit** `{type:'delete'}` automatically. Group lingers as orphan. Undo trivially restores doc; group state never changed.
+- `{type:'delete'}` is reserved for the rare case where the user explicitly removes a group without removing its anchor row (e.g. UI command "delete this entry"). That deletion is symmetrically not reversible via PM undo.
+- Save/serialize (Task 17) runs `gcUnreferencedGroups` on output, dropping orphans from the persisted JSON.
+- AI context assembly (M6) walks rows and skips orphan groups (their anchor rows aren't there to be reasoned about).
+
+This makes plugin state a **monotonic-ish grow set during a session, GC'd only at save**. Memory cost: an unreferenced section-or-entry group is ~50 bytes; thousands of orphans accumulated in a session = small KB. Acceptable.
 
 - [ ] **Step 1: Implement plugin (no auto-GC)**
 
@@ -2035,8 +2097,26 @@ function makeRow(id: string, groupId?: string) {
   return schema.nodes.row.create({ id, semanticGroupId: groupId ?? null }, schema.text(' '));
 }
 
+// CONTRACT (verified by these tests):
+// - PM history captures doc Steps + history-plugin's own state, NOT arbitrary
+//   plugin meta from other plugins. So `tr.setMeta('groupOps', [...])` is
+//   NOT preserved across an undo/redo cycle.
+// - Therefore: undo of a paired (doc-step + groupOps) transaction restores
+//   the doc step but leaves the groups state UNCHANGED (no inverse op fires).
+// - Group state is asymmetric on undo. v3 production handles this by:
+//   1. Group create + doc create: groupOps['create'] paired with doc step.
+//      On undo, doc step reverses but group lingers as orphan. Save-time GC
+//      drops the orphan. AI / serialize layers ignore orphan groups.
+//   2. Group delete on row removal: NO groupOp emitted. Group lingers as
+//      orphan; save drops it. Undo trivially restores doc; group state
+//      never changed. (This is the recommended pattern.)
+// - Therefore production code's "delete group" pattern is to NOT emit
+//   {type:'delete'}, just let it become orphan and rely on save-time GC.
+//   {type:'delete'} is only useful when the user explicitly removes a group
+//   without removing the underlying anchor row — which is rare.
+
 describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verification)', () => {
-  it('undo restores groups state alongside doc state when groupOps travel with a doc step', () => {
+  it('undo restores doc; groups state remains as plugin computed it (orphan tolerated)', () => {
     const initialDoc = schema.node('doc', null, [makeRow('r1', 'g1')]);
     let state = EditorState.create({
       schema,
@@ -2055,22 +2135,26 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
     expect(getGroupsState(state).byId.size).toBe(2);
     expect(state.doc.childCount).toBe(2);
 
-    // Undo: doc and groups both revert (the transaction had a doc step, so it's in history).
+    // Undo: doc step reverses (r2 removed). Groups state UNCHANGED — PM history
+    // doesn't preserve `groupOps` meta on inverse transaction. g2 lingers as orphan.
     const undoCommand = undo(state, (newTr) => { state = state.apply(newTr); });
     expect(undoCommand).toBe(true);
     expect(state.doc.childCount).toBe(1);
-    expect(getGroupsState(state).byId.size).toBe(1);
-    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(false);
+    expect(getGroupsState(state).byId.size).toBe(2);                         // g2 still here (orphan)
+    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
 
-    // Redo: same single step replays both.
+    // Save-time GC (Task 17 serialize) is what drops orphan g2 from output.
+    // This test only asserts the in-memory plugin state contract.
+
+    // Redo: doc step reapplies (r2 returns). Groups state still has g2 (was orphan,
+    // now is referenced again — no plugin work needed).
     const redoCommand = redo(state, (newTr) => { state = state.apply(newTr); });
     expect(redoCommand).toBe(true);
     expect(state.doc.childCount).toBe(2);
-    expect(getGroupsState(state).byId.size).toBe(2);
     expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
   });
 
-  it('multi-step undo across paired (doc + groupOps) transactions restores groups per step', () => {
+  it('multi-step undo: doc reverts step-by-step; groups state monotonic-grow under create ops', () => {
     let state = EditorState.create({
       schema,
       doc: schema.node('doc', null, [makeRow('r1', 'g1')]),
@@ -2078,7 +2162,7 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
     });
     state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }]]) }));
 
-    // Step A: insert row r2 referencing new group g2 — groupOps PAIRED with doc step.
+    // Step A: insert row r2 + create group g2.
     {
       const r2 = makeRow('r2', 'g2');
       const tr = state.tr
@@ -2086,7 +2170,7 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
         .setMeta('groupOps', [{ type: 'create', group: { id: 'g2' as GroupId, kind: 'entry' } } satisfies GroupOp]);
       state = state.apply(tr);
     }
-    // Step B: insert row r3 referencing new group g3 — paired again.
+    // Step B: insert row r3 + create group g3.
     {
       const r3 = makeRow('r3', 'g3');
       const tr = state.tr
@@ -2097,16 +2181,16 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
     expect(getGroupsState(state).byId.size).toBe(3);
     expect(state.doc.childCount).toBe(3);
 
-    // Undo once → step B reverts: r3 gone, g3 gone, r2 + g2 still here.
+    // Undo step B → r3 removed, but g3 lingers as orphan. Groups state size unchanged.
     undo(state, (newTr) => { state = state.apply(newTr); });
     expect(state.doc.childCount).toBe(2);
-    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
-    expect(getGroupsState(state).byId.has('g3' as GroupId)).toBe(false);
+    expect(getGroupsState(state).byId.size).toBe(3);                         // g3 still here (orphan)
+    expect(getGroupsState(state).byId.has('g3' as GroupId)).toBe(true);
 
-    // Undo again → step A reverts.
+    // Undo step A → r2 removed, g2 also lingers.
     undo(state, (newTr) => { state = state.apply(newTr); });
     expect(state.doc.childCount).toBe(1);
-    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(false);
+    expect(getGroupsState(state).byId.size).toBe(3);                         // both g2, g3 lingering
   });
 
   it('group-only transaction (no doc change) is NOT recorded by history — explicit guard against silent reliance on PM internals', () => {
@@ -2544,15 +2628,16 @@ git commit -m "feat(v3): schema validator (I1-I4) + load-time header.name normal
 
 **Important — RichText wrap/unwrap adapter** (P1 issue surfaced during plan review):
 
-Persisted RichText is a PM doc JSON `{type:'doc',content:[paragraph,...]}`. The PM `plain` / `bullet` row node has `content: 'paragraph'` (test schema) or `content: 'inline*'` (production § 3.1). Either way, a `doc` node cannot be directly inserted as a row's content — the content models don't match.
+Persisted RichText is a PM doc JSON `{type:'doc',content:[{type:'paragraph',content:[inline...]}, ...]}` — a fully-formed valid PM doc, portable across clipboard / AI prompt / future schema versions.
 
-`hydrateInitialState` (rowToPMNodeJSON for plain/bullet) UNWRAPS the doc: it copies `row.content.content` (the paragraphs array) into the row's content. If the persisted doc is empty, hydrate inserts an empty paragraph so the schema's `paragraph` content rule is satisfied.
+The PM `plain` / `bullet` row node uses production schema § 3.1 `content: 'inline*'` — raw inline children only, no paragraph wrapper inside. This is what gives us "row IS a paragraph" UX without nested paragraph element.
 
-`serializeEditorState` (pmNodeToRow for plain/bullet) WRAPS back into a doc: takes `node.content.toJSON()` (paragraphs) and embeds them into a `{type:'doc',content:[...]}` shape. If the only paragraph is empty, persists as `content:[]` to keep round-trip byte-identical.
+The adapters bridge these two shapes:
 
-**Apply this adapter logic in both Tasks 17's `hydrate.ts` and `serialize.ts` exactly as shown below.** The round-trip test asserts byte-identity — any drift is caught immediately.
+- **hydrate** (`rowToPMNodeJSON` for plain/bullet) **UNWRAPS** persisted paragraphs: walks `row.content.content` (each child is `{type:'paragraph', content:[inline...]}`), extracts each paragraph's inline children, concatenates into the row's `inline*` content. Empty persisted doc → empty inline content (valid for `inline*`).
+- **serialize** (`pmNodeToRow` for plain/bullet) **WRAPS** inline back: takes `node.content.toJSON()` (raw inline) and synthesizes a single `{type:'paragraph',content:[inline]}` inside a `{type:'doc',content:[paragraph]}` wrapper. Empty inline → persists as `{type:'doc',content:[]}` (no paragraph) to keep round-trip byte-identical.
 
-Production § 3.1 schema uses `content: 'inline*'`. The same wrap/unwrap principle applies, just with inline children directly (no wrapping `paragraph` node). The test schema in this task uses `content: 'paragraph'` for compatibility with the `inline+` issue identified in the review — production code's `inline*` works the same way conceptually.
+The round-trip test asserts byte-identity. The test schema mirrors production `inline*` exactly (the previous version used `content:'paragraph'` — that drifted from production and is fixed here).
 
 **Files:**
 - Create: `frontend/src/components/resume/v3/schema/serialize.ts`
@@ -2572,22 +2657,24 @@ import { hydrateInitialState } from '../hydrate';
 import { serializeEditorState } from '../serialize';
 import { createGroupsPlugin } from '../../plugins/GroupsPlugin';
 
-// Test schema mirrors production § 3.1: plain/bullet have inline content
-// (here: text* + paragraph). Production M3 schema uses 'inline*' allowing marks;
-// for round-trip, text-only inline is sufficient to exercise the wrap/unwrap
-// adapters between persisted RichText (PM doc JSON) and row inline content.
+// Test schema MIRRORS production § 3.1 exactly. plain/bullet have `content:'inline*'`
+// (raw inline children: text + marks; no paragraph wrapper inside the row). The wrap/unwrap
+// adapters bridge persisted RichText (which IS a {type:'doc',content:[paragraph,...]} for
+// schema-validity reasons during transport / AI / clipboard) and the row's inline-only content.
+//
+// hydrate: extract paragraph children's INLINE content into the row directly.
+// serialize: synthesize a {type:'doc',content:[{type:'paragraph',content: rowInline}]} on output.
 const schema = new Schema({
   nodes: {
     doc: { content: 'row+' },
     text: {},
-    paragraph: { content: 'text*' },
     header_name:     { attrs: { id: { default: '' } }, content: 'text*' },
     header_contact:  { attrs: { id: { default: '' } }, content: 'text*' },
     section_heading: { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
     entry_title:     { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
     entry_meta:      { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
-    plain:           { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'paragraph' },
-    bullet:          { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'paragraph' },
+    plain:           { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'inline*', inline: false },
+    bullet:          { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'inline*', inline: false },
   },
 });
 
@@ -2658,17 +2745,21 @@ function rowToPMNodeJSON(row: ResumeRow, schema: Schema) {
 
   let content: unknown[];
   if (row.kind === 'plain' || row.kind === 'bullet') {
-    // RichText: row.content is a PM doc JSON wrapper { type:'doc', content:[paragraph,...] }.
-    // The plain/bullet PM node has `content: 'paragraph'` (or 'inline*' in production §3.1).
-    // We pass the doc's content array straight through — paragraphs become children of
-    // the row node. If the persisted doc is empty, we emit an empty paragraph so the
-    // schema (paragraph requirement) is satisfied.
-    const docContent = (row.content.content as unknown[]) ?? [];
-    if (docContent.length > 0) {
-      content = docContent;
-    } else {
-      content = [{ type: 'paragraph' }];
+    // RichText is persisted as { type:'doc', content:[{type:'paragraph',content:[inline...]}, ...] }.
+    // The PM `plain` / `bullet` row has `content: 'inline*'` (no paragraph wrapper allowed inside).
+    // Adapter UNWRAPS: extract inline content from each paragraph child of the persisted doc,
+    // concatenate them into the row's inline content. Multi-paragraph persisted content is
+    // flattened with no separator (or insert a hardBreak mark if you want to preserve breaks).
+    const docContent = (row.content.content as { type: string; content?: unknown[] }[]) ?? [];
+    const inline: unknown[] = [];
+    for (const child of docContent) {
+      if (child.type === 'paragraph' && child.content) {
+        inline.push(...child.content);
+      } else if (child.type === 'text') {
+        inline.push(child);   // tolerate persisted shape without paragraph wrapper
+      }
     }
+    content = inline;   // empty inline ([]) is valid for `inline*`
   } else if (row.kind === 'header.contact') {
     const c = row.content;
     const text = c.type === 'text' ? c.value : c.label;
@@ -2706,15 +2797,16 @@ function pmNodeToRow(node: PMNode): ResumeRow {
   const semanticGroupId = (node.attrs.semanticGroupId ?? undefined) as GroupId | undefined;
 
   if (kind === 'plain' || kind === 'bullet') {
-    // Wrap the row node's content (paragraphs / inline) inside a synthetic 'doc'
-    // node for the persisted RichText shape. This is the inverse of rowToPMNodeJSON
-    // which unwrapped the doc to copy paragraphs into the row.
-    const innerContent = node.content.toJSON() as unknown[];
-    // If the only child is an empty paragraph, persist as empty doc content (clean roundtrip).
-    const isEmptyParagraph = innerContent.length === 1
-      && (innerContent[0] as { type: string; content?: unknown[] }).type === 'paragraph'
-      && !(innerContent[0] as { content?: unknown[] }).content;
-    const persisted = isEmptyParagraph ? [] : innerContent;
+    // The PM row has `content: 'inline*'` (raw inline children, no paragraph wrapper).
+    // For persisted RichText, we synthesize a {type:'doc', content:[{type:'paragraph', content: inline}]}
+    // wrapper so the persisted JSON is a valid ProseMirror doc and is portable across
+    // different content rules (e.g. clipboard, AI prompt context, future schemas).
+    // Empty inline content persists as { type:'doc', content: [] } (no paragraph) to keep
+    // round-trip byte-identical with the empty-row input shape from hydrateInitialState.
+    const inline = node.content.toJSON() as unknown[];
+    const persisted = inline.length === 0
+      ? []
+      : [{ type: 'paragraph', content: inline }];
     return {
       id,
       kind,
