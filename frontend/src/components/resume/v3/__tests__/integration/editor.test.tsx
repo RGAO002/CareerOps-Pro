@@ -224,19 +224,22 @@ describe('T26 — M3 integration smoke', () => {
       if (idx === 6) to = off + 1 + 2;   // 2 chars into bullet2
     });
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-    const stepCountBefore = 0;
     let stepsApplied = 0;
-    const origDispatch = view.dispatch.bind(view);
-    (view as unknown as { dispatch: (t: import('@tiptap/pm/state').Transaction) => void }).dispatch = (tr) => {
+    // Use vi.spyOn so the patch auto-restores after the test.
+    const dispatchSpy = vi.spyOn(view, 'dispatch').mockImplementation(function (this: typeof view, tr) {
       stepsApplied += tr.steps.length;
-      origDispatch(tr);
-    };
-    const handled = handleBackspace(view);
-    expect(handled).toBe(true);
-    // The cross-row deletion should produce >= 1 transaction step but apply atomically.
-    expect(stepsApplied).toBeGreaterThan(stepCountBefore);
-    // Selection collapsed.
-    expect(view.state.selection.from).toBe(view.state.selection.to);
+      return Object.getPrototypeOf(view).dispatch.call(this, tr);
+    });
+    try {
+      const handled = handleBackspace(view);
+      expect(handled).toBe(true);
+      // The cross-row deletion should produce >= 1 transaction step but apply atomically.
+      expect(stepsApplied).toBeGreaterThan(0);
+      // Selection collapsed.
+      expect(view.state.selection.from).toBe(view.state.selection.to);
+    } finally {
+      dispatchSpy.mockRestore();
+    }
   });
 
   // 5. F4 orphan tolerance ----------------------------------------------
@@ -256,7 +259,13 @@ describe('T26 — M3 integration smoke', () => {
       if (idx === 6) to = off + 1 + node.content.size;
     });
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-    expect(() => handleBackspace(view)).not.toThrow();
+    const childCountBefore = view.state.doc.childCount;
+    let handled = false;
+    expect(() => { handled = handleBackspace(view); }).not.toThrow();
+    // F4 strengthening: the no-throw must not be vacuous — backspace was either
+    // handled (intercepted) OR fell through to PM native delete that mutated the doc.
+    const childCountAfter = view.state.doc.childCount;
+    expect(handled === true || childCountAfter < childCountBefore).toBe(true);
   });
 
   // 6. F5 enter at end of section.heading -------------------------------
@@ -372,7 +381,13 @@ describe('T26 — M3 integration smoke', () => {
     expect(view.state.doc.childCount).toBe(childCountBefore);
     // Group state contract per § 2.6: groupOps meta is NOT preserved across PM history,
     // so the created section group lingers as orphan in plugin state. Save-time GC drops it.
-    // We only assert the doc step was reverted atomically here.
+    // Pin this contract: the section group created during /heading must STILL be present
+    // in plugin state after undo (otherwise the comment is wrong and so is the contract).
+    const groupsAfter = groupsPluginKey.getState(view.state)!;
+    const sectionGroupsCreatedDuringTest = Array.from(groupsAfter.byId.values()).filter(
+      (g) => g.kind === 'section',
+    );
+    expect(sectionGroupsCreatedDuringTest.length).toBeGreaterThanOrEqual(1);
   });
 
   // 11. AI lock blocks user / allows allowLockedEdit -------------------
