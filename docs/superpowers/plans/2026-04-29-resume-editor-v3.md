@@ -537,25 +537,13 @@ Replace the `[data-row-kind="..."]` selectors in `poc.css`:
 }
 .row-bullet .row-content { font: 400 12px/1.5 Inter, sans-serif; }
 
-/* Pagination break + token system (unchanged from Task 1) */
-.pagination-break {
-  display: block;
-  height: calc(var(--page-margin-bottom) + var(--page-break-screen-gap) + var(--page-margin-top));
-  break-before: page;
-  pointer-events: none;
-  user-select: none;
-}
-@media print {
-  @page {
-    size: 8.5in 11in;
-    margin: var(--page-margin-top) var(--page-margin-right)
-            var(--page-margin-bottom) var(--page-margin-left);
-  }
-  .poc-canvas-root { background: white; }
-  .poc-editor-wrapper { padding: 0; box-shadow: none; max-width: none; }
-  .pagination-break { height: 0; }
-}
+/* Pagination break + token system (unchanged from Task 1 — DO NOT redefine
+   .pagination-break here. It's set up by Task 1 with NO constant height
+   (PaginationPlugin sets per-instance inline style.height in Task 4) and
+   the print rule uses height:0 !important to override the inline style. */
 ```
+
+(The Task 1 pagination CSS already covers `.pagination-break` and `@media print { @page {...} .pagination-break { height: 0 !important } }`. This Task 2 step ONLY rewrites row-related selectors; it must NOT redefine pagination CSS.)
 
 - [ ] **Step 3: Verify NodeViews render**
 
@@ -625,12 +613,28 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
   const pageGeometries: PageGeometry[] = [];
   let pageIndex = 0;
   let yWithinContent = 0;               // distance from current page's CONTENT top (= page-card top + topMargin)
-  let pageTopPx = 0;                    // canvas Y where current page card's top edge sits (screen)
 
-  // Page 1's card top is at the editor wrapper's first row's top minus topMargin.
-  // For PoC: page 1 starts at y=0 (canvas root coordinate), card top = 0.
-  // (Production task M5 may translate by editor-wrapper offsetTop.)
-  pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
+  // KEY INSIGHT (P1 review fix):
+  //
+  // Page cards sit on a FIXED visual grid: pageN.top = N * (pageHeight + screenGap).
+  // The grid is independent of where breaks happen — every page card is a full
+  // pageHeight tall and they're separated by exactly screenGap.
+  //
+  // The dynamic per-break `screenHeightPx` is what fills the FLOW so that the
+  // first row of page N+1 lands at canvas Y == cardN+1.top + topMargin. The
+  // formula remainingSpace + bottomMargin + screenGap + topMargin computes
+  // exactly this flow-fill amount; it does NOT define cardN+1.top.
+  //
+  // Concretely (1000px page, 100/100 margins, 32px gap):
+  //   page1 card: top=0, bottom=1000
+  //   page2 card: top=1032, bottom=2032
+  //   page3 card: top=2064, bottom=3064
+  //   etc.
+  //
+  // The break decoration's height varies (depends on which row caused the break),
+  // but the CARD positions don't.
+
+  pageGeometries.push({ pageIndex, topPx: 0, heightPx: pageHeightPx });
 
   for (let i = 0; i < rowElements.length; i++) {
     const rect = rowElements[i].getBoundingClientRect();
@@ -638,23 +642,19 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
 
     // If this row would overflow current page's content area, break before it.
     if (yWithinContent + rowHeight > contentHeightPerPage && yWithinContent > 0) {
-      // Compute remaining space at bottom of breaking page (this is the WHITE
-      // space that the row could not fit into). The screen widget must occupy
-      // at least this much PLUS the page-to-page margins to keep the next row
-      // visually aligned with the next page-card.
+      // Whitespace at bottom of breaking page (could not fit the row).
       const remainingContentSpace = contentHeightPerPage - yWithinContent;
+      // Screen widget height: remainingSpace + bottomMargin + screenGap + topMargin
+      // pushes the next row to land exactly at next-card-top + topMargin.
       const screenHeightPx = remainingContentSpace + marginBottomPx + screenGapPx + marginTopPx;
 
       pageBreaks.push({ afterRowIndex: i - 1, pageIndex, screenHeightPx });
 
-      // Move to next page.
+      // Next card sits on the fixed grid:
+      //   nextCardTop = currentCardTop + pageHeightPx + screenGapPx
       pageIndex += 1;
-      // The next page-card's top sits where the breaking page's bottom ended,
-      // plus the screen gap (cards are visually separated). On screen, that's
-      // exactly: previous pageTop + the widget's screenHeightPx (which contains
-      // the gap by construction).
-      pageTopPx += screenHeightPx;
-      pageGeometries.push({ pageIndex, topPx: pageTopPx, heightPx: pageHeightPx });
+      const nextCardTopPx = pageIndex * (pageHeightPx + screenGapPx);
+      pageGeometries.push({ pageIndex, topPx: nextCardTopPx, heightPx: pageHeightPx });
       yWithinContent = 0;
     }
     yWithinContent += rowHeight;
@@ -664,7 +664,7 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
 }
 ```
 
-Note: `pageTopPx` is computed cumulatively from per-break heights, so PageChromeLayer can render cards at exactly the screen positions where break decorations push the next row to. PaginationPlugin (Task 4) reads this directly — single SoT preserved.
+Note: `topPx` is computed from a fixed visual grid (`pageIndex * (pageHeight + screenGap)`), NOT from cumulative break heights. The break decoration's `screenHeightPx` only governs flow positioning of the next row; it does not define the next card's position. This decoupling is what makes early breaks (caused by tall rows) still result in cleanly-aligned page cards.
 
 - [ ] **Step 2: Write the failing unit test**
 
@@ -693,7 +693,7 @@ describe('computeLayout', () => {
     expect(out.pageGeometries[0]).toEqual({ pageIndex: 0, topPx: 0, heightPx: 1000 });
   });
 
-  it('breaks to a new page when next row would overflow; emits per-break screen height', () => {
+  it('breaks to a new page when next row would overflow; emits per-break screen height; cards on fixed grid', () => {
     // contentHeight = 1000 - 200 = 800. Rows 400 + 400 = 800 fits exactly, 400 more does not.
     const rows = [makeElement(400), makeElement(400), makeElement(400)];
     const out = computeLayout({ ...baseInput, rowElements: rows });
@@ -701,16 +701,17 @@ describe('computeLayout', () => {
     expect(out.pageBreaks).toHaveLength(1);
     expect(out.pageBreaks[0].afterRowIndex).toBe(1);
     expect(out.pageBreaks[0].pageIndex).toBe(0);
-    // remaining space = 800 - 800 = 0. screenHeightPx = 0 + 100 + 32 + 100 = 232.
+    // remaining space = 800 - 800 = 0. screenHeightPx = 0 + 100 + 32 + 100 = 232 (flow fill).
     expect(out.pageBreaks[0].screenHeightPx).toBe(232);
 
+    // Page cards sit on the fixed visual grid: page2.top = 1 × (pageHeight + gap) = 1032.
+    // Independent of break flow height; it's a fixed-grid layout.
     expect(out.pageGeometries).toHaveLength(2);
     expect(out.pageGeometries[0]).toEqual({ pageIndex: 0, topPx: 0, heightPx: 1000 });
-    // Page 2's card top = pageTopPx after first break = 0 + 232 = 232.
-    expect(out.pageGeometries[1]).toEqual({ pageIndex: 1, topPx: 232, heightPx: 1000 });
+    expect(out.pageGeometries[1]).toEqual({ pageIndex: 1, topPx: 1032, heightPx: 1000 });
   });
 
-  it('break that happens early because next row is tall produces larger screen height', () => {
+  it('break that happens early because next row is tall produces larger flow-fill height; card grid unchanged', () => {
     // contentHeight = 800. Row 1 = 400 (fits). Row 2 = 600 (would overflow → break before it).
     // Remaining space at break = 800 - 400 = 400. screenHeightPx = 400 + 100 + 32 + 100 = 632.
     const rows = [makeElement(400), makeElement(600)];
@@ -718,7 +719,21 @@ describe('computeLayout', () => {
 
     expect(out.pageBreaks).toHaveLength(1);
     expect(out.pageBreaks[0].screenHeightPx).toBe(632);
-    expect(out.pageGeometries[1].topPx).toBe(632);
+    // Page 2 card position is the SAME 1032 as the previous test, even though
+    // the break flow-fill height differs. The card grid is independent of
+    // when content broke.
+    expect(out.pageGeometries[1].topPx).toBe(1032);
+  });
+
+  it('three-page document: card grid spans 0, 1032, 2064', () => {
+    // 6 rows of 400 each → 3 pages: rows[0..1] on p0, rows[2..3] on p1, rows[4..5] on p2.
+    const rows = Array.from({ length: 6 }, () => makeElement(400));
+    const out = computeLayout({ ...baseInput, rowElements: rows });
+
+    expect(out.pageGeometries).toHaveLength(3);
+    expect(out.pageGeometries[0].topPx).toBe(0);
+    expect(out.pageGeometries[1].topPx).toBe(1032);
+    expect(out.pageGeometries[2].topPx).toBe(2064);
   });
 
   it('handles a single row that exceeds page height (no infinite loop)', () => {
@@ -2043,28 +2058,28 @@ git commit -m "feat(v3): GroupsPlugin with apply method + GC + hydration"
 
 ---
 
-### Task 14: GroupsPlugin undo/redo verification (the reviewer's specific concern)
+### Task 14: GroupsPlugin undo/redo contract — empirical verification
 
 **Spec ref:** § 2.6 architectural risk; reviewer note "GroupsPlugin state undo/redo behavior must be tested in M2 (not just trusted)".
 
-**Goal:** Empirically verify that ProseMirror's history extension captures plugin state alongside doc-changing transactions, so Cmd+Z restores both atomically.
+**Goal:** Empirically verify the **honest** contract for groups state under PM undo/redo. The contract is:
 
-**Architectural constraint discovered while writing this test (key insight):**
+> **PM history captures doc Steps and the history plugin's own state, NOT arbitrary `tr.setMeta` keys from other plugins.** Therefore `tr.setMeta('groupOps', [...])` is NOT replayed by an undo's inverse transaction. Undo restores the doc step but leaves groups state UNCHANGED — meaning groups created by a paired (doc + groupOps:create) transaction LINGER as orphans after undo. This is **asymmetric, intentional, and tolerated**.
 
-ProseMirror's `prosemirror-history` plugin records **doc steps**, not arbitrary plugin-state-only transactions. A transaction with `tr.setMeta('groupOps', [...])` and **no doc change** does NOT enter the history stack — `undo` will skip past it.
+These tests explicitly assert that:
+1. After undo of a paired (doc-create + groupOps:create) transaction, the doc reverts but the created group **remains** in plugin state (orphan).
+2. After undo of multi-step paired transactions, the doc reverts step-by-step but groups **monotonically grow** (orphans accumulate).
+3. Group-state-only transactions (no doc change) are not recorded by PM history at all — confirming we cannot rely on plugin-only meta being undoable.
+4. The recommended row-deletion pattern (delete row + emit NO group delete op) gives clean undo: doc is restored, group state was never touched.
 
-This means **`groupOps` must always travel with a doc-changing transaction** to be undoable. The natural flows we care about all satisfy this:
+**Why the asymmetry is OK** — orphans are dropped at serialize time (Task 17's `serializeEditorState` calls `gcUnreferencedGroups`), and AI context assembly (M6) skips groups whose anchor rows are missing. In-memory orphan accumulation during a session is bounded and inexpensive (~50 bytes per group).
 
-- Drag drop → moves rows (doc change) + rebelongs groupId (`groupOps`) ✓
-- Backspace empty entry.title → downgrades node kind (doc change) + deletes entry group (`groupOps`) ✓
-- Slash `/heading` → setNodeMarkup (doc change) + creates section group (`groupOps`) ✓
-- AI apply → modifies row content/positions (doc change) + group ops as needed ✓
+**v3 production code rules:**
+- Group create when row inserted: emit `groupOps['create']` paired with doc step. Tolerate undo orphans.
+- Group delete when row removed: **do NOT emit `groupOps['delete']`**. Let group linger; save-time GC drops it. Keeps undo trivially correct.
+- Pure group-only operations (rare; e.g. UI command to change a section's `role` without doc edit): not undoable via PM history. Use `addToHistory: false` to make it explicitly so.
 
-**Pure group-state-only operations** (e.g. UI to change a section's `role` without touching rows) are rare, and v3 handles them via either:
-- (a) Pair with a no-op doc transaction (e.g. `tr.setNodeAttribute(pos, 'id', sameId)` to force a step) — preferred when undo is desired
-- (b) Use a meta `addToHistory: false` flag — when the operation is intentionally not undoable
-
-The test below covers the common (doc + groupOps) path AND verifies that group-only transactions are NOT undoable as expected — so we don't silently rely on undefined PM behavior.
+The tests below assert this exact contract.
 
 **Files:**
 - Create: `frontend/src/components/resume/v3/plugins/__tests__/GroupsPlugin.undoredo.test.ts`
@@ -2679,6 +2694,37 @@ const schema = new Schema({
 });
 
 describe('serialize/hydrate round-trip', () => {
+  it('serialize drops orphan groups (post-undo orphan case — save-time GC contract)', () => {
+    // Hydrate with two groups, then mutate state so one is orphaned, then serialize.
+    const original: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'r1' as RowId, kind: 'header.name', content: { text: 'Test' } },
+        { id: 'r2' as RowId, kind: 'section.heading', content: { text: 'Exp' }, semanticGroupId: 'g1' as GroupId },
+      ],
+      groups: [
+        { id: 'g1' as GroupId, kind: 'section', role: 'experience' },
+        // g2 has no row referencing it — pretend it's a left-over orphan from
+        // a prior plugin-state operation that was undone (PM doesn't restore
+        // group plugin state on undo, see Task 14 contract).
+        { id: 'g2' as GroupId, kind: 'entry' },
+      ],
+    };
+    const { docJSON, groups: initialGroups } = hydrateInitialState(original, schema);
+    let state = EditorState.create({
+      schema,
+      doc: schema.nodeFromJSON(docJSON),
+      plugins: [createGroupsPlugin()],
+    });
+    state = state.apply(state.tr.setMeta('groupsHydrate', initialGroups));
+
+    const serialized = serializeEditorState(state);
+    // g2 is dropped (no row references it).
+    expect(serialized.groups.map((g) => g.id)).toEqual(['g1']);
+    // g1 is preserved (referenced by r2).
+    expect(serialized.groups[0].kind).toBe('section');
+  });
+
   it('round-trip preserves rows + groups byte-identically', () => {
     const original: ResumeDocV3 = {
       schemaVersion: 3,
@@ -2700,11 +2746,14 @@ describe('serialize/hydrate round-trip', () => {
     };
 
     const { docJSON, groups: initialGroups } = hydrateInitialState(original, schema);
-    const state = EditorState.create({
+    // PM transactions are bound to their originating EditorState. Build the
+    // state first, THEN call state.tr (not a tr from a second EditorState).
+    let state = EditorState.create({
       schema,
       doc: schema.nodeFromJSON(docJSON),
       plugins: [createGroupsPlugin()],
-    }).apply(EditorState.create({ schema }).tr.setMeta('groupsHydrate', initialGroups));
+    });
+    state = state.apply(state.tr.setMeta('groupsHydrate', initialGroups));
 
     const roundTrip = serializeEditorState(state);
     expect(roundTrip.schemaVersion).toBe(3);
@@ -2781,13 +2830,30 @@ Create `frontend/src/components/resume/v3/schema/serialize.ts`:
 import type { EditorState } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { groupsPluginKey } from '../plugins/GroupsPlugin';
-import type { GroupId, ResumeDocV3, ResumeRow, RowId } from './types';
+import { gcUnreferencedGroups } from '../plugins/GroupOps';
+import type { GroupId, ResumeDocV3, ResumeRow, RowId, SemanticGroup } from './types';
 
 export function serializeEditorState(state: EditorState): ResumeDocV3 {
   const rows: ResumeRow[] = [];
-  state.doc.forEach((node) => { rows.push(pmNodeToRow(node)); });
+  const referencedGroupIds = new Set<GroupId>();
+  state.doc.forEach((node) => {
+    rows.push(pmNodeToRow(node));
+    const gid = node.attrs.semanticGroupId as GroupId | undefined;
+    if (gid) referencedGroupIds.add(gid);
+  });
+
+  // Save-time GC. Plugin state is monotonic-grow / orphan-tolerant during a
+  // session; serialization is the ONLY GC point so persisted JSON stays clean.
+  // Walk groups, also expand parentSectionGroupId references (an entry's parent
+  // section group must be kept even if no row directly references it via
+  // semanticGroupId — but in this v3 model section groups ARE always directly
+  // referenced by their section.heading row, so this is mostly defensive).
   const groupsState = groupsPluginKey.getState(state) ?? { byId: new Map() };
-  const groups = Array.from(groupsState.byId.values());
+  const gcedState = gcUnreferencedGroups(groupsState, referencedGroupIds);
+  // After GC, also clear dangling parentSectionGroupId on entry groups
+  // whose parent section was GC'd. (gcUnreferencedGroups already does this.)
+  const groups: SemanticGroup[] = Array.from(gcedState.byId.values());
+
   return { schemaVersion: 3, rows, groups };
 }
 
