@@ -1,5 +1,7 @@
 // frontend/src/stores/aiSuggestion.ts
 import { create } from 'zustand';
+import type { Editor } from '@tiptap/core';
+import type { Transaction } from '@tiptap/pm/state';
 import {
   _registerAiApplyUndoCallback,
   type AiApplyUndoDirection,
@@ -26,7 +28,10 @@ export type EntrySnapshot = { kind: 'entry'; id: BlockId; title: string; meta: s
 export type SectionSnapshot = { kind: 'section'; id: BlockId; heading: string; role: string; entries: EntrySnapshot[] };
 export type BlockSnapshot = BulletSnapshot | EntrySnapshot | SectionSnapshot;
 
-export type SuggestionStatus = 'streaming' | 'pending' | 'accepted' | 'rejected' | 'superseded';
+// 'applied' is v3-only (T39): set when a PM transaction with meta('aiApply')
+// is observed. Distinct from v2's 'accepted' which is the user-confirmed state
+// after server acknowledgment. v2 callers never produce 'applied'.
+export type SuggestionStatus = 'streaming' | 'pending' | 'accepted' | 'applied' | 'rejected' | 'superseded';
 
 interface Base {
   id: string;
@@ -82,6 +87,11 @@ interface SuggestionStoreState {
   markStatusLocally: (id: string, status: SuggestionStatus, ts?: number) => void;
   allInRunArePending: (suggestionIds: string[]) => boolean;
   postStatusToBackend: (id: string, status: SuggestionStatus) => Promise<{ok: boolean; current?: string; noop?: boolean}>;
+  /** T39 — Subscribe to PM transactions on the given editor. On a tx with
+   *  meta('aiApply'), flip listed suggestion ids to 'applied' and remember the
+   *  ids so a subsequent undo (PM history meta 'history$') can restore them.
+   *  Returns a detach function. */
+  attachToEditor: (editor: Editor) => () => void;
 }
 
 export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
@@ -119,7 +129,7 @@ export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
     delete (updated as Base).rejectedAt;
     delete (updated as Base).supersededAt;
     const t = ts ?? Date.now();
-    if (status === 'accepted') (updated as Base).appliedAt = t;
+    if (status === 'accepted' || status === 'applied') (updated as Base).appliedAt = t;
     else if (status === 'rejected') (updated as Base).rejectedAt = t;
     else if (status === 'superseded') (updated as Base).supersededAt = t;
     return { ...st, byId: { ...st.byId, [id]: updated } };
@@ -137,6 +147,56 @@ export const useSuggestionStore = create<SuggestionStoreState>((set, get) => ({
     });
     if (!r.ok) return { ok: false };
     return r.json();
+  },
+
+  attachToEditor: (editor: Editor) => {
+    // History stack of suggestion-id batches, parallel to PM history depth.
+    // Each entry is the suggestionIds set from one aiApply transaction.
+    // On undo we pop the top and flip those back to 'pending'.
+    // On a fresh aiApply we push.
+    // Note: this is a best-effort mirror — if the user issues N undos, we pop N
+    // entries; N redos push them back. Branching is handled by clearing the
+    // future stack on a fresh aiApply.
+    const undoStack: string[][] = [];
+    const redoStack: string[][] = [];
+
+    const onTransaction = ({ transaction }: { editor: Editor; transaction: Transaction }) => {
+      // Detect undo/redo: PM history extension stamps meta on the key 'history$'
+      // (PluginKey('history') hashes to "history$"). Value is { redo, historyState }.
+      const histMeta = transaction.getMeta('history$') as { redo?: boolean } | undefined;
+      if (histMeta) {
+        const stack = histMeta.redo ? redoStack : undoStack;
+        const otherStack = histMeta.redo ? undoStack : redoStack;
+        const batch = stack.pop();
+        if (batch && batch.length > 0) {
+          const targetStatus: SuggestionStatus = histMeta.redo ? 'applied' : 'pending';
+          const store = useSuggestionStore.getState();
+          for (const id of batch) {
+            store.markStatusLocally(id, targetStatus);
+          }
+          otherStack.push(batch);
+        }
+        return;
+      }
+      // Detect aiApply.
+      const aiApply = transaction.getMeta('aiApply') as
+        | { runId: string; suggestionIds: string[] }
+        | undefined;
+      if (aiApply && aiApply.suggestionIds && aiApply.suggestionIds.length > 0) {
+        const store = useSuggestionStore.getState();
+        for (const id of aiApply.suggestionIds) {
+          store.markStatusLocally(id, 'applied');
+        }
+        undoStack.push([...aiApply.suggestionIds]);
+        // A fresh non-history apply invalidates the redo branch.
+        redoStack.length = 0;
+      }
+    };
+
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
   },
 }));
 
