@@ -20,10 +20,11 @@ interface RowCtx {
   atStart: boolean;
 }
 
+const STRUCTURAL_ANCHOR_KINDS = new Set(['header_name', 'section_heading', 'entry_title', 'entry_meta']);
+
 function rowContext(view: EditorView): RowCtx | null {
   const { state } = view;
   const sel = state.selection;
-  // Note: non-collapsed selections fall through to PM native behavior (delete + split).
   const $from = state.doc.resolve(sel.from);
   if ($from.depth < 1) return null;
   const node = $from.node(1);
@@ -43,9 +44,17 @@ function rowContext(view: EditorView): RowCtx | null {
 }
 
 export function handleEnter(view: EditorView): boolean {
+  const { state } = view;
+  // Do not run row-splitting logic over a range selection. The old path used
+  // selection.from only, which could duplicate row content/anchors when Enter
+  // was pressed with text selected across rows.
+  if (!state.selection.empty) {
+    view.dispatch(state.tr.deleteSelection());
+    return true;
+  }
+
   const ctx = rowContext(view);
   if (!ctx) return false;
-  const { state } = view;
 
   // Empty bullet -> downgrade to plain (no group change).
   if (ctx.kind === 'bullet' && ctx.isEmpty) {
@@ -62,17 +71,24 @@ export function handleEnter(view: EditorView): boolean {
   // Determine new row kind.
   const targetKindBelow = nextKindBelow(ctx);
 
-  // Mid-row split: keep same kind on both sides; PM split-style.
+  // Mid-row split. Plain/bullet rows split into the same row kind. Structural
+  // anchor rows (section heading, entry title/meta, header name) must NOT clone
+  // themselves with the same semanticGroupId: v3->v2 serialization treats those
+  // rows as section/entry anchors, so duplicates can make PDF export repeat
+  // whole sections. Continuation text becomes a safe editable row instead.
   if (!ctx.atEnd && !ctx.atStart) {
     const splitKind = ctx.kind;
-    const splitNode = state.schema.nodes[splitKind];
+    const continuationKind = continuationKindFor(ctx);
+    const beforeNodeType = state.schema.nodes[splitKind];
+    const afterNodeType = state.schema.nodes[continuationKind];
     const sel = state.selection;
     const offsetInRow = state.doc.resolve(sel.from).parentOffset;
     const beforeText = ctx.node.textBetween(0, offsetInRow);
     const afterText = ctx.node.textBetween(offsetInRow, ctx.node.content.size);
-    const before = splitNode.create(ctx.node.attrs, beforeText ? state.schema.text(beforeText) : null);
-    const after = splitNode.create(
-      { ...ctx.node.attrs, id: makeId('r') },
+    const before = beforeNodeType.create(ctx.node.attrs, beforeText ? state.schema.text(beforeText) : null);
+    const afterGroupId = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const after = afterNodeType.create(
+      insertedAttrs(continuationKind, makeId('r'), afterGroupId),
       afterText ? state.schema.text(afterText) : null,
     );
     const tr = state.tr.replaceWith(ctx.pos, ctx.pos + ctx.node.nodeSize, [before, after]);
@@ -83,18 +99,41 @@ export function handleEnter(view: EditorView): boolean {
     return true;
   }
 
-  // At-start: insert new empty row of same kind ABOVE (treat as default split-at-0 for now → just split).
+  // At-start: insert a new row above. Structural anchor rows use a non-anchor
+  // continuation kind to avoid duplicate section/entry anchors with the same
+  // semanticGroupId.
   if (ctx.atStart && !ctx.isEmpty) {
-    // Behaves like splitting before all content: insert empty same-kind above.
-    const sameKind = state.schema.nodes[ctx.kind];
-    const newNode = sameKind.create({ ...ctx.node.attrs, id: makeId('r') }, null);
+    const newKind = STRUCTURAL_ANCHOR_KINDS.has(ctx.kind) ? continuationKindFor(ctx) : ctx.kind;
+    const newType = state.schema.nodes[newKind];
+    const newGroupId = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const newNode = newType.create(insertedAttrs(newKind, makeId('r'), newGroupId), null);
     const tr = state.tr.insert(ctx.pos, newNode);
+    tr.setSelection(TextSelection.create(tr.doc, ctx.pos + 1));
     view.dispatch(tr);
     return true;
   }
 
   // At end (empty or not): produce target kind below.
   return insertBelow(view, ctx, targetKindBelow);
+}
+
+function continuationKindFor(ctx: RowCtx): string {
+  switch (ctx.kind) {
+    case 'header_name': return 'header_contact';
+    case 'section_heading': return 'plain';
+    case 'entry_title':
+    case 'entry_meta':
+      return 'plain';
+    default:
+      return ctx.kind;
+  }
+}
+
+function insertedAttrs(kind: string, id: string, semanticGroupId: string | null): Record<string, unknown> {
+  if (kind === 'plain' || kind === 'bullet' || kind === 'entry_title' || kind === 'entry_meta' || kind === 'section_heading') {
+    return { id, semanticGroupId };
+  }
+  return { id };
 }
 
 function nextKindBelow(ctx: RowCtx): string {

@@ -267,7 +267,22 @@ export function v3ToV2(v3: ResumeDocV3, previous: ResumeDocV2): ResumeDocV2 {
     }
   }
 
-  const sectionRows = v3.rows.filter((row) => row.kind === 'section.heading');
+  const sectionRows: Extract<ResumeRow, { kind: 'section.heading' }>[] = [];
+  const seenSectionAnchors = new Map<string, number>();
+  for (const row of v3.rows) {
+    if (row.kind !== 'section.heading') continue;
+    const anchor = row.semanticGroupId || row.id;
+    const existingIndex = seenSectionAnchors.get(anchor);
+    if (existingIndex !== undefined) {
+      const existing = sectionRows[existingIndex];
+      if (!existing.content.text.trim() && row.content.text.trim()) {
+        sectionRows[existingIndex] = row;
+      }
+      continue;
+    }
+    seenSectionAnchors.set(anchor, sectionRows.length);
+    sectionRows.push(row);
+  }
   // Save-time dedupe: even though v2ToV3 dedupes on LOAD, defensive belt-and-
   // braces on SAVE prevents corrupt v3 in-memory state (e.g. groups Map after
   // a buggy mutation) from writing duplicate-id entries / sections back to

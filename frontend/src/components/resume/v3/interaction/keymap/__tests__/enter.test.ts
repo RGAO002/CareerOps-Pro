@@ -152,6 +152,37 @@ describe('Enter keymap (§ 3.5)', () => {
     expect(view.state.doc.child(1).textContent).toBe('world');
   });
 
+  it('Enter at start of section.heading inserts a non-anchor row above', () => {
+    const view = makeView(
+      [{ kind: 'section_heading', id: 'r1', gid: 'gS', text: 'Experience' }],
+      [{ type: 'create', group: { id: 'gS' as GroupId, kind: 'section', role: 'experience' } }],
+    );
+    placeCursor(view, 0, 0);
+    handleEnter(view);
+
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.doc.child(0).type.name).toBe('plain');
+    expect(view.state.doc.child(1).type.name).toBe('section_heading');
+    expect(view.state.doc.child(1).attrs.semanticGroupId).toBe('gS');
+  });
+
+  it('Enter mid-section.heading does not clone the section anchor group', () => {
+    const view = makeView(
+      [{ kind: 'section_heading', id: 'r1', gid: 'gS', text: 'Experience' }],
+      [{ type: 'create', group: { id: 'gS' as GroupId, kind: 'section', role: 'experience' } }],
+    );
+    placeCursor(view, 0, 4);
+    handleEnter(view);
+
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.doc.child(0).type.name).toBe('section_heading');
+    expect(view.state.doc.child(0).attrs.semanticGroupId).toBe('gS');
+    expect(view.state.doc.child(0).textContent).toBe('Expe');
+    expect(view.state.doc.child(1).type.name).toBe('plain');
+    expect(view.state.doc.child(1).attrs.semanticGroupId).toBeNull();
+    expect(view.state.doc.child(1).textContent).toBe('rience');
+  });
+
   it('Enter on section.heading with no parent section context creates entry with undefined parentSectionGroupId (F4 orphan-tolerant)', () => {
     // Section group missing from plugin state — F4 means readers must not throw.
     const view = makeView([{ kind: 'section_heading', id: 'r1', gid: 'gMissing', text: 'X' }]);

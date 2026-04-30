@@ -155,17 +155,26 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
       const remainingContentSpace = contentHeightPerPage - breakY;
       const screenHeightPx = remainingContentSpace + marginBottomPx + screenGapPx + marginTopPx;
 
-      pageBreaks.push({ afterRowIndex: breakIdx - 1, pageIndex, screenHeightPx });
+      const afterRowIndex = breakIdx - 1;
+      if (afterRowIndex < 0) {
+        // Cannot insert a break before the first row in the document. This can
+        // only happen with pathological geometry; keep the editor usable rather
+        // than emitting an invalid decoration position.
+        continue;
+      }
+
+      pageBreaks.push({ afterRowIndex, pageIndex, screenHeightPx });
 
       pageIndex += 1;
       const nextCardTopPx = pageIndex * (pageHeightPx + screenGapPx);
       pageGeometries.push({ pageIndex, topPx: nextCardTopPx, heightPx: pageHeightPx });
 
       pageFirstRowTop = breakRect.top;
-      // Re-anchor to breakIdx. Outer for-loop's i++ will move us to
-      // breakIdx + 1 next; rows breakIdx + 1..i (which we'd already scanned)
-      // are measured against the new anchor and accumulated normally.
-      i = breakIdx;
+      // Re-anchor to breakIdx and reprocess that row as the first row on the
+      // new page. Skipping it hides first-row overflow/geometry from the next
+      // page pass, which shows up after many Enter-created rows as page chrome
+      // and content flow drifting apart.
+      i = breakIdx - 1;
     }
   }
 

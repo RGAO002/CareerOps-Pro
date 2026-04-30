@@ -103,4 +103,24 @@ describe('v2Adapter', () => {
     expect(v2.sections[0].entries[0].bullets[0].content.content[0].content?.[0].text).toBe('Built systems.');
     expect(new Date(v2.metadata.updated_at).getTime()).toBeGreaterThan(0);
   });
+
+  it('does not serialize duplicate section headings with the same group as duplicate sections', () => {
+    const v3 = v2ToV3(sampleV2);
+    const sectionHeading = v3.rows.find((row) => row.kind === 'section.heading');
+    expect(sectionHeading).toBeTruthy();
+    const duplicate = {
+      ...sectionHeading!,
+      id: 'duplicate-section-heading',
+      content: { text: '' },
+    } as typeof v3.rows[number];
+    v3.rows.splice(v3.rows.indexOf(sectionHeading!), 0, duplicate);
+
+    const v2 = v3ToV2(v3, sampleV2);
+
+    expect(v2.sections).toHaveLength(1);
+    expect(v2.sections[0].id).toBe('section-exp');
+    expect(v2.sections[0].heading).toBe('Experience');
+    expect(v2.sections[0].entries).toHaveLength(1);
+    expect(v2.sections[0].entries[0].bullets).toHaveLength(2);
+  });
 });
