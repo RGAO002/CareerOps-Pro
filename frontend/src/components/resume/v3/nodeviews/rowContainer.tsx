@@ -105,7 +105,11 @@ export function RowContainer(props: RowContainerProps) {
         contentEditable={false}
         data-edit-only=""
         aria-hidden="true"
-      />
+      >
+        {/* 6-dot drag handle, design_handoff_ai_sidebar/.r-handle pattern:
+         * 2 columns × 3 rows of 3px round dots in a CSS grid. */}
+        <i /><i /><i /><i /><i /><i />
+      </span>
       {prefix}
       <NodeViewContent
         as="div"

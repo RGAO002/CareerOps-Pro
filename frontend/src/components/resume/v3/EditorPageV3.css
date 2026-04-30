@@ -298,7 +298,17 @@
 .v3-print-canvas-root .row.is-block-selected.is-block-selected-first::before,
 .v3-print-canvas-root .row.is-block-selected.is-block-selected-last::before { content: none; }
 
+/* 6-dot drag handle. Design source: design_handoff_ai_sidebar/ai-sidebar.html
+ * .r-handle — 2 cols × 3 rows of 3px round dots in a CSS grid, 2px gap.
+ * Visible only on row hover. The handle itself takes 14px of flex space
+ * (matches v3 row gutter); the inner grid is the 6-dot visual. */
 .v3-editor-canvas-root .row-handle {
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  grid-template-rows: repeat(3, 3px);
+  gap: 2px;
+  align-content: center;
+  justify-content: center;
   width: 14px;
   height: 18px;
   flex: 0 0 14px;
@@ -307,17 +317,20 @@
   opacity: 0;
   transition: opacity 150ms ease;
 }
-
-.v3-editor-canvas-root .row-handle::before {
-  content: "⋮⋮";
+.v3-editor-canvas-root .row-handle > i {
   display: block;
-  color: rgb(168 162 158);
-  font-size: 12px;
-  line-height: 16px;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #9ca3af;
 }
-
-.v3-editor-canvas-root .row:hover .row-handle {
-  opacity: 1;
+.v3-editor-canvas-root .row:hover .row-handle,
+.v3-editor-canvas-root .row.is-group-hovered .row-handle {
+  opacity: 0.85;
+}
+.v3-editor-canvas-root .row-handle:hover {
+  opacity: 1 !important;
+  background: oklch(0.95 0.008 60);
 }
 
 .v3-editor-canvas-root .row-content {

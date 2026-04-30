@@ -98,9 +98,26 @@ function readAlign(v2: ResumeDocV2, key: string | null): Align | undefined {
   return (v === 'center' || v === 'right' || v === 'left') ? v : undefined;
 }
 
+// Generate a fresh suffix for an entry/section id whose id already collided.
+// Keeps the prefix human-readable in dev tools while guaranteeing uniqueness.
+function dedupeId(seen: Set<string>, raw: string): string {
+  if (!seen.has(raw)) { seen.add(raw); return raw; }
+  let i = 2;
+  while (seen.has(`${raw}__${i}`)) i++;
+  const next = `${raw}__${i}`;
+  seen.add(next);
+  return next;
+}
+
 export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
   const rows: ResumeRow[] = [];
   const groups: SemanticGroup[] = [];
+  // Defensive: parsers / merges occasionally produce v2 docs with duplicate
+  // entry / section ids. v3's GroupsPlugin uses a Map keyed by id, so dupes
+  // would collapse and the second-onward entries' rows get reassigned to the
+  // first entry's parent — losing whole sections on save. Track ids here and
+  // remap on collision so each v3 group/row has a stable unique id.
+  const seenIds = new Set<string>();
 
   const headerNameId = headerNameRowId(v2);
   rows.push({
@@ -122,7 +139,7 @@ export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
   });
 
   for (const section of v2.sections) {
-    const sectionGroupId = asGroupId(section.id);
+    const sectionGroupId = asGroupId(dedupeId(seenIds, section.id));
     groups.push({
       id: sectionGroupId,
       kind: 'section',
@@ -140,7 +157,7 @@ export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
     });
 
     for (const entry of section.entries) {
-      const entryGroupId = asGroupId(entry.id);
+      const entryGroupId = asGroupId(dedupeId(seenIds, entry.id));
       groups.push({
         id: entryGroupId,
         kind: 'entry',
