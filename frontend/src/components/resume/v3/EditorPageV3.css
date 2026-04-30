@@ -378,6 +378,13 @@
     margin: 0;
   }
 
+  .v3-editor-canvas-root .tiptap,
+  .v3-editor-canvas-root .ProseMirror {
+    width: var(--page-content-width);
+    min-height: auto;
+    padding: 0;
+  }
+
   .v3-editor-canvas-root .pagination-break {
     height: 0 !important;
   }

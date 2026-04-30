@@ -43,6 +43,7 @@ import { createPaginationPlugin, paginationPluginKey } from './plugins/Paginatio
 import type { ResumeDocV3 } from './schema/types';
 import type { Schema } from '@tiptap/pm/model';
 import { FontSize } from '../v2/extensions/FontSize';
+import './EditorPageV3.css';
 
 // Restrict the doc node to the v3 row group only — same pattern used by
 // integration tests + V3TestHarness. Print mode is structurally identical.
@@ -211,7 +212,7 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
   return (
     <div
       ref={canvasRootRef}
-      className="v3-print-canvas-root"
+      className="v3-print-canvas-root v3-editor-canvas-root"
       style={{
         // Inline tokens: parity with v3-poc/poc.css. These mirror the values
         // baked into the @page rule injected from getComputedStyle.
@@ -230,15 +231,7 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
         background: 'white',
       }}
     >
-      <div className="v3-print-editor-wrapper" style={{
-        paddingTop: 'var(--page-margin-top)',
-        paddingLeft: 'var(--page-margin-left)',
-        paddingRight: 'var(--page-margin-right)',
-        maxWidth: '8.5in',
-        background: 'white',
-      }}>
-        <EditorContent editor={editor} />
-      </div>
+      <EditorContent editor={editor} />
     </div>
   );
 }
