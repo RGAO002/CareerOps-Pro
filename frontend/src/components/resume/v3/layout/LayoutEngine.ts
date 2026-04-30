@@ -16,6 +16,12 @@
 export interface LayoutInput {
   /** Outer .row elements in PM document order (one per top-level row node). */
   rowElements: HTMLElement[];
+  /** Row kind per index (e.g. 'entry.title'). Used by keep-together. Optional
+   *  for back-compat with tests that don't pass it; falls back to data-row-kind. */
+  rowKinds?: string[];
+  /** Row's semanticGroupId per index. Used by keep-together. Optional;
+   *  falls back to reading data-group-id attr. */
+  rowGroupIds?: string[];
   /** Page card height (e.g. 11in × DPI). */
   pageHeightPx: number;
   /** var(--page-margin-top). */
@@ -82,8 +88,12 @@ export interface LayoutOutput {
  *   for margins, gaps, and any other CSS contribution.
  */
 export function computeLayout(input: LayoutInput): LayoutOutput {
-  const { rowElements, pageHeightPx, marginTopPx, marginBottomPx, screenGapPx } = input;
+  const { rowElements, rowKinds, rowGroupIds, pageHeightPx, marginTopPx, marginBottomPx, screenGapPx } = input;
   const contentHeightPerPage = pageHeightPx - marginTopPx - marginBottomPx;
+  // Resolve kind / gid per row — caller may pass arrays (preferred, from PM
+  // doc) or rely on DOM attrs as fallback. Empty string if neither has it.
+  const gidOf = (i: number): string =>
+    (rowGroupIds?.[i] ?? rowElements[i]?.getAttribute('data-group-id') ?? '').trim();
 
   const pageBreaks: PageBreak[] = [];
   const pageGeometries: PageGeometry[] = [];
@@ -122,13 +132,12 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
       // entry already spans from page top, it's larger than a page and we
       // have no choice but to break inside.
       let breakIdx = i;
-      const gid = (rowElements[i].getAttribute('data-group-id') ?? '').trim();
+      const gid = gidOf(i);
       if (gid) {
         let entryFirstRow = -1;
         let j = i - 1;
         while (j >= 0) {
-          const prevGid = (rowElements[j].getAttribute('data-group-id') ?? '').trim();
-          if (prevGid !== gid) break; // walked past entry boundary
+          if (gidOf(j) !== gid) break; // walked past entry boundary
           const yJ = rects[j].top - pageFirstRowTop;
           if (yJ <= 0) { entryFirstRow = -1; break; } // entry started at page top — can't push back
           entryFirstRow = j;
@@ -136,6 +145,10 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
         }
         if (entryFirstRow >= 0) breakIdx = entryFirstRow;
       }
+      // Suppress unused-var noise for rowKinds — currently informational only,
+      // reserved for future widow/orphan rules where we may want to NOT push
+      // back through a section.heading row.
+      void rowKinds;
 
       const breakRect = rects[breakIdx];
       const breakY = breakRect.top - pageFirstRowTop;

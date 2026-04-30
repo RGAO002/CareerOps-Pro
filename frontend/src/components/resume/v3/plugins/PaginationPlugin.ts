@@ -214,8 +214,21 @@ export function createPaginationPlugin(opts: PaginationPluginOptions = {}) {
           ? buildRowElementsForTesting()
           : collectRowElements();
 
+        // Pull row kind + group id directly from PM doc — don't rely on
+        // data-* attrs surviving CSS / NodeView changes. LayoutEngine uses
+        // these for keep-together (don't break inside an entry group).
+        const rowKinds: string[] = [];
+        const rowGroupIds: string[] = [];
+        view.state.doc.forEach((node) => {
+          rowKinds.push(node.type.name.replace('_', '.'));
+          const gid = (node.attrs.semanticGroupId as string | null | undefined) ?? '';
+          rowGroupIds.push(gid);
+        });
+
         const layout = computeLayout({
           rowElements,
+          rowKinds,
+          rowGroupIds,
           pageHeightPx,
           marginTopPx,
           marginBottomPx,
