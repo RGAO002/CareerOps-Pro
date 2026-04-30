@@ -12,7 +12,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
-import { Placeholder, UndoRedo } from '@tiptap/extensions';
+import { UndoRedo } from '@tiptap/extensions';
 import { Extension } from '@tiptap/core';
 import { keymap } from '@tiptap/pm/keymap';
 import type { Editor } from '@tiptap/core';
@@ -62,53 +62,6 @@ const V3Doc = Document.extend({
 // no-op'd because chain().undo() / chain().redo() weren't registered.
 const HistoryExt = UndoRedo;
 
-// Per-row-kind placeholder text. For entry rows we fall back further to
-// the section role (Experience vs Skills vs Education etc.) since the
-// "Title @ Company" hint is wrong for a Skills entry. Mirrors v2's
-// placeholdersFor() in EntryAtomRenderer.tsx.
-const PLACEHOLDER_BY_ROLE: Record<string, { title: string | null; meta: string | null }> = {
-  summary:      { title: null, meta: null },
-  skills:       { title: 'Skill category (e.g. Languages)', meta: null },
-  experience:   { title: 'Title @ Company', meta: 'Date · Location' },
-  projects:     { title: 'Project name', meta: 'Date · Tech / link' },
-  education:    { title: 'Degree, Major', meta: 'School · Year' },
-  awards:       { title: 'Award name', meta: 'Date · Issuer' },
-  publications: { title: 'Publication title', meta: 'Venue · Year' },
-  volunteer:    { title: 'Role @ Organization', meta: 'Date · Location' },
-  custom:       { title: 'Title', meta: 'Subtitle' },
-};
-
-const PlaceholderExt = Placeholder.configure({
-  showOnlyCurrent: false,  // show on all empty rows, not just the focused one
-  includeChildren: false,
-  placeholder: ({ editor, node }) => {
-    const kind = node.type.name;
-    if (kind === 'header_name')     return 'Your name';
-    if (kind === 'header_contact')  return 'email | phone | location';
-    if (kind === 'section_heading') return 'Section heading';
-    if (kind === 'bullet')          return 'Empty bullet — type, or Backspace to remove';
-    if (kind === 'plain')           return 'New line';
-
-    if (kind === 'entry_title' || kind === 'entry_meta') {
-      // Resolve owning section's role via GroupsPlugin state. Fall back to
-      // 'custom' if the entry is orphan (F4-tolerant).
-      const gid = node.attrs.semanticGroupId as string | null | undefined;
-      let role = 'custom';
-      try {
-        const groups = groupsPluginKey.getState(editor.state);
-        const entry = gid ? groups?.byId.get(gid as never) : undefined;
-        if (entry?.kind === 'entry' && entry.parentSectionGroupId) {
-          const section = groups?.byId.get(entry.parentSectionGroupId);
-          if (section?.kind === 'section') role = section.role;
-        }
-      } catch {/* tolerate missing groups state */}
-      const ph = PLACEHOLDER_BY_ROLE[role] ?? PLACEHOLDER_BY_ROLE.custom;
-      const which = kind === 'entry_title' ? ph.title : ph.meta;
-      return which ?? '';
-    }
-    return '';
-  },
-});
 
 const GroupsExt = Extension.create({
   name: 'v3EditorGroups',
@@ -193,7 +146,6 @@ export function EditorPageV3({ initialResume }: Props) {
       Highlight.configure({ multicolor: true }),
       Link,
       MarkdownInputRules,
-      PlaceholderExt,
       HistoryExt,
       GroupsExt,
       SlashExt,
