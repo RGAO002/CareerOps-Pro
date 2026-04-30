@@ -1,5 +1,9 @@
 // frontend/src/components/ai/applySuggestion.ts
 import {
+  applySuggestionV3,
+  type AISuggestionV3,
+} from '@/components/resume/v3/ai/applyWrapper';
+import {
   useResumeStore,
   _aiApplyTransaction,
 } from '@/components/resume/v2/store/useResumeStore';
@@ -93,12 +97,53 @@ function _composeApply(s: Suggestion): boolean {
   }
 }
 
+// T38 — v3 delegation hook. When the ENABLE_RESUME_V3 flag is on AND the
+// suggestion has a v3 target shape AND a live v3 EditorView is registered, the
+// apply path delegates to applySuggestionV3 (single PM transaction). When the
+// flag is off, v2 path runs unchanged so the 244/1 baseline holds.
+type V3View = Parameters<typeof applySuggestionV3>[1];
+let _v3View: V3View | null = null;
+export function _registerV3EditorView(view: V3View | null): void {
+  _v3View = view;
+}
+function _isV3FlagOn(): boolean {
+  return process.env.NEXT_PUBLIC_ENABLE_RESUME_V3 === 'true';
+}
+function _looksLikeV3Suggestion(s: unknown): s is AISuggestionV3 {
+  if (!s || typeof s !== 'object') return false;
+  const obj = s as { target?: { kind?: unknown }; operation?: { kind?: unknown }; runId?: unknown };
+  return (
+    typeof obj.runId === 'string' &&
+    !!obj.target && typeof obj.target.kind === 'string' &&
+    ['document', 'selection', 'group', 'row'].includes(obj.target.kind as string) &&
+    !!obj.operation && typeof obj.operation.kind === 'string'
+  );
+}
+
 export async function applySuggestion(
   suggestionId: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   const sugStore = useSuggestionStore.getState();
   const s = sugStore.byId[suggestionId];
   if (!s || s.status !== 'pending') return { ok: false, reason: 'not_pending' };
+
+  // v3 delegation branch — flag-gated and shape-checked. v2 callers with v2
+  // suggestions always fall through to the unchanged path below.
+  if (_isV3FlagOn() && _v3View && _looksLikeV3Suggestion(s)) {
+    const r = applySuggestionV3(s as AISuggestionV3, _v3View);
+    if (r.ok) {
+      sugStore.markStatusLocally(suggestionId, 'accepted');
+      await sugStore.postStatusToBackend(suggestionId, 'accepted');
+      return { ok: true };
+    }
+    if (r.reason === 'stale') {
+      sugStore.markStatusLocally(suggestionId, 'superseded');
+      await sugStore.postStatusToBackend(suggestionId, 'superseded');
+      return { ok: false, reason: 'stale' };
+    }
+    return { ok: false };
+  }
+
   const resume = useResumeStore.getState().resume;
   if (!resume) return { ok: false, reason: 'no_resume' };
 
