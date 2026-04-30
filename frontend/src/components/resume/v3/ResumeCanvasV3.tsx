@@ -179,6 +179,7 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       for (const r of lastSelectedScope) {
         r.classList.remove('is-block-selected');
         r.classList.remove('is-block-selected-first');
+        r.classList.remove('is-block-selected-last');
       }
       lastSelectedScope = null;
     };
@@ -186,13 +187,15 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       clearSelectedScope();
       if (scope.length === 0) return;
       for (const r of scope) r.classList.add('is-block-selected');
-      // Mark the topmost row in document order as the first-of-scope so
-      // it carries the terracotta strip pseudo-element.
+      // Mark first + last in document order so the per-row terracotta strips
+      // visually join into one continuous bar with 8px top + 8px bottom
+      // insets, matching design_handoff_ai_sidebar's .r-section.active::after.
       const sorted = [...scope].sort((a, b) => {
         const pos = a.compareDocumentPosition(b);
         return (pos & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
       });
       sorted[0]?.classList.add('is-block-selected-first');
+      sorted[sorted.length - 1]?.classList.add('is-block-selected-last');
       lastSelectedScope = scope;
     };
     // Click outside any row clears the selection.

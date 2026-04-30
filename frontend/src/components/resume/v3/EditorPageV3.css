@@ -258,28 +258,45 @@
 }
 /* Block-selected state. Mirrors design_handoff_ai_sidebar:
  *   .r-section.active { background: oklch(.96 .03 45) }
- *   .r-section.active::after { left:0; width:2px; background: terracotta }
- * Selected outranks hovered; the first row in the selected scope gets the
- * terracotta strip on its left edge. */
+ *   .r-section.active::after { left:0; top:8px; bottom:8px; width:2px;
+ *                              background: terracotta }
+ *
+ * In the design HTML .r-section is one container that holds heading +
+ * entries + bullets, so the ::after strip is one element spanning the
+ * full section height with 8px insets at top + bottom.
+ *
+ * v3 emits one .row per row, so the design's single strip becomes a
+ * stack of per-row ::before strips that visually join into a continuous
+ * line. The first/last/single classes adjust the top/bottom inset so
+ * the union has the same 8px top + 8px bottom rounding as the design. */
 .v3-editor-canvas-root .row.is-block-selected {
   background: oklch(0.96 0.03 45);
 }
-.v3-editor-canvas-root .row.is-block-selected.is-block-selected-first::before {
+.v3-editor-canvas-root .row.is-block-selected::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: 0;
+  bottom: 0;
   width: 2px;
   background: oklch(0.62 0.13 38); /* terracotta */
-  border-radius: 0 2px 2px 0;
   pointer-events: none;
+}
+.v3-editor-canvas-root .row.is-block-selected.is-block-selected-first::before {
+  top: 8px;
+  border-top-right-radius: 2px;
+}
+.v3-editor-canvas-root .row.is-block-selected.is-block-selected-last::before {
+  bottom: 8px;
+  border-bottom-right-radius: 2px;
 }
 /* Drop bg + selection chrome on print canvas. */
 .v3-print-canvas-root .row,
 .v3-print-canvas-root .row.is-group-hovered,
 .v3-print-canvas-root .row.is-block-selected { background: transparent; }
-.v3-print-canvas-root .row.is-block-selected::before { content: none; }
+.v3-print-canvas-root .row.is-block-selected::before,
+.v3-print-canvas-root .row.is-block-selected.is-block-selected-first::before,
+.v3-print-canvas-root .row.is-block-selected.is-block-selected-last::before { content: none; }
 
 .v3-editor-canvas-root .row-handle {
   width: 14px;
