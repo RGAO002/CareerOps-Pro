@@ -429,7 +429,13 @@
   position: absolute;
   /* handle (14) + flex gap (8) + v2 inset (5.6px) = 27.6px from row left */
   left: 27.6px;
-  top: 0.65em;
+  /* Vertical alignment is in plain px because we set font-size:0 below to
+   * suppress the literal `•` text glyph in the span — that means `em`
+   * resolves against the marker's own (zero) font-size, not the body 14px,
+   * so 0.65em would be 0. v2 gets ~8.1px from `top:0.65em` against its
+   * 12.5px bullet font-size; we mirror with a literal 9px to land roughly
+   * at first-line baseline center against 14px body / 1.5 line-height. */
+  top: 9px;
   width: 4px;
   height: 4px;
   background: #9ca3af;
