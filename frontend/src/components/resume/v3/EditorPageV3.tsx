@@ -174,11 +174,19 @@ export function EditorPageV3({ initialResume }: Props) {
 
     queueMicrotask(() => {
       if (cancelled) return;
-      editor.commands.setContent(docJSON as Parameters<typeof editor.commands.setContent>[0], { emitUpdate: false });
-      const tr = editor.view.state.tr
+      // Hydrate GroupsPlugin BEFORE setContent. NodeViews resolve their
+      // role-aware placeholder ('Title @ Company' for Experience entries,
+      // null for Summary, etc.) at mount time by reading
+      // groupsPluginKey.getState(...). If we run setContent first, NodeViews
+      // mount against an empty groups Map and fall back to the 'custom'
+      // role -> 'Title' / 'Subtitle' show up where v2 wouldn't render
+      // anything. Plugin-state changes alone don't trigger NodeView
+      // re-render, so the wrong placeholder sticks. Order matters.
+      const seedTr = editor.view.state.tr
         .setMeta('groupsHydrate', groups)
         .setMeta('addToHistory', false);
-      editor.view.dispatch(tr);
+      editor.view.dispatch(seedTr);
+      editor.commands.setContent(docJSON as Parameters<typeof editor.commands.setContent>[0], { emitUpdate: false });
       requestPaginationLayout(editor.view);
       latestSnapshotRef.current = JSON.stringify(initialResume);
       previousResumeRef.current = initialResume;

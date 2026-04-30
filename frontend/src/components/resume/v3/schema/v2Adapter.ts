@@ -109,6 +109,18 @@ function dedupeId(seen: Set<string>, raw: string): string {
   return next;
 }
 
+// Mirrors v2's placeholdersFor() in EntryAtomRenderer.tsx — sections where
+// title or meta is null don't render that field at all (e.g. Summary has
+// neither, Skills has no meta). v2ToV3 honors the same rule by skipping
+// row creation, so empty placeholder rows don't appear in the v3 editor.
+function rolePolicy(role: string): { renderTitle: boolean; renderMeta: boolean } {
+  switch (role) {
+    case 'summary': return { renderTitle: false, renderMeta: false };
+    case 'skills':  return { renderTitle: true,  renderMeta: false };
+    default:        return { renderTitle: true,  renderMeta: true };
+  }
+}
+
 export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
   const rows: ResumeRow[] = [];
   const groups: SemanticGroup[] = [];
@@ -140,10 +152,12 @@ export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
 
   for (const section of v2.sections) {
     const sectionGroupId = asGroupId(dedupeId(seenIds, section.id));
+    const role = normalizeRole(section.role);
+    const policy = rolePolicy(role);
     groups.push({
       id: sectionGroupId,
       kind: 'section',
-      role: normalizeRole(section.role),
+      role,
       label: section.heading,
     });
     const sectionHeadingId = sectionHeadingRowId(section);
@@ -167,20 +181,27 @@ export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
       const metaId = entryMetaRowId(entry);
       const titleAlign = readAlign(v2, v2AlignKey('entry.title', titleId));
       const metaAlign = readAlign(v2, v2AlignKey('entry.meta', metaId));
-      rows.push({
-        id: titleId,
-        kind: 'entry.title',
-        semanticGroupId: entryGroupId,
-        content: toPlainText(entry.title),
-        ...(titleAlign ? { align: titleAlign } : {}),
-      });
-      rows.push({
-        id: metaId,
-        kind: 'entry.meta',
-        semanticGroupId: entryGroupId,
-        content: toPlainText(entry.meta),
-        ...(metaAlign ? { align: metaAlign } : {}),
-      });
+      // v2 parity: skip rows whose role doesn't render that field
+      // (Summary: no title/meta; Skills: no meta). Empty title/meta in
+      // the v2 data round-trips fine via v3ToV2 fallbacks.
+      if (policy.renderTitle) {
+        rows.push({
+          id: titleId,
+          kind: 'entry.title',
+          semanticGroupId: entryGroupId,
+          content: toPlainText(entry.title),
+          ...(titleAlign ? { align: titleAlign } : {}),
+        });
+      }
+      if (policy.renderMeta) {
+        rows.push({
+          id: metaId,
+          kind: 'entry.meta',
+          semanticGroupId: entryGroupId,
+          content: toPlainText(entry.meta),
+          ...(metaAlign ? { align: metaAlign } : {}),
+        });
+      }
       for (const bullet of entry.bullets) {
         const bulletId = asRowId(bullet.id);
         const bulletAlign = readAlign(v2, v2AlignKey('bullet', bulletId));
