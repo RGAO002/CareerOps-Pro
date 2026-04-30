@@ -22,30 +22,38 @@
   background: white;        /* paper card */
   box-shadow: 0 2px 12px oklch(0.40 0.04 42 / 0.08);
 }
-[data-row-kind="heading"] {
+.row {
+  position: relative;
+  display: block;
+}
+.row-heading {
+  margin: 16px 0 8px;
+}
+.row-heading .row-content {
   font: 600 14px/1.2 Inter, sans-serif;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin: 16px 0 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid oklch(0.30 0.02 50);
 }
-[data-row-kind="plain"] {
-  font: 400 12px/1.5 Inter, sans-serif;
-  margin: 4px 0;
+.section-divider {
+  border: 0;
+  height: 1px;
+  background: oklch(0.30 0.02 50);
+  margin: 4px 0 0;
 }
-[data-row-kind="bullet"] {
-  font: 400 12px/1.5 Inter, sans-serif;
+.row-plain { margin: 4px 0; }
+.row-plain .row-content { font: 400 12px/1.5 Inter, sans-serif; }
+.row-bullet {
   margin: 2px 0;
   padding-left: 16px;
-  position: relative;
 }
-[data-row-kind="bullet"]::before {
-  content: '•';
+.row-bullet .row-marker {
   position: absolute;
   left: 4px;
   top: 0;
+  pointer-events: none;
+  user-select: none;
 }
+.row-bullet .row-content { font: 400 12px/1.5 Inter, sans-serif; }
 .pagination-break {
   /* Height is set per-instance inline by PaginationPlugin (Task 4). The
      value must be: (remaining unused content space on the breaking page)

@@ -1,10 +1,36 @@
 'use client';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { Document } from '@tiptap/extension-document';
 import { Node } from '@tiptap/core';
 import './poc.css';
 
 export const PocDoc = Document.extend({ content: 'row+' });
+
+function HeadingRowNodeView() {
+  return (
+    <NodeViewWrapper className="row row-heading" data-row-kind="heading">
+      <NodeViewContent as="div" className="row-content" />
+      <hr className="section-divider" contentEditable={false} />
+    </NodeViewWrapper>
+  );
+}
+
+function PlainRowNodeView() {
+  return (
+    <NodeViewWrapper className="row row-plain" data-row-kind="plain">
+      <NodeViewContent as="div" className="row-content" />
+    </NodeViewWrapper>
+  );
+}
+
+function BulletRowNodeView() {
+  return (
+    <NodeViewWrapper className="row row-bullet" data-row-kind="bullet">
+      <span className="row-marker" contentEditable={false}>•</span>
+      <NodeViewContent as="div" className="row-content" />
+    </NodeViewWrapper>
+  );
+}
 
 export const HeadingRow = Node.create({
   name: 'heading_row',
@@ -15,6 +41,9 @@ export const HeadingRow = Node.create({
   parseHTML() { return [{ tag: 'div[data-row-kind="heading"]' }]; },
   renderHTML({ node }) {
     return ['div', { 'data-row-kind': 'heading', 'data-row-id': node.attrs.id }, 0];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(HeadingRowNodeView);
   },
 });
 
@@ -28,6 +57,9 @@ export const PlainRow = Node.create({
   renderHTML({ node }) {
     return ['div', { 'data-row-kind': 'plain', 'data-row-id': node.attrs.id }, 0];
   },
+  addNodeView() {
+    return ReactNodeViewRenderer(PlainRowNodeView);
+  },
 });
 
 export const BulletRow = Node.create({
@@ -39,6 +71,9 @@ export const BulletRow = Node.create({
   parseHTML() { return [{ tag: 'div[data-row-kind="bullet"]' }]; },
   renderHTML({ node }) {
     return ['div', { 'data-row-kind': 'bullet', 'data-row-id': node.attrs.id }, 0];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(BulletRowNodeView);
   },
 });
 
