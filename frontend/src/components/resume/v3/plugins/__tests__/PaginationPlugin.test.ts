@@ -302,6 +302,20 @@ describe('PaginationPlugin', () => {
     expect(src).not.toMatch(/:scope\s*>\s*\.row/);
   });
 
+  it('measurement pass hides stale pagination-break widgets before reading row rects', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const pluginSrc = await fs.readFile(path.resolve(here, '..', 'PaginationPlugin.ts'), 'utf-8');
+    const cssSrc = await fs.readFile(path.resolve(here, '..', '..', 'EditorPageV3.css'), 'utf-8');
+
+    expect(pluginSrc).toContain('v3-pagination-measuring');
+    expect(pluginSrc).toContain('classList.add(MEASURING_CLASS)');
+    expect(pluginSrc).toContain('classList.remove(MEASURING_CLASS)');
+    expect(cssSrc).toContain('.v3-editor-canvas-root .v3-pagination-measuring .pagination-break');
+    expect(cssSrc).toContain('display: none !important');
+  });
+
   it('perf smoke: 50-row doc + 60 transactions/sec → p50 layout < 50ms (CI threshold; T35 enforces 16ms)', async () => {
     const rowCount = 50;
     const heights = new Map<string, number>();

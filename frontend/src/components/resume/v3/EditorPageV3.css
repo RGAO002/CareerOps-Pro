@@ -560,6 +560,16 @@
   user-select: none;
 }
 
+/* PaginationPlugin measures the raw row flow before producing the next set of
+ * break decorations. Hide the previous break widgets during that synchronous
+ * measurement pass; otherwise repeated Enter operations measure rows after old
+ * page gaps have already pushed them down, compounding layout error until
+ * content visually crosses page-card boundaries. */
+.v3-editor-canvas-root .v3-pagination-measuring .pagination-break {
+  display: none !important;
+  height: 0 !important;
+}
+
 .v3-loading {
   padding: 24px;
   color: rgb(115 115 115);

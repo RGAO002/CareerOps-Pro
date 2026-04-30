@@ -35,6 +35,7 @@ export interface PaginationPluginState {
 export const paginationPluginKey = new PluginKey<PaginationPluginState>('paginationPlugin');
 
 const PAGE_HEIGHT_PX_DEFAULT = 11 * 96; // 11in @ 96 dpi (override via opts).
+const MEASURING_CLASS = 'v3-pagination-measuring';
 
 export interface PaginationPluginOptions {
   /**
@@ -210,30 +211,36 @@ export function createPaginationPlugin(opts: PaginationPluginOptions = {}) {
         const marginBottomPx = __testMargins ? __testMargins.marginBottomPx : readVarPx(canvasRoot, '--page-margin-bottom');
         const screenGapPx = __testMargins ? __testMargins.screenGapPx : readVarPx(canvasRoot, '--page-break-screen-gap');
 
-        const rowElements = __testRowHeights
-          ? buildRowElementsForTesting()
-          : collectRowElements();
+        let layout: LayoutOutput;
+        view.dom.classList.add(MEASURING_CLASS);
+        try {
+          const rowElements = __testRowHeights
+            ? buildRowElementsForTesting()
+            : collectRowElements();
 
-        // Pull row kind + group id directly from PM doc — don't rely on
-        // data-* attrs surviving CSS / NodeView changes. LayoutEngine uses
-        // these for keep-together (don't break inside an entry group).
-        const rowKinds: string[] = [];
-        const rowGroupIds: string[] = [];
-        view.state.doc.forEach((node) => {
-          rowKinds.push(node.type.name.replace('_', '.'));
-          const gid = (node.attrs.semanticGroupId as string | null | undefined) ?? '';
-          rowGroupIds.push(gid);
-        });
+          // Pull row kind + group id directly from PM doc — don't rely on
+          // data-* attrs surviving CSS / NodeView changes. LayoutEngine uses
+          // these for keep-together (don't break inside an entry group).
+          const rowKinds: string[] = [];
+          const rowGroupIds: string[] = [];
+          view.state.doc.forEach((node) => {
+            rowKinds.push(node.type.name.replace('_', '.'));
+            const gid = (node.attrs.semanticGroupId as string | null | undefined) ?? '';
+            rowGroupIds.push(gid);
+          });
 
-        const layout = computeLayout({
-          rowElements,
-          rowKinds,
-          rowGroupIds,
-          pageHeightPx,
-          marginTopPx,
-          marginBottomPx,
-          screenGapPx,
-        });
+          layout = computeLayout({
+            rowElements,
+            rowKinds,
+            rowGroupIds,
+            pageHeightPx,
+            marginTopPx,
+            marginBottomPx,
+            screenGapPx,
+          });
+        } finally {
+          view.dom.classList.remove(MEASURING_CLASS);
+        }
 
         // Map afterRowIndex → PM doc position (after that row's node).
         const posAtRowEnd: number[] = [];
