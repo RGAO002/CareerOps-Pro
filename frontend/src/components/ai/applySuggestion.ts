@@ -107,7 +107,11 @@ export function _registerV3EditorView(view: V3View | null): void {
   _v3View = view;
 }
 function _isV3FlagOn(): boolean {
-  return process.env.NEXT_PUBLIC_ENABLE_RESUME_V3 === 'true';
+  // T43 shipped v3 unconditionally — the flag is no longer the gate. Whether
+  // v3 path runs is determined by whether a v3 EditorView has been registered
+  // via _registerV3EditorView (which only happens inside EditorPageV3). v2
+  // callers with no v3 view registered still fall through to the v2 path.
+  return true;
 }
 function _looksLikeV3Suggestion(s: unknown): s is AISuggestionV3 {
   if (!s || typeof s !== 'object') return false;

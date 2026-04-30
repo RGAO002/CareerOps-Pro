@@ -22,6 +22,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { usePageContext } from '@/hooks/usePageContext';
 import { useAssistantStore } from '@/stores/assistant';
 import { useSuggestionStore } from '@/stores/aiSuggestion';
+import { _registerV3EditorView } from '@/components/ai/applySuggestion';
 import { Download } from 'lucide-react';
 
 import type { ResumeDoc as ResumeDocV2 } from '../v2/types';
@@ -258,6 +259,20 @@ export function EditorPageV3({ initialResume }: Props) {
   React.useEffect(() => {
     useSuggestionStore.getState().hydrate(initialResume.id);
   }, [initialResume.id]);
+
+  // Wire AI integration: register the live PM view so applySuggestion can
+  // route v3 suggestions through dispatchWithGroups (T38), and attach the
+  // suggestion store to PM transactions so applied/pending status tracks
+  // PM history including undo (T39).
+  React.useEffect(() => {
+    if (!editor) return;
+    _registerV3EditorView(editor.view);
+    const detachStore = useSuggestionStore.getState().attachToEditor(editor);
+    return () => {
+      _registerV3EditorView(null);
+      detachStore();
+    };
+  }, [editor]);
 
   React.useEffect(() => {
     const unsub = useAssistantStore.subscribe((s) => {
