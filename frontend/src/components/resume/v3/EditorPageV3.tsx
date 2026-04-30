@@ -42,6 +42,7 @@ import { handleBackspace } from './interaction/keymap/backspace';
 import { handleCmdA, notePressBreak } from './interaction/keymap/cmdA';
 import { FormatToolbarV3 } from './interaction/FormatToolbarV3';
 import { FontSize } from '../v2/extensions/FontSize';
+import { MarkdownInputRules } from '../v2/extensions/MarkdownInputRules';
 
 import './EditorPageV3.css';
 
@@ -141,6 +142,7 @@ export function EditorPageV3({ initialResume }: Props) {
       FontSize.configure({ types: ['textStyle'] }),
       Highlight.configure({ multicolor: true }),
       Link,
+      MarkdownInputRules,
       HistoryExt,
       GroupsExt,
       SlashExt,
@@ -354,7 +356,6 @@ function V3TopBar({
     <div data-edit-only className="v3-topbar">
       <span className="v3-topbar-title">{title || 'Untitled Resume'}</span>
       <span className="v3-topbar-divider" />
-      <span className="v3-topbar-version">v3 NodeView editor</span>
       <FormatToolbarV3 editor={editor} />
       <div className="v3-topbar-center">
         {tailoringLabel && (

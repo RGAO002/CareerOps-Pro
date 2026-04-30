@@ -238,9 +238,17 @@
   position: relative;
   min-height: 16px;
   margin: 0 0 6px;
+  border-radius: 4px;
+  transition: background-color 120ms ease;
   transform-origin: top left;
   will-change: transform;
 }
+.v3-editor-canvas-root .row:hover {
+  background: rgb(254 252 251);
+}
+/* Drop bg on print canvas — no hover state in PDF. */
+.v3-print-canvas-root .row,
+.v3-print-canvas-root .row:hover { background: transparent; }
 
 .v3-editor-canvas-root .row-handle {
   width: 14px;
