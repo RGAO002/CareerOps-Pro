@@ -344,9 +344,22 @@ function collectEntriesForSection(v3: ResumeDocV3, sectionGroupId: GroupId): Ent
     });
   }
 
-  // Fallback for malformed docs: if rows reference an entry group that is
-  // missing from groups, keep the content rather than dropping user text.
+  // Orphan-row fallback: a bullet/plain row whose semanticGroupId points at
+  // a missing entry group (parser bug, broken edit, etc.) gets attached to
+  // whichever section it physically sits inside in doc order — i.e. the
+  // section.heading that immediately precedes it. Critical: do NOT add the
+  // orphan to every section's entries (the original loop did, which is why
+  // a single stray summary bullet duplicated to all 5 sections, then each
+  // round-trip suffix-renamed and grew by one). Walk the doc once to find
+  // each row's enclosing section gid, then only emit the orphan for the
+  // matching section.
+  let cursor: GroupId | null = null;
   for (const row of v3.rows) {
+    if (row.kind === 'section.heading') {
+      cursor = (row.semanticGroupId ?? null) as GroupId | null;
+      continue;
+    }
+    if (cursor !== sectionGroupId) continue;
     if (!('semanticGroupId' in row) || !row.semanticGroupId) continue;
     if (groupsById.has(row.semanticGroupId)) continue;
     if (row.kind !== 'bullet' && row.kind !== 'plain') continue;
