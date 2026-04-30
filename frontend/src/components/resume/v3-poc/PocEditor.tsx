@@ -3,6 +3,7 @@ import { useEditor, EditorContent, NodeViewWrapper, NodeViewContent, ReactNodeVi
 import { Document } from '@tiptap/extension-document';
 import { Node, Extension } from '@tiptap/core';
 import { createPaginationPluginMin } from './PaginationPluginMin';
+import { PageChromeLayerMin } from './PageChromeLayerMin';
 import './poc.css';
 
 export const PocDoc = Document.extend({ content: 'row+' });
@@ -101,6 +102,7 @@ export function PocEditor({ readOnly = false }: PocEditorProps) {
   if (!editor) return null;
   return (
     <div className="poc-canvas-root">
+      <PageChromeLayerMin editor={editor} />
       <div className="poc-editor-wrapper">
         <EditorContent editor={editor} />
       </div>

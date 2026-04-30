@@ -79,3 +79,18 @@
   }
   .pagination-break { height: 0 !important; }   /* override per-instance inline height on print */
 }
+.page-chrome-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.page-card {
+  background: white;
+  box-shadow: 0 2px 12px oklch(0.40 0.04 42 / 0.08);
+  border-radius: 4px;
+}
+.poc-editor-wrapper { position: relative; z-index: 1; background: transparent; }
+@media print {
+  .page-chrome-layer { display: none; }
+}
