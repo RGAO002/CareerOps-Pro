@@ -247,11 +247,28 @@ export function v3ToV2(v3: ResumeDocV3, previous: ResumeDocV2): ResumeDocV2 {
   }
 
   const sectionRows = v3.rows.filter((row) => row.kind === 'section.heading');
+  // Save-time dedupe: even though v2ToV3 dedupes on LOAD, defensive belt-and-
+  // braces on SAVE prevents corrupt v3 in-memory state (e.g. groups Map after
+  // a buggy mutation) from writing duplicate-id entries / sections back to
+  // the JSON. We keep first-seen ids verbatim and rename collisions with
+  // __2 / __3 suffixes — same shape dedupeId() uses for v2ToV3.
+  const seenSaveIds = new Set<string>();
+  const dedupeOnSave = (raw: string): string => {
+    if (!seenSaveIds.has(raw)) { seenSaveIds.add(raw); return raw; }
+    let i = 2;
+    while (seenSaveIds.has(`${raw}__${i}`)) i++;
+    const next = `${raw}__${i}`;
+    seenSaveIds.add(next);
+    return next;
+  };
   const sections: SectionBlock[] = sectionRows.map((row) => {
     const sectionGroup = groupsById.get(row.semanticGroupId);
-    const entries = collectEntriesForSection(v3, row.semanticGroupId);
+    const entries = collectEntriesForSection(v3, row.semanticGroupId).map((e) => ({
+      ...e,
+      id: dedupeOnSave(e.id),
+    }));
     return {
-      id: row.semanticGroupId,
+      id: dedupeOnSave(row.semanticGroupId),
       role: sectionGroup?.kind === 'section' ? (sectionGroup.role as V2SectionRole) : 'custom',
       heading: row.content.text,
       entries,
