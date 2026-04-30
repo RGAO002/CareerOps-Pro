@@ -23,9 +23,7 @@ interface RowCtx {
 function rowContext(view: EditorView): RowCtx | null {
   const { state } = view;
   const sel = state.selection;
-  if (!sel.empty && sel.from !== sel.to) {
-    // Allow only collapsed selection for now (mid-text split handled by collapsed Enter on a position).
-  }
+  // Note: non-collapsed selections fall through to PM native behavior (delete + split).
   const $from = state.doc.resolve(sel.from);
   if ($from.depth < 1) return null;
   const node = $from.node(1);

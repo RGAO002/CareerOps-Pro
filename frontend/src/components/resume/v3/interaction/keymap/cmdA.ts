@@ -1,5 +1,5 @@
 import type { EditorView } from '@tiptap/pm/view';
-import { TextSelection, type EditorState } from '@tiptap/pm/state';
+import { AllSelection, TextSelection, type EditorState } from '@tiptap/pm/state';
 import { groupsPluginKey } from '../../plugins/GroupsPlugin';
 import type { GroupId } from '../../schema/types';
 
@@ -47,11 +47,17 @@ function selectRowContent(view: EditorView, ctx: RowCtx): void {
 }
 
 function selectRange(view: EditorView, from: number, to: number): void {
+  // FOLLOW-UP (file as ticket): when from/to land on node boundaries, PM emits
+  // "endpoint not pointing into a node with inline content" stderr; PM clamps
+  // gracefully so behavior is correct. Switching to TextSelection.between
+  // requires updating boundary-position test assertions; deferred to T26 cleanup.
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
 }
 
 function selectWholeDoc(view: EditorView): void {
-  selectRange(view, 0, view.state.doc.content.size);
+  // AllSelection avoids PM's "TextSelection endpoint not pointing into a node with
+  // inline content" warning when anchoring at position 0.
+  view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)));
 }
 
 // Find header range — all consecutive header_name / header_contact rows from doc start.
@@ -94,7 +100,7 @@ function sectionRange(view: EditorView, sectionGid: string, headingIndex: number
   if (groups) {
     for (const [gid, g] of groups.byId.entries()) {
       if (g.kind === 'entry' && g.parentSectionGroupId === (sectionGid as GroupId)) {
-        entryGidsForSection.add(gid as unknown as string);
+        entryGidsForSection.add(gid as string);
       }
     }
   }

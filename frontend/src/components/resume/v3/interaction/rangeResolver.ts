@@ -98,7 +98,7 @@ export function resolveBlockRange(state: EditorState, rowId: RowId): BlockRange 
     if (groups) {
       for (const [gid, g] of groups.byId.entries()) {
         if (g.kind === 'entry' && g.parentSectionGroupId === (sectionGid as GroupId)) {
-          entryGidsForSection.add(gid as unknown as string);
+          entryGidsForSection.add(gid as string);
         }
       }
     }
