@@ -324,8 +324,11 @@
   border-radius: 999px;
   background: #9ca3af;
 }
-.v3-editor-canvas-root .row:hover .row-handle,
-.v3-editor-canvas-root .row.is-group-hovered .row-handle {
+/* Handle visibility: only the row directly under the cursor shows its
+ * handle. is-group-hovered (the section/entry-wide highlight) only changes
+ * background, not handle opacity — otherwise hovering on Freelance lights
+ * up 6 handles down the entry; v2 / design intent is one handle at a time. */
+.v3-editor-canvas-root .row:hover .row-handle {
   opacity: 0.85;
 }
 .v3-editor-canvas-root .row-handle:hover {
