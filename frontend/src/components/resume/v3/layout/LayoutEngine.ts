@@ -113,23 +113,46 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
     // Guard yFromPageStart > 0 so we never break before the first row on a page
     // (avoids infinite loop if a single row > pageHeight).
     if (rowBottomFromPageStart > contentHeightPerPage && yFromPageStart > 0) {
-      // Remaining content space on the breaking page = budget minus where this
-      // row's top is. Can be small (row just barely didn't fit) or large
-      // (a tall inter-row gap pushed the row past the boundary).
-      const remainingContentSpace = contentHeightPerPage - yFromPageStart;
+      // KEEP-TOGETHER: don't break in the middle of an entry group. If row[i]
+      // shares its semanticGroupId with row[i-1] (same entry), walk back to
+      // find the entry's first row on this page and break BEFORE that instead.
+      // Avoids the "title + meta orphaned at bottom of page, all bullets on
+      // next page" pattern where a huge widget gap sits between meta and
+      // bullets. Only applies when the entry STARTS on this page — if the
+      // entry already spans from page top, it's larger than a page and we
+      // have no choice but to break inside.
+      let breakIdx = i;
+      const gid = (rowElements[i].getAttribute('data-group-id') ?? '').trim();
+      if (gid) {
+        let entryFirstRow = -1;
+        let j = i - 1;
+        while (j >= 0) {
+          const prevGid = (rowElements[j].getAttribute('data-group-id') ?? '').trim();
+          if (prevGid !== gid) break; // walked past entry boundary
+          const yJ = rects[j].top - pageFirstRowTop;
+          if (yJ <= 0) { entryFirstRow = -1; break; } // entry started at page top — can't push back
+          entryFirstRow = j;
+          j--;
+        }
+        if (entryFirstRow >= 0) breakIdx = entryFirstRow;
+      }
+
+      const breakRect = rects[breakIdx];
+      const breakY = breakRect.top - pageFirstRowTop;
+      const remainingContentSpace = contentHeightPerPage - breakY;
       const screenHeightPx = remainingContentSpace + marginBottomPx + screenGapPx + marginTopPx;
 
-      pageBreaks.push({ afterRowIndex: i - 1, pageIndex, screenHeightPx });
+      pageBreaks.push({ afterRowIndex: breakIdx - 1, pageIndex, screenHeightPx });
 
-      // Next card sits on the fixed grid:
-      //   nextCardTop = currentCardTop + pageHeightPx + screenGapPx
       pageIndex += 1;
       const nextCardTopPx = pageIndex * (pageHeightPx + screenGapPx);
       pageGeometries.push({ pageIndex, topPx: nextCardTopPx, heightPx: pageHeightPx });
 
-      // Reset anchor to this row — it is the first row on the new page.
-      // All subsequent rows on this page will be measured relative to it.
-      pageFirstRowTop = rect.top;
+      pageFirstRowTop = breakRect.top;
+      // Re-anchor to breakIdx. Outer for-loop's i++ will move us to
+      // breakIdx + 1 next; rows breakIdx + 1..i (which we'd already scanned)
+      // are measured against the new anchor and accumulated normally.
+      i = breakIdx;
     }
   }
 
