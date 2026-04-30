@@ -182,6 +182,10 @@ describe('T26 — M3 integration smoke', () => {
     const view = editorRef!.view;
     const rows = view.dom.querySelectorAll(':scope > div > .row');
     expect(rows.length).toBe(onePage.rows.length);
+    // F1 negative: ReactNodeViewRenderer wraps each row in <div class="react-renderer">,
+    // so .row is NEVER a direct child of view.dom. Pin this so consumers can't accidentally
+    // regress to ':scope > .row' and silently get zero results.
+    expect(view.dom.querySelectorAll(':scope > .row').length).toBe(0);
   });
 
   // 3. ------------------------------------------------------------------
