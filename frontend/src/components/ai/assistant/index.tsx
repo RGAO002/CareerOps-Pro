@@ -1,5 +1,6 @@
 // frontend/src/components/ai/assistant/index.tsx
 'use client';
+import { AnimatePresence } from 'framer-motion';
 import { useAssistantStore } from '@/stores/assistant';
 import { useAssistantKeyboard, useRoutePoseSync } from './keyboard';
 import { BarPose } from './poses/BarPose';
@@ -24,7 +25,13 @@ export function Assistant() {
   useRoutePoseSync();
   const pose = useAssistantStore((s) => s.pose);
 
-  if (pose === 'bar')     return <BarPose />;
-  if (pose === 'sidebar') return <SidebarPose />;
-  return <OrbPose />;
+  // AnimatePresence so each pose's `exit` animation runs on pose change.
+  // Sidebar gets a slide-out-to-right exit; orb / bar can define their own.
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {pose === 'bar'     && <BarPose key="bar" />}
+      {pose === 'sidebar' && <SidebarPose key="sidebar" />}
+      {pose === 'orb'     && <OrbPose key="orb" />}
+    </AnimatePresence>
+  );
 }

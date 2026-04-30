@@ -20,6 +20,11 @@
   border-radius: 4px;
 }
 
+/* Last page keeps the same default shadow as other pages — distinguishing
+   the document's end is done via a layout spacer below the card (see
+   EditorPageV3 v3-editor-stage paddingBottom + spacer div), not via a
+   bigger shadow. Card itself uses the default `.v3-page-chrome-card` rule. */
+
 @media print {
   .v3-page-chrome-layer {
     display: none;

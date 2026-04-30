@@ -57,10 +57,10 @@ export function PageChromeLayer({ editor }: Props) {
 
   return (
     <div className="v3-page-chrome-layer" aria-hidden="true">
-      {state.pageGeometries.map((g) => (
+      {state.pageGeometries.map((g, i) => (
         <div
           key={g.pageIndex}
-          className="v3-page-chrome-card"
+          className={`v3-page-chrome-card${i === state.pageGeometries.length - 1 ? ' v3-page-chrome-card--last' : ''}`}
           data-v3-page-card
           data-page-index={g.pageIndex}
           // Geometry is taken verbatim from plugin state — single SoT (C3).

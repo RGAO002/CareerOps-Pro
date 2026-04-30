@@ -1,6 +1,6 @@
 // frontend/src/components/ai/assistant/poses/SidebarPose.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FluidCanvas } from '@/components/landing/FluidCanvas';
 import { useAssistantStore, type AssistantTab } from '@/stores/assistant';
@@ -10,6 +10,7 @@ import { startAssistantRun } from '@/components/ai/session';
 import { Mark } from '../parts/Mark';
 import { MiniButton } from '../parts/MiniButton';
 import { ScopePill } from '../parts/ScopePill';
+import { CopReviewBlock } from './CopReviewBlock';
 import { AgentChips } from '../parts/AgentChips';
 import { QuickChips } from '../parts/QuickChips';
 import { ChatTab } from '../tabs/ChatTab';
@@ -30,6 +31,97 @@ export function SidebarPose() {
   const isStreaming = useAssistantStore((s) => s.activeRunId !== null);
   const agentMask = useAssistantStore((s) => s.agentMask);
   const [input, setInput] = useState('');
+
+  // Custom scroll indicator — same approach as EditorShellCop. macOS
+  // Chrome's OS-overlay scrollbar refuses to honor `::-webkit-scrollbar`
+  // styling on `overflow: auto` flex children, so we hide the native one
+  // and render a JS-driven thin pill. Color tied to body.cop-s-N stages
+  // for fade-in/out alongside the editor scrollbar.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const body = bodyRef.current;
+    const indicator = indicatorRef.current;
+    if (!body || !indicator) return;
+
+    let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+    let isDraggingIndicator = false;
+
+    const setOpacity = (v: string) => {
+      indicator.style.setProperty('opacity', v);
+    };
+
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = body;
+      if (scrollHeight <= clientHeight + 1) {
+        setOpacity('0');
+        return;
+      }
+      const indicatorH = Math.max(28, (clientHeight / scrollHeight) * clientHeight);
+      const maxTranslate = clientHeight - indicatorH;
+      const translateY = (scrollTop / (scrollHeight - clientHeight)) * maxTranslate;
+      indicator.style.height = `${indicatorH}px`;
+      indicator.style.transform = `translateY(${translateY}px)`;
+    };
+
+    const showAndScheduleFade = () => {
+      setOpacity('1');
+      if (fadeTimer) clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(() => {
+        if (!isDraggingIndicator) setOpacity('0');
+      }, 700);
+    };
+
+    const onScroll = () => {
+      update();
+      showAndScheduleFade();
+    };
+
+    const onDown = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isDraggingIndicator = true;
+      setOpacity('1');
+      if (fadeTimer) clearTimeout(fadeTimer);
+      const startY = e.clientY;
+      const startScrollTop = body.scrollTop;
+      const trackH = body.clientHeight - indicator.offsetHeight;
+      const scrollRange = body.scrollHeight - body.clientHeight;
+      const ratio = scrollRange / Math.max(1, trackH);
+      const onMove = (ev: MouseEvent) => {
+        ev.preventDefault();
+        body.scrollTop = startScrollTop + (ev.clientY - startY) * ratio;
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        document.body.style.userSelect = '';
+        isDraggingIndicator = false;
+        showAndScheduleFade();
+      };
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    };
+    const blockEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+
+    update();
+    body.addEventListener('scroll', onScroll, { passive: true });
+    indicator.addEventListener('mousedown', onDown);
+    indicator.addEventListener('dblclick', blockEvent);
+    indicator.addEventListener('contextmenu', blockEvent);
+    const ro = new ResizeObserver(update);
+    ro.observe(body);
+    if (body.firstElementChild) ro.observe(body.firstElementChild as Element);
+    return () => {
+      body.removeEventListener('scroll', onScroll);
+      if (fadeTimer) clearTimeout(fadeTimer);
+      indicator.removeEventListener('mousedown', onDown);
+      indicator.removeEventListener('dblclick', blockEvent);
+      indicator.removeEventListener('contextmenu', blockEvent);
+      ro.disconnect();
+    };
+  }, []);
 
   // Translate the agent mask into per-orb weights for FluidCanvas.
   // count===3 → all on at baseline (1.0). count===2 → those two slightly
@@ -66,18 +158,31 @@ export function SidebarPose() {
     <motion.aside
       layoutId="ai-assistant-shell"
       role="complementary" aria-label="AI assistant sidebar"
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      // Slide-in / slide-out — pure horizontal translation, no fade. Reads
+      // as a heavy floating glass slab gliding in from / out to the right.
+      // Tween (not spring) so there's no wobble at the end; long-ish
+      // duration + decelerating curve gives the "weighty" feel.
+      initial={{ x: '110%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '110%' }}
+      transition={{ duration: 0.65, ease: [0.5, 0.5, 0.5, 1] }}
       style={{
-        position: 'fixed', top: 56, right: 0, bottom: 0,
-        width: 368, borderRadius: 0,
-        // FULL transparent test — the panel itself adds zero color; only
-        // the FluidCanvas orbs and the (light) scrim are visible. This lets
-        // you see how transparent the look CAN go before legibility breaks.
-        background: 'oklch(0.13 0.022 34 / 0.5)',
-        // Light backdrop blur so host content behind the sidebar is softened.
-        backdropFilter: 'blur(10px) saturate(1.2)',
-        WebkitBackdropFilter: 'blur(20px) saturate(1.2)',
-        borderLeft: '1px solid var(--p-border)',
+        // Floating panel — inset from all edges, rounded corners, heavy
+        // shadow so it reads as a card hovering above the editor surface.
+        // Editor route overrides the inset / radius / shadow vars to make
+        // it float; other routes get the default look (still inset but
+        // less dramatic).
+        position: 'fixed',
+        top: 'var(--assistant-top-offset, 16px)',
+        right: 'var(--assistant-right-offset, 16px)',
+        bottom: 'var(--assistant-bottom-offset, 16px)',
+        width: 'var(--assistant-width, 336px)',
+        borderRadius: 'var(--assistant-radius, 20px)',
+        background: 'oklch(0.13 0.022 34 / 0.55)',
+        backdropFilter: 'blur(14px) saturate(1.25)',
+        WebkitBackdropFilter: 'blur(20px) saturate(1.25)',
+        borderLeft: 'var(--assistant-border-left, 1px solid var(--p-border))',
+        boxShadow: 'var(--assistant-shadow, 0 24px 60px -12px oklch(0.10 0.02 50 / 0.45), 0 8px 24px -8px oklch(0.10 0.02 50 / 0.30), 0 1px 2px oklch(0.10 0.02 50 / 0.15))',
         zIndex: 40,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
@@ -129,8 +234,8 @@ export function SidebarPose() {
             <MiniButton ariaLabel="Dock to bar" onClick={() => setPose('bar')}>
               <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M6 9l6 6 6-6" /></svg>
             </MiniButton>
-            <MiniButton ariaLabel="Minimize to orb" onClick={() => setPose('orb')}>
-              <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M5 12h14" /></svg>
+            <MiniButton ariaLabel="Close assistant" onClick={() => setPose('orb')}>
+              <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M6 6l12 12M18 6L6 18" /></svg>
             </MiniButton>
           </div>
         </div>
@@ -165,11 +270,20 @@ export function SidebarPose() {
         <div style={{ marginTop: 12 }}><ScopePill /></div>
       </div>
 
-      {/* Body (scrollable) */}
-      <div style={{ position: 'relative', zIndex: 3, flex: 1, overflowY: 'auto', padding: '18px 18px 8px' }}>
-        {tab === 'chat' && <ChatTab />}
-        {tab === 'suggestions' && <SuggestionsTab />}
-        {tab === 'history' && <HistoryTab />}
+      {/* Body (scrollable). Wrapped in a position-relative container so
+          the custom scroll indicator can overlay its right edge. */}
+      <div style={{ position: 'relative', zIndex: 3, flex: 1, minHeight: 0 }}>
+        <div
+          ref={bodyRef}
+          className="cop-sidebar-scroll"
+          style={{ position: 'absolute', inset: 0, overflowY: 'auto', padding: '18px 18px 8px' }}
+        >
+          <CopReviewBlock />
+          {tab === 'chat' && <ChatTab />}
+          {tab === 'suggestions' && <SuggestionsTab />}
+          {tab === 'history' && <HistoryTab />}
+        </div>
+        <div ref={indicatorRef} className="cop-sidebar-indicator"/>
       </div>
 
       {/* Footer (hidden on history). Per design `.a-foot`:
