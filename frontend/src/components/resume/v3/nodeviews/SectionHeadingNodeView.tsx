@@ -9,7 +9,7 @@ export function SectionHeadingNodeView(props: NodeViewProps) {
       {...props}
       kindClass="section-heading"
       kindDataAttr="section.heading"
-      suffix={<hr className="section-divider" contentEditable={false} data-edit-only="" />}
+      suffix={<hr className="section-divider" contentEditable={false} />}
     />
   );
 }

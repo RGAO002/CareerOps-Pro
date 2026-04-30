@@ -71,19 +71,33 @@ const PaginationExt = Extension.create({
   },
 });
 
-// F2 — emit a literal @page rule. The page margin is intentionally 0 so the
-// tiptap element's own padding (0.75in/1in via --page-margin-* CSS vars) is
-// what produces the visual page margin in BOTH editor and print. If we set
-// @page margin > 0 here AND tiptap also has padding, content gets double-
-// offset and PDF diverges from the editor view. Keeping margin: 0 guarantees
-// PDF == editor, byte-for-byte tokenwise.
+// F2 — emit a literal @page rule from resolved tokens. The page margin is
+// applied via @page (paper-level) so it takes effect on EVERY printed page,
+// not just the first. tiptap padding is removed in print mode (see
+// EditorPageV3.css @media print) so margins aren't double-counted.
 //
-// Note: still emit a literal value (no var()) — Chromium does not resolve CSS
-// custom properties inside @page blocks. The literal `0` keeps that contract.
-function emitStaticPageRuleFromTokens(_canvasRoot: HTMLElement): () => void {
+// Trying tiptap-padding-only (without @page margin) breaks page 2+: tiptap
+// padding-top is the start-of-element padding, not a per-page repeated
+// margin. After a `break-before: page`, content lands at paper top with no
+// margin. Use @page margin to fix that.
+//
+// Chromium does not resolve CSS custom properties inside @page blocks, so we
+// read the resolved values via getComputedStyle at JS mount time and inject
+// literal in/px values.
+function emitStaticPageRuleFromTokens(canvasRoot: HTMLElement): () => void {
+  const cs = getComputedStyle(canvasRoot);
+  const get = (name: string, fallback: string) => {
+    const v = cs.getPropertyValue(name).trim();
+    return v || fallback;
+  };
+  const top = get('--page-margin-top', '0.75in');
+  const right = get('--page-margin-right', '1.0in');
+  const bottom = get('--page-margin-bottom', '0.75in');
+  const left = get('--page-margin-left', '1.0in');
+
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-v3-print-page-rule', 'true');
-  styleEl.textContent = `@page { size: 8.5in 11in; margin: 0; }`;
+  styleEl.textContent = `@page { size: 8.5in 11in; margin: ${top} ${right} ${bottom} ${left}; }`;
   document.head.appendChild(styleEl);
   return () => { styleEl.remove(); };
 }

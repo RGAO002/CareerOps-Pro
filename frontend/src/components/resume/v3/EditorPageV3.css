@@ -378,18 +378,21 @@
     padding: 0;
   }
 
-  /* Print parity: canvas-root + .tiptap keep their on-screen dimensions
-   * (8.5in wide, 0.75in/1in tiptap padding). The @page rule injected by
-   * PrintCanvasV3.emitStaticPageRuleFromTokens MUST use margin: 0 so the
-   * tiptap padding alone provides the visual page margin — otherwise
-   * content gets double-offset and PDF diverges from the editor view. */
+  /* Print: @page rule (PrintCanvasV3.emitStaticPageRuleFromTokens) provides
+   * the per-paper-page margins (every page including page 2+). tiptap then
+   * runs with padding: 0 + width: page-content-width so content fills exactly
+   * the @page content area. Don't use tiptap padding here — it only applies
+   * once at start-of-element, leaving page 2+ with content flush to paper top. */
   .v3-editor-canvas-root {
+    width: auto;
     margin: 0;
   }
 
   .v3-editor-canvas-root .tiptap,
   .v3-editor-canvas-root .ProseMirror {
+    width: var(--page-content-width);
     min-height: auto;
+    padding: 0;
   }
 
   .v3-editor-canvas-root .pagination-break {

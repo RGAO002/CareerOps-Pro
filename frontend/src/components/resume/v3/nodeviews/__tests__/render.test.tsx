@@ -83,7 +83,7 @@ describe('v3 NodeViews — per-kind render', () => {
     expect(marker!.hasAttribute('data-edit-only')).toBe(true);
   });
 
-  it('section_heading renders <hr.section-divider> with contenteditable=false and data-edit-only', async () => {
+  it('section_heading renders <hr.section-divider> with contenteditable=false (NOT data-edit-only — divider is part of resume visuals, must appear in PDF)', async () => {
     const { container } = render(
       <MountEditor nodeType="section_heading" extraAttrs={{ semanticGroupId: 'g1' }} />,
     );
@@ -92,7 +92,7 @@ describe('v3 NodeViews — per-kind render', () => {
     expect(hr).toBeTruthy();
     expect(hr!.tagName.toLowerCase()).toBe('hr');
     expect(hr!.getAttribute('contenteditable')).toBe('false');
-    expect(hr!.hasAttribute('data-edit-only')).toBe(true);
+    expect(hr!.hasAttribute('data-edit-only')).toBe(false);
   });
 
   it('NodeView tolerates missing/dangling semanticGroupId (F4 orphan-tolerant)', async () => {
