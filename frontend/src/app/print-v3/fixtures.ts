@@ -80,11 +80,192 @@ function buildThreePageFixture(): ResumeDocV3 {
 
 export const threePageFixture: ResumeDocV3 = buildThreePageFixture();
 
+// ---------------------------------------------------------------------------
+// T42 — fixtures for performance / IME / edge-case e2e specs.
+// ---------------------------------------------------------------------------
+
+/** Empty doc — schemaVersion only, no rows, no groups. */
+const emptyDoc: ResumeDocV3 = {
+  schemaVersion: 3,
+  rows: [],
+  groups: [],
+};
+
+/** Single-row doc — only header.name. */
+const singleRowDoc: ResumeDocV3 = {
+  schemaVersion: 3,
+  rows: [
+    { id: 'r-name' as RowId, kind: 'header.name', content: { text: 'Single Row Doc' } },
+  ],
+  groups: [],
+};
+
+/** All 9 SectionRoles, one heading + one bullet each. */
+function buildAllRolesDoc(): ResumeDocV3 {
+  const roles = [
+    'experience', 'education', 'skills', 'projects',
+    'awards', 'publications', 'volunteer', 'summary', 'custom',
+  ] as const;
+  const rows: ResumeDocV3['rows'] = [
+    { id: 'r-name' as RowId, kind: 'header.name', content: { text: 'All Roles Tester' } },
+  ];
+  const groups: ResumeDocV3['groups'] = [];
+  roles.forEach((role, i) => {
+    const sgid = `gS${i}` as GroupId;
+    const egid = `gE${i}` as GroupId;
+    groups.push({ id: sgid, kind: 'section', role });
+    groups.push({ id: egid, kind: 'entry', parentSectionGroupId: sgid });
+    rows.push({
+      id: `r-s${i}-h` as RowId,
+      kind: 'section.heading',
+      content: { text: String(role).toUpperCase() },
+      semanticGroupId: sgid,
+    });
+    rows.push({
+      id: `r-s${i}-b0` as RowId,
+      kind: 'bullet',
+      content: {
+        type: 'doc',
+        content: [{
+          type: 'paragraph',
+          content: [{ type: 'text', text: `Sample bullet for ${role}` }],
+        }],
+      },
+      semanticGroupId: egid,
+    });
+  });
+  return { schemaVersion: 3, rows, groups };
+}
+const allRolesDoc: ResumeDocV3 = buildAllRolesDoc();
+
+/** 50-row doc — single section with many bullets. */
+function buildFiftyRowDoc(): ResumeDocV3 {
+  const rows: ResumeDocV3['rows'] = [
+    { id: 'r-name' as RowId, kind: 'header.name', content: { text: 'Fifty Row Doc' } },
+    { id: 'r-exp-h' as RowId, kind: 'section.heading', content: { text: 'EXPERIENCE' }, semanticGroupId: 'gS0' as GroupId },
+    { id: 'r-exp-title' as RowId, kind: 'entry.title', content: { text: 'Senior Engineer' }, semanticGroupId: 'gE0' as GroupId },
+  ];
+  for (let i = 0; i < 47; i++) {
+    rows.push({
+      id: `r-b${i}` as RowId,
+      kind: 'bullet',
+      content: {
+        type: 'doc',
+        content: [{
+          type: 'paragraph',
+          content: [{ type: 'text', text: `Bullet ${i}: did something useful with measurable impact.` }],
+        }],
+      },
+      semanticGroupId: 'gE0' as GroupId,
+    });
+  }
+  return {
+    schemaVersion: 3,
+    rows,
+    groups: [
+      { id: 'gS0' as GroupId, kind: 'section', role: 'experience' },
+      { id: 'gE0' as GroupId, kind: 'entry', parentSectionGroupId: 'gS0' as GroupId },
+    ],
+  };
+}
+const fiftyRowDoc: ResumeDocV3 = buildFiftyRowDoc();
+
+/** 30-row doc — initial-paint test. */
+function buildThirtyRowDoc(): ResumeDocV3 {
+  const rows: ResumeDocV3['rows'] = [
+    { id: 'r-name' as RowId, kind: 'header.name', content: { text: 'Thirty Row Doc' } },
+    { id: 'r-exp-h' as RowId, kind: 'section.heading', content: { text: 'EXPERIENCE' }, semanticGroupId: 'gS0' as GroupId },
+  ];
+  for (let i = 0; i < 28; i++) {
+    rows.push({
+      id: `r-b${i}` as RowId,
+      kind: 'bullet',
+      content: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Bullet ${i}` }] }],
+      },
+      semanticGroupId: 'gE0' as GroupId,
+    });
+  }
+  return {
+    schemaVersion: 3,
+    rows,
+    groups: [
+      { id: 'gS0' as GroupId, kind: 'section', role: 'experience' },
+      { id: 'gE0' as GroupId, kind: 'entry', parentSectionGroupId: 'gS0' as GroupId },
+    ],
+  };
+}
+const thirtyRowDoc: ResumeDocV3 = buildThirtyRowDoc();
+
+/** 5-page doc — many sections × entries × bullets to overflow into 5 pages. */
+function buildFivePageDoc(): ResumeDocV3 {
+  const rows: ResumeDocV3['rows'] = [
+    { id: 'r-name' as RowId, kind: 'header.name', content: { text: 'Five Page Doc' } },
+    { id: 'r-contact' as RowId, kind: 'header.contact', content: { type: 'text', value: 'tester@example.com' } },
+  ];
+  const groups: ResumeDocV3['groups'] = [];
+  const sectionRoles = ['experience', 'projects', 'education', 'awards'] as const;
+  const ENTRIES_PER_SECTION = 4;
+  const BULLETS_PER_ENTRY = 8;
+  for (let s = 0; s < sectionRoles.length; s++) {
+    const sgid = `gS${s}` as GroupId;
+    groups.push({ id: sgid, kind: 'section', role: sectionRoles[s] });
+    rows.push({
+      id: `r-s${s}-h` as RowId,
+      kind: 'section.heading',
+      content: { text: sectionRoles[s].toUpperCase() },
+      semanticGroupId: sgid,
+    });
+    for (let e = 0; e < ENTRIES_PER_SECTION; e++) {
+      const egid = `gE${s}_${e}` as GroupId;
+      groups.push({ id: egid, kind: 'entry', parentSectionGroupId: sgid });
+      rows.push({
+        id: `r-s${s}-e${e}-title` as RowId,
+        kind: 'entry.title',
+        content: { text: `Entry ${e + 1} for ${sectionRoles[s]}` },
+        semanticGroupId: egid,
+      });
+      rows.push({
+        id: `r-s${s}-e${e}-meta` as RowId,
+        kind: 'entry.meta',
+        content: { text: `Org ${e + 1} — ${2018 + e} - ${2020 + e}` },
+        semanticGroupId: egid,
+      });
+      for (let b = 0; b < BULLETS_PER_ENTRY; b++) {
+        rows.push({
+          id: `r-s${s}-e${e}-b${b}` as RowId,
+          kind: 'bullet',
+          content: {
+            type: 'doc',
+            content: [{
+              type: 'paragraph',
+              content: [{
+                type: 'text',
+                text: `Bullet ${b + 1}: accomplished a notable thing with measurable impact and clarity for reviewers reading this resume aloud.`,
+              }],
+            }],
+          },
+          semanticGroupId: egid,
+        });
+      }
+    }
+  }
+  return { schemaVersion: 3, rows, groups };
+}
+const fivePageDoc: ResumeDocV3 = buildFivePageDoc();
+
 // Registry of fixture name → doc. The /print-v3 page reads ?fixture=<name>
 // and looks up the doc here. Default = 'twoSections' (T34 default).
 export const FIXTURES: Record<string, ResumeDocV3> = {
   twoSections,
   threePage: threePageFixture,
+  empty: emptyDoc,
+  singleRow: singleRowDoc,
+  allRoles: allRolesDoc,
+  fiftyRow: fiftyRowDoc,
+  thirtyRow: thirtyRowDoc,
+  fivePage: fivePageDoc,
 };
 
 export type FixtureName = keyof typeof FIXTURES;
