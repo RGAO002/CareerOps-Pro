@@ -359,6 +359,48 @@
   color: rgb(115 115 115);
 }
 
+/* PrintCanvasV3 always renders in print-page dimensions (NOT inside @media
+ * print) so PaginationPlugin's measure-and-layout pass uses the same rect
+ * geometry that Chromium will see during PDF generation. If we put these
+ * rules under @media print, layout is computed in screen-mode dimensions
+ * (tiptap padding 0.75in/1in, width 8.5in) and breaks land at row positions
+ * that don't fill the print-mode page (causing blank space at the bottom of
+ * each PDF page).
+ *
+ * The .v3-print-canvas-root selector is added by PrintCanvasV3 alongside
+ * .v3-editor-canvas-root and overrides the on-screen editor rules. */
+.v3-print-canvas-root {
+  width: auto !important;
+  margin: 0 !important;
+  background: white;
+}
+
+.v3-print-canvas-root .tiptap,
+.v3-print-canvas-root .ProseMirror {
+  width: var(--page-content-width);
+  min-height: auto;
+  padding: 0;
+}
+
+.v3-print-canvas-root .pagination-break {
+  height: 0 !important;
+}
+
+/* The drag handle is edit-only — keep it laid out so row content alignment
+ * doesn't shift, but make it invisible in the print canvas. */
+.v3-print-canvas-root .row-handle[data-edit-only] {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Edit-only chrome (topbar, page chrome paper card, pagination break gap)
+ * has no role inside the print canvas. */
+.v3-print-canvas-root [data-edit-only]:not(.row-handle) {
+  display: none !important;
+}
+
+/* When the editor route itself is being printed (browser print dialog from
+ * /resume/[id]), use the same dimensions as PrintCanvasV3 + hide chrome. */
 @media print {
   .v3-topbar,
   [data-edit-only] {
@@ -378,11 +420,6 @@
     padding: 0;
   }
 
-  /* Print: @page rule (PrintCanvasV3.emitStaticPageRuleFromTokens) provides
-   * the per-paper-page margins (every page including page 2+). tiptap then
-   * runs with padding: 0 + width: page-content-width so content fills exactly
-   * the @page content area. Don't use tiptap padding here — it only applies
-   * once at start-of-element, leaving page 2+ with content flush to paper top. */
   .v3-editor-canvas-root {
     width: auto;
     margin: 0;
