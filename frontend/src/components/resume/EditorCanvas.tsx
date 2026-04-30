@@ -2,10 +2,12 @@
 "use client";
 
 import { useEditor, EditorContent } from "@tiptap/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Editor } from "@tiptap/core";
 import { createResumeEditorExtensions } from "./extensions/createResumeEditor";
 import type { ResumeDoc } from "./types";
+import { AddSectionPopover } from "./AddSectionPopover";
+import { PageBreakOverlay } from "./PageBreakOverlay";
 
 import "./resume-editor.css";
 
@@ -18,6 +20,8 @@ interface Props {
 }
 
 export function EditorCanvas({ doc, onChange, onReady }: Props) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+
   const editor = useEditor({
     ...createResumeEditorExtensions(doc),
     immediatelyRender: false, // avoid SSR hydration mismatch
@@ -43,8 +47,19 @@ export function EditorCanvas({ doc, onChange, onReady }: Props) {
   if (!editor) return null;
 
   return (
-    <div className="resume-canvas">
-      <EditorContent editor={editor} />
+    // Outer flex column so the AddSectionPopover sits below the page-card stack,
+    // not on top of it. Inner div is the positioned context for the canvas +
+    // page-card backgrounds + page indicators.
+    <div className="mx-auto flex w-fit flex-col">
+      <div className="relative">
+        {/* Page-card backgrounds (z-index: 0) sit BEHIND the canvas */}
+        <PageBreakOverlay getCanvas={() => canvasRef.current} />
+        {/* Canvas (z-index: 10 via .resume-canvas) renders on TOP of cards */}
+        <div ref={canvasRef} className="resume-canvas">
+          <EditorContent editor={editor} />
+        </div>
+      </div>
+      <AddSectionPopover editor={editor} />
     </div>
   );
 }

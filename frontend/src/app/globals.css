@@ -334,3 +334,283 @@
     animation: none !important;
   }
 }
+
+/* ─── AI Assistant tokens (per design_handoff_ai_sidebar/ai-sidebar.html `:root`) ─── */
+:root {
+  --ai-font: var(--font-plus-jakarta), var(--font-manrope), var(--font-geist-sans), system-ui, sans-serif;
+  --ai-font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* AI sidebar font-weight tokens — change all three to globally re-tune
+     "thickness" of the sidebar text. Bump each by 100 to make everything
+     thicker; reduce by 100 for lighter. Used in inline `font:` shorthand
+     (e.g. `font: 'var(--ai-w-ui) 11px/1 var(--ai-font)'`). */
+  --ai-w-body:    600;  /* chat / suggestion body, input, helper text */
+  --ai-w-ui:      700;  /* tabs, chips, scope pill, card headers, buttons */
+  --ai-w-strong:  800;  /* "AI assistant" wordmark, SCOPE label, op tags */
+
+  /* Surface — translucent, sits on the FluidCanvas. Lighter + lower alpha than v1
+     so the fluid breathes through; matches design exactly. */
+  --p-surface:      oklch(0.28 0.024 34 / 0.42);
+  --p-surface-hi:   oklch(0.34 0.028 34 / 0.55);
+  --p-border:       oklch(0.70 0.018 40 / 0.22);
+  --p-border2:      oklch(0.75 0.020 40 / 0.32);
+
+  /* Sidebar / Bar / Orb base colors */
+  --p-sidebar-base: oklch(0.13 0.025 34);
+  --p-bar-base:     oklch(0.10 0.018 34 / 0.92);
+
+  /* Type — assistant */
+  --p-text:         oklch(0.97 0.010 55);
+  --p-text-body:    oklch(0.90 0.012 52);
+  --p-text-mute:    oklch(0.72 0.012 50);
+  --p-text-dim:     oklch(0.58 0.010 50);
+
+  /* Accents — terracotta / warm-orange family (design: --accent / --accent-warm / --accent-muted / --accent-deep) */
+  --p-accent:       oklch(0.72 0.13 38);
+  --p-accent-warm:  oklch(0.78 0.12 42);
+  --p-accent-muted: oklch(0.72 0.13 38 / 0.18);
+  --p-accent-deep:  oklch(0.55 0.14 32);
+  --p-deep:         oklch(0.55 0.14 32);
+
+  /* Terracotta accent strip (selected section vertical line). */
+  --p-terracotta:      oklch(0.62 0.13 38);
+  --p-terracotta-deep: oklch(0.50 0.14 35);
+
+  /* Three-agent palette (v0: tokens defined, only used in chip dots; AI message rows do NOT show per-agent dot yet) */
+  --p-recruit:      oklch(0.70 0.12 35);
+  --p-hm:           oklch(0.68 0.10 150);
+  --p-coach:        oklch(0.66 0.11 260);
+
+  /* Easing */
+  --p-ease:         cubic-bezier(0.16, 1, 0.3, 1);
+  --p-ease-soft:    cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ─── Sidebar fluid shader — three independently-drifting radial blobs
+       (per design_handoff `.a-shader`). Each blob is its own div with a
+       single centered radial-gradient that fades to TRANSPARENT, so the
+       translucent panel underneath shows through. Each blob has its own
+       keyframe animation with a different phase so they actually appear
+       to drift relative to each other (CSS custom-property interpolation
+       without @property would just snap, hence three layers). ─── */
+.a-shader {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  filter: blur(44px) saturate(1.3);
+}
+.a-shader > i {
+  position: absolute;
+  display: block;
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+.a-shader .blob-warm  {
+  background: radial-gradient(circle at 50% 50%, oklch(0.62 0.17 38 / 0.65), transparent 62%);
+  animation: a-blob-warm 14s ease-in-out infinite alternate;
+}
+.a-shader .blob-green {
+  background: radial-gradient(circle at 50% 50%, oklch(0.55 0.14 152 / 0.55), transparent 62%);
+  animation: a-blob-green 18s ease-in-out infinite alternate;
+}
+.a-shader .blob-blue  {
+  background: radial-gradient(circle at 50% 50%, oklch(0.55 0.15 268 / 0.55), transparent 62%);
+  animation: a-blob-blue 22s ease-in-out infinite alternate;
+}
+@keyframes a-blob-warm {
+  0%   { transform: translate(-15%, -10%) scale(1.0); }
+  50%  { transform: translate(40%,  20%)  scale(1.15); }
+  100% { transform: translate(10%,  60%)  scale(1.05); }
+}
+@keyframes a-blob-green {
+  0%   { transform: translate(50%,  60%)  scale(1.0); }
+  50%  { transform: translate(-10%, 30%)  scale(1.1); }
+  100% { transform: translate(60%, -10%)  scale(1.05); }
+}
+@keyframes a-blob-blue {
+  0%   { transform: translate(20%,  20%)  scale(1.0); }
+  50%  { transform: translate(60%,  50%)  scale(1.15); }
+  100% { transform: translate(-10%, 70%)  scale(1.0); }
+}
+
+/* AI Assistant overlay mode — sidebar floats ON TOP of resume content
+   (no reflow). This gives the design's premium glass feel: there's actual
+   content behind the panel for backdrop-filter to blur. Trade-off: the
+   right ~368px of resume content is partially obscured while sidebar is
+   open — user accepted this in exchange for the see-through visual. */
+.ai-host-reflow {
+  /* No padding shift; transition kept in case we toggle modes later. */
+  transition: padding-right 0.4s var(--p-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* ─────── Custom scrollbars ───────
+   Three scrollbars show up around the editor view (outer page, editor
+   main scroll, AI sidebar body). Default OS scrollbars look heavy on a
+   curated panel UI — these match the COP / sidebar visual: thin tracks,
+   tinted thumb that brightens on hover. Works on both light surfaces
+   (paper-area gradients, tactical rail) and dark surfaces (AI sidebar)
+   thanks to low-alpha neutral color.
+
+   `!important` is necessary because:
+     1. macOS's "Always show scrollbars" preference forces Chrome/Safari
+        to render NATIVE scrollbars unless ::-webkit-scrollbar overrides
+        win.
+     2. Some downstream component CSS (shadcn / tailwind / etc.) sets
+        scrollbar colors with class selectors and beats `*::-webkit-…`
+        specificity. */
+/* Thumb is transparent by default — entire scrollbar reads as invisible
+   gutter. A capture-phase scroll listener (mounted by EditorPageV3
+   FullBleed) toggles `body.cop-scrolling` on any scroll event in the
+   editor view; the class flips thumb color visible. After ~700ms of no
+   scroll the class is removed, and the thumb fades back out via the
+   color transition below. */
+/* `transition` and `opacity` on ::-webkit-scrollbar-thumb are not
+   reliably honored on macOS Chrome (OS overlay scrollbar steals the
+   render path). Stepped background-color via discrete classes is the
+   only approach that ALWAYS works:
+     `cop-s-100` → fully visible
+     `cop-s-80`  → 80% alpha
+     `cop-s-60`  → 60%
+     `cop-s-40`  → 40%
+     `cop-s-20`  → 20%
+     no class    → fully transparent
+   JS in EditorPageV3 cycles the body class through these stages 100ms
+   apart, producing a perceptual fade-out. `-webkit-appearance: none`
+   forces custom scrollbar rendering and disables the OS overlay. */
+html, body, * {
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  -webkit-appearance: none !important;
+  width: 6px !important;
+  height: 6px !important;
+  background: transparent !important;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  -webkit-appearance: none !important;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background-color: transparent !important;
+  border-radius: 999px !important;
+  border: 0 !important;
+  -webkit-appearance: none !important;
+}
+
+/* Stage classes — discrete alpha steps that JS walks through to make a
+   perceptual fade. Each next class is set 100ms after the previous, so
+   100→80→60→40→20→none = 500ms total fade. */
+body.cop-s-100 ::-webkit-scrollbar-thumb { background-color: oklch(0.55 0.005 60 / 0.32) !important; }
+body.cop-s-80  ::-webkit-scrollbar-thumb { background-color: oklch(0.55 0.005 60 / 0.26) !important; }
+body.cop-s-60  ::-webkit-scrollbar-thumb { background-color: oklch(0.55 0.005 60 / 0.20) !important; }
+body.cop-s-40  ::-webkit-scrollbar-thumb { background-color: oklch(0.55 0.005 60 / 0.14) !important; }
+body.cop-s-20  ::-webkit-scrollbar-thumb { background-color: oklch(0.55 0.005 60 / 0.07) !important; }
+body[class*='cop-s-'] ::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(0.45 0.008 55 / 0.55) !important;
+}
+
+/* Firefox: scrollbar-color responds to the same body classes (no fade,
+   pops in/out — acceptable trade-off, matches macOS native behaviour). */
+body[class*='cop-s-'] { scrollbar-color: oklch(0.55 0.005 60 / 0.32) transparent !important; }
+
+*::-webkit-scrollbar-corner {
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+*::-webkit-scrollbar-button {
+  display: none !important;
+  -webkit-appearance: none !important;
+}
+
+/* Editor-route nuclear option: kill EVERY native scrollbar, on every
+   element, while body.cop-editor-fullbleed is active. This sidesteps
+   the macOS Chrome overlay-scrollbar quirks that were occasionally
+   surfacing as full-height vertical "cracks" on double-click. The
+   custom JS indicators (.cop-resume-indicator / .cop-sidebar-indicator)
+   provide visual scroll feedback. */
+body.cop-editor-fullbleed,
+body.cop-editor-fullbleed * {
+  scrollbar-width: none !important;
+}
+body.cop-editor-fullbleed::-webkit-scrollbar,
+body.cop-editor-fullbleed *::-webkit-scrollbar,
+body.cop-editor-fullbleed::-webkit-scrollbar-thumb,
+body.cop-editor-fullbleed *::-webkit-scrollbar-thumb,
+body.cop-editor-fullbleed::-webkit-scrollbar-track,
+body.cop-editor-fullbleed *::-webkit-scrollbar-track,
+body.cop-editor-fullbleed::-webkit-scrollbar-corner,
+body.cop-editor-fullbleed *::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+/* Resume area scroll — macOS Chrome ignores all webkit-scrollbar pseudo
+   overrides on this particular `<main>` element (OS native overlay
+   forces through). Solution: kill the native scrollbar entirely and
+   render a custom JS-driven indicator div that we have full control
+   over. Same staged-fade classes as elsewhere. */
+.cop-resume-scroll {
+  scrollbar-width: none !important;
+}
+.cop-resume-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.cop-resume-indicator {
+  position: absolute;
+  right: 4px;
+  width: 4px;
+  border-radius: 999px;
+  cursor: default;
+  /* Solid color, visibility driven by inline `opacity` from EditorShellCop's
+     local scroll handler. Decoupled from body cop-s-N classes so scrolling
+     the AI sidebar doesn't also light up this indicator. */
+  background-color: oklch(0.55 0.005 60 / 0.36);
+  opacity: 0;
+  transition: opacity 380ms ease;
+  will-change: transform, height, opacity;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* AI sidebar body — same custom indicator pattern. Lighter color for
+   visibility on the dark FluidCanvas backdrop. */
+.cop-sidebar-scroll {
+  scrollbar-width: none !important;
+}
+.cop-sidebar-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.cop-sidebar-indicator {
+  position: absolute;
+  right: 4px;
+  width: 4px;
+  border-radius: 999px;
+  cursor: default;
+  /* Solid color, opacity from SidebarPose's local scroll handler. */
+  background-color: oklch(0.85 0.010 55 / 0.45);
+  opacity: 0;
+  transition: opacity 380ms ease;
+  will-change: transform, height, opacity;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 4;
+}

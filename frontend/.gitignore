@@ -2,3 +2,6 @@ node_modules/
 .next/
 out/
 .env.local
+*.tsbuildinfo
+playwright-report/
+test-results/

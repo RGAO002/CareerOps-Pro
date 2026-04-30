@@ -1,0 +1,32 @@
+/* T33 — Production PageChromeLayer styles.
+ *
+ * Paint-only paper card layer (C3): renders one absolutely-positioned card
+ * per geometry emitted by PaginationPlugin. Hidden in print since the
+ * physical paper is the printer's media. */
+
+.v3-page-chrome-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.v3-page-chrome-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: white;
+  box-shadow: 0 2px 12px oklch(0.40 0.04 42 / 0.08);
+  border-radius: 4px;
+}
+
+/* Last page keeps the same default shadow as other pages — distinguishing
+   the document's end is done via a layout spacer below the card (see
+   EditorPageV3 v3-editor-stage paddingBottom + spacer div), not via a
+   bigger shadow. Card itself uses the default `.v3-page-chrome-card` rule. */
+
+@media print {
+  .v3-page-chrome-layer {
+    display: none;
+  }
+}

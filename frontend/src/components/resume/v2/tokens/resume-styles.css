@@ -1,0 +1,274 @@
+/* frontend/src/components/resume/v2/tokens/resume-styles.css
+   Resume typography rules ported from v1 (resume-editor.css), scoped under
+   [data-canvas-root] so they only apply to the v2 canvas — v1's `.resume-canvas`
+   wrapper is gone in v2 and v1's @media print rules are handled by canvas-print.css. */
+
+/* Body font on all atom content inside the v2 canvas */
+[data-canvas-root] {
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  /* Disable browsers' auto scroll-anchoring inside the canvas. Without this,
+     the browser tries to "preserve" some visible element's screen position
+     when layout changes (drop-induced re-pagination), which causes a visible
+     scrollbar jitter the user finds disorienting. We snapshot+restore scrollY
+     manually in DragController.commitDrop instead. */
+  overflow-anchor: none;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+[data-canvas-root] .resume-header {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+[data-canvas-root] .resume-name {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+[data-canvas-root] .resume-contact-line {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+/* ── Sections ───────────────────────────────────────── */
+[data-canvas-root] .resume-section {
+  margin-top: 1.1rem;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+[data-canvas-root] .resume-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* ── Entries ────────────────────────────────────────── */
+[data-canvas-root] .resume-entry {
+  margin-bottom: 0.85rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+[data-canvas-root] .resume-entry-title {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+[data-canvas-root] .resume-entry-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+}
+
+/* ── Bullets ────────────────────────────────────────── */
+[data-canvas-root] .resume-entry-bullets {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+[data-canvas-root] .resume-bullet {
+  position: relative;
+  padding-left: 1rem;
+  margin-bottom: 0.25rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  /* Suppress the browser's default <li> disc — we draw our own dot via ::before.
+     `list-style:none` on the parent <ul> alone isn't reliable when LIs have
+     non-zero padding-left; setting it on the <li> itself is the bulletproof fix. */
+  list-style: none;
+}
+
+[data-canvas-root] .resume-bullet::marker {
+  content: "";
+}
+
+[data-canvas-root] .resume-bullet::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+/* Notion-style outdent: a bullet whose `kind` was flipped to 'plain' renders
+   without a marker and without the marker's reserved gutter. The row still
+   occupies space and remains focusable/editable. Applies in BOTH edit and
+   export/print modes since both go through the same renderer. */
+[data-canvas-root] .resume-bullet[data-kind="plain"]::before { content: none; }
+[data-canvas-root] .resume-bullet[data-kind="plain"] { padding-left: 0; }
+
+/* ── Inline marks ───────────────────────────────────── */
+[data-canvas-root] strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+[data-canvas-root] em {
+  font-style: italic;
+}
+
+[data-canvas-root] u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-canvas-root] a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
+
+/* ── Placeholder text for empty single-line + bullet fields ───────────────
+   Without these rules, an empty entry.title / entry.meta / contact line /
+   section heading / bullet renders as a completely blank rectangle — users
+   can't tell what the row is or whether Backspace did anything. We render
+   the placeholder via ::before on the empty <p> that TipTap leaves behind
+   inside .ProseMirror. Constrained to [data-mode="edit"] so PDFs/print
+   exports stay clean. attr() can't read attributes from an ancestor in
+   most browsers, so we hardcode the text per class instead of trying to
+   pipe data-placeholder through. */
+
+/* TipTap inserts a `<br class="ProseMirror-trailingBreak">` into empty
+   paragraphs so the cursor has somewhere to land. That means `p:empty` never
+   matches an empty editor — we have to match either a literally empty <p> OR
+   a <p> whose only child is the trailing <br>. We use :has() (Chrome 105+,
+   Firefox 121+, Safari 15.4+ — fine for our targets). */
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  pointer-events: none;
+  font-style: italic;
+  color: #9ca3af;          /* neutral-400 */
+  opacity: 0.7;
+  /* Float the placeholder out of the layout so it doesn't push real content. */
+  position: absolute;
+}
+
+/* Each editor wrapper needs to be a positioning context for the absolute placeholder. */
+[data-canvas-root][data-mode="edit"] .resume-name,
+[data-canvas-root][data-mode="edit"] .resume-contact-line,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text,
+[data-canvas-root][data-mode="edit"] .resume-entry-title,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content {
+  position: relative;
+}
+
+/* Suppress the "box around text" that the global Tailwind/shadcn base
+   (`* { @apply outline-ring/50 }` in globals.css) + browser default focus
+   ring add to every contenteditable in the resume. Cursor + section-bg
+   highlight already convey focus + selection unambiguously, and the extra
+   outline reads as a stale UI artifact. */
+[data-canvas-root] [contenteditable] {
+  outline: none !important;
+}
+[data-canvas-root] [contenteditable]:focus,
+[data-canvas-root] [contenteditable]:focus-visible,
+[data-canvas-root] .ProseMirror,
+[data-canvas-root] .ProseMirror:focus,
+[data-canvas-root] .ProseMirror:focus-visible {
+  outline: none !important;
+}
+
+/* Placeholder text comes from --resume-placeholder, set per-instance via
+   inline style on each EditorContent in PlainTextField / BulletField /
+   ContactLinesField. Fallback to empty string keeps the rule harmless when
+   the var isn't set. The previous hardcoded per-class strings prevented
+   role-aware placeholders (e.g., Skills entries shouldn't say
+   "Date · Location"). */
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-name              .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-contact-line      .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-section-heading-text .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-title       .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-entry-meta        .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:empty::before,
+[data-canvas-root][data-mode="edit"] .resume-bullet-content    .ProseMirror > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: var(--resume-placeholder, "");
+}
+
+/* Cross-page drag-preview shift: superseded by clip-path on AtomContentLayer's
+   wrapper (see AtomContentLayer.tsx — pageClipPath useMemo). The wrapper now
+   carries clip-path = union of page card rects, so an atom can transform
+   linearly through inter-page gap Y values without ever being visible there.
+   This keyframe is left as documentation; nothing references it. */
+@keyframes atom-cross-page-shift {
+  0%   { opacity: 1; transform: translateY(0); }
+  40%  { opacity: 0; transform: translateY(0); }
+  60%  { opacity: 0; transform: translateY(var(--atom-shift-to, 0)); }
+  100% { opacity: 1; transform: translateY(var(--atom-shift-to, 0)); }
+}
+
+/* Settle: a freshly-dropped atom (recentlyDroppedId in drag-preview-state)
+   fades in at its final position. Paired with the ghost fading out in place
+   at the cursor → reads as "the slot caught the drop" rather than the old
+   "ghost flies to slot" pattern (which felt teleporty).
+   Opacity-only on purpose: the wrapper carries an inline `transform:
+   translateY(...)` for layout, so a transform animation here would clobber
+   it. The opacity fade alone is enough to feel like "appearing in place". */
+@keyframes atom-settle {
+  0%   { opacity: 0; transform: scale(1.05); }
+  60%  { opacity: 1; transform: scale(0.99); }
+  100% { opacity: 1; transform: scale(1);    }
+}
+
+/* Legacy alias — keep until call sites are migrated. Same keyframes as
+   atom-settle so behavior is identical. */
+@keyframes atom-soft-drop-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Bullet drop settle mirrors atom-settle's opacity cue, but intentionally avoids
+   transform so it cannot fight the per-bullet translateY preview style. */
+@keyframes bullet-settle {
+  0%   { opacity: 0.45; }
+  100% { opacity: 1; }
+}
+
+/* AI soft lock pulse (spec § 6.2 / Task 19): subtle outline-color pulse on
+   atoms whose source block is AI-locked. Paired with opacity: 0.55 + accent
+   outline applied inline by AtomContentLayer. The animation runs slowly so it
+   reads as "in flight" rather than "error". */
+@keyframes ai-lock-pulse {
+  0%, 100% { outline-color: rgba(212, 155, 94, 0.4); }
+  50%      { outline-color: rgba(212, 155, 94, 1.0); }
+}

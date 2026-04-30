@@ -235,13 +235,16 @@ export function LandingHero() {
           </motion.p>
 
           {/* ── Drop Zone ── */}
+          {/* NOTE: react-dropzone's getRootProps() returns onDrag (DragEventHandler) which
+              clashes with framer-motion's onDrag (PanInfo callback). Cast to any to bridge
+              the type clash — runtime behavior is unaffected (motion.div accepts both at runtime). */}
           <motion.div
             {...fadeSlideUp(STAGGER.dropzone)}
             className="mt-10 w-full"
             role="button"
             aria-label="Upload your resume — drop a PDF file or click to browse"
             tabIndex={0}
-            {...getRootProps()}
+            {...(getRootProps() as any)}
           >
             <input {...getInputProps()} />
             <motion.div

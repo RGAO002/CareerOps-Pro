@@ -1,0 +1,190 @@
+/* frontend/src/app/resume/[id]/print/print.css
+   Stylesheet for /resume/[id]/print. Paged.js polyfill paginates the
+   body content into multiple .pagedjs_page cards, applying the @page
+   rule below for size + margins + break behavior. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #f3f4f6; /* neutral page-bg around the page cards */
+}
+
+/* Top-level @page rule. Paged.js reads this to decide page size and
+   per-page margins. Each pagedjs_page card gets these dimensions, and
+   each page's printable content area is the page minus the margin. */
+@page {
+  size: Letter;
+  margin: 0.75in 0.9in;
+}
+
+/* The .resume-canvas wrapper is what TipTap renders into. Paged.js
+   takes its CONTENTS and flows them across multiple page cards. The
+   canvas itself is just a container — no padding/background of its own
+   (those would compete with @page's per-page inset). */
+.print-mode .resume-canvas {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  position: static !important;
+  z-index: auto !important;
+  box-shadow: none !important;
+  min-height: 0 !important;
+}
+
+/* Each Paged.js page card — Google-Docs-style with shadow + gap between. */
+.pagedjs_page {
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  margin: 0 auto 16px auto !important;
+}
+.pagedjs_pages {
+  padding: 24px 0;
+}
+
+/* Apply resume styles to the content Paged.js paginated. The resume CSS
+   is scoped to .resume-canvas; we mirror those selectors against the
+   .paged-source class that wraps the editor HTML fragment we hand to
+   Paged.js. Each .pagedjs_page contains pieces of .paged-source's
+   content after pagination, so we target them too. */
+.pagedjs_page .resume-name,
+.paged-source .resume-name {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+.pagedjs_page .resume-header,
+.paged-source .resume-header {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.pagedjs_page .resume-contact-line,
+.paged-source .resume-contact-line {
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+.pagedjs_page .resume-section,
+.paged-source .resume-section {
+  font-family: var(--font-resume), Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  margin-top: 1.1rem;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.pagedjs_page .resume-section-heading,
+.paged-source .resume-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.pagedjs_page .resume-entry,
+.paged-source .resume-entry {
+  margin-bottom: 0.85rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.pagedjs_page .resume-entry-title,
+.paged-source .resume-entry-title {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.pagedjs_page .resume-entry-meta,
+.paged-source .resume-entry-meta {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 0.3rem;
+}
+.pagedjs_page .resume-entry-bullets,
+.paged-source .resume-entry-bullets {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.pagedjs_page .resume-bullet,
+.paged-source .resume-bullet {
+  position: relative;
+  padding-left: 1rem;
+  margin-bottom: 0.25rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.pagedjs_page .resume-bullet::before,
+.paged-source .resume-bullet::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.65em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+.pagedjs_page strong, .paged-source strong { color: #111827; font-weight: 600; }
+.pagedjs_page em, .paged-source em { font-style: italic; }
+.pagedjs_page a, .paged-source a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
+
+/* Hide editor-only chrome inside the rendered content. */
+.print-mode .page-card-stack,
+.print-mode .page-indicators,
+.print-mode .group\/affordance > div[contenteditable="false"]:not(input) {
+  display: none !important;
+}
+
+/* Hide placeholders in print/preview. */
+.print-mode .resume-canvas input::placeholder,
+.pagedjs_page input::placeholder {
+  color: transparent !important;
+}
+.print-mode .resume-canvas input.resume-entry-meta:placeholder-shown,
+.print-mode .resume-canvas input.resume-entry-title:placeholder-shown,
+.pagedjs_page input.resume-entry-meta:placeholder-shown,
+.pagedjs_page input.resume-entry-title:placeholder-shown {
+  display: none !important;
+}
+
+/* CRITICAL: resume-editor.css's @media print block hides EVERYTHING in
+   body except .resume-canvas (it's the legacy "print just the canvas"
+   approach). On the Paged.js path, the visible content lives in
+   .pagedjs_page cards, NOT .resume-canvas — so that hide rule blanks
+   the entire PDF. Re-show the paged content with higher specificity. */
+@media print {
+  @page {
+    size: Letter;
+    margin: 0;  /* Paged.js's per-page @page above already insets content */
+  }
+
+  body *, .pagedjs_page, .pagedjs_page * {
+    visibility: visible !important;
+  }
+  /* Hide the source TipTap canvas — we already display:none'd its wrapper
+     from JS but be defensive. */
+  .print-mode > .resume-canvas, .print-mode > .resume-canvas * {
+    visibility: hidden !important;
+  }
+}

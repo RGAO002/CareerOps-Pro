@@ -7,12 +7,59 @@
   min-height: 11in;
   margin: 24px auto;
   padding: 0.75in 0.9in;
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* Background + shadow live on the per-page cards behind us
+     (PageBreakOverlay), not on the canvas itself. The canvas stays
+     transparent so the visible inter-page gaps show through. */
+  background: transparent;
+  position: relative;
+  z-index: 10;
   color: #374151;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Use the Next-loaded Inter font (--font-resume) so editor + PDF use
+     the SAME font and pagination matches. Fallbacks only if the variable
+     isn't defined (e.g. /print route or detached preview). */
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Normalize <input> elements (used by EntryNodeView/SectionNodeView for
+   editable single-line fields) so they have the same height/metrics as
+   the equivalent <div> the PDF renderer uses. Without this, inputs have
+   browser-default styling that creates micro-height-differences which
+   compound into different page breaks between editor and PDF. */
+.resume-canvas input {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Placeholder UX: only show "Date · Location" / "Title (e.g. ...)" hints
+   when the input is focused. Otherwise the placeholder text visually
+   pollutes the resume layout AND throws off pagination because PDF
+   renderers don't render placeholders — creating a height delta that
+   compounds into different page breaks. */
+.resume-canvas input::placeholder {
+  color: transparent;
+}
+.resume-canvas input:focus::placeholder {
+  color: #cbd5e1;
+  font-style: italic;
+}
+
+/* Dedicated /print route: restore white background on the canvas
+   (no page-card overlay there — that's editor-view-only). */
+.resume-canvas--print {
+  background: white !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .resume-canvas a,
@@ -108,6 +155,11 @@
 .resume-canvas .ProseMirror:focus { outline: none; }
 .resume-canvas .ProseMirror *:focus-within { outline: none; }
 
+/* ========== Page-break behavior (print + visual alignment) ========== */
+.resume-entry { break-inside: avoid; page-break-inside: avoid; }
+.resume-section-heading { break-after: avoid; page-break-after: avoid; }
+.resume-bullet { break-inside: avoid; page-break-inside: avoid; }
+
 /* ========== Print stylesheet (用户按 Export PDF → window.print()) ==========
    Target: "Save as PDF" from the browser print dialog should produce a clean
    resume PDF that matches the editor canvas. Everything except the canvas is
@@ -122,6 +174,7 @@
   body > * *:not(.resume-canvas):not(.resume-canvas *):not(.ProseMirror):not(.ProseMirror *) {
     visibility: hidden;
   }
+  body * { visibility: hidden; }
   .resume-canvas,
   .resume-canvas * {
     visibility: visible;
@@ -132,20 +185,41 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: 8.5in;
-    min-height: 11in;
-    margin: 0;
-    padding: 0.75in 0.9in;
+    width: 100% !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0.75in 0.9in !important;
     background: #fff !important;
     box-shadow: none !important;
     border: none !important;
   }
 
+  /* Hide overlays + chrome */
+  .page-break-overlay,
+  .page-card-stack,
+  .page-indicators { display: none !important; }
+  .resume-canvas [contenteditable="false"]:not(input) { display: none !important; }
+
+  /* Show value of input fields as plain text. The width: 100% is critical:
+     a default <input> is ~150px wide which would wrap text to one character
+     per line when the surrounding canvas is forced full-width in print. */
+  .resume-canvas input.resume-entry-title,
+  .resume-canvas input.resume-entry-meta,
+  .resume-canvas input.resume-section-heading {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    color: inherit !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
   /* ProseMirror hacks — hide cursor & editing focus rings */
   .ProseMirror {
     outline: none !important;
-    caret-color: transparent;
+    caret-color: transparent !important;
   }
+  .ProseMirror-focused { outline: none !important; }
   .ProseMirror-trailingBreak { display: none; }
 
   /* Make sure links print as colored (some browsers gray them) */
@@ -153,4 +227,18 @@
     color: #2563eb !important;
     text-decoration: underline !important;
   }
+}
+
+/* ========== Empty state placeholders ========== */
+.resume-canvas input::placeholder {
+  color: #cbd5e1;
+  font-style: italic;
+}
+.resume-bullet:empty::before,
+.resume-bullet > .ProseMirror-trailingBreak:only-child::after {
+  content: "Type a bullet…";
+  color: #cbd5e1;
+  font-style: italic;
+  position: absolute;
+  pointer-events: none;
 }

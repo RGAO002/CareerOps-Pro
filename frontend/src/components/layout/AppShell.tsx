@@ -2,7 +2,7 @@
 "use client";
 
 import { useAppStore } from "@/stores/app";
-import { AIChatPanel } from "./AIChatPanel";
+import { Assistant } from "@/components/ai/assistant";
 import { PreferencesDrawer } from "./PreferencesDrawer";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -28,8 +28,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Bottom-anchored AI panel (3 heights: 38 / 180 / 88vh) */}
-      <AIChatPanel />
+      {/* AI Assistant (morphing bar / sidebar / orb) */}
+      <Assistant />
 
       {/* Preferences drawer */}
       <PreferencesDrawer />

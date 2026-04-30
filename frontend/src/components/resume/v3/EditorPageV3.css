@@ -1,0 +1,654 @@
+.v3-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  height: 56px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgb(229 229 229);
+  background: rgb(255 255 255 / 0.86);
+  padding: 0 20px;
+  backdrop-filter: blur(14px);
+}
+
+.v3-topbar-title {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgb(23 23 23);
+}
+
+.v3-topbar-divider {
+  height: 20px;
+  width: 1px;
+  background: rgb(229 229 229);
+}
+
+.v3-topbar-version,
+.v3-topbar-label,
+.v3-topbar-pages,
+.v3-save-status {
+  font-size: 11px;
+  color: rgb(115 115 115);
+}
+
+.v3-topbar-center {
+  min-width: 0;
+  flex: 1;
+  text-align: center;
+}
+
+.v3-topbar-target {
+  margin-left: 8px;
+  font-size: 13px;
+  color: rgb(38 38 38);
+}
+
+.v3-save-status {
+  text-transform: capitalize;
+}
+
+.v3-save-status-saving {
+  color: rgb(37 99 235);
+}
+
+.v3-save-status-error {
+  color: rgb(220 38 38);
+}
+
+.v3-save-status-saved {
+  color: rgb(22 163 74);
+}
+
+.v3-format-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid rgb(229 229 229);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.72);
+  padding: 2px;
+}
+
+.v3-toolbar-button {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: rgb(82 82 82);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.v3-toolbar-button:hover {
+  background: rgb(245 245 245);
+  color: rgb(23 23 23);
+}
+
+.v3-toolbar-button-active {
+  background: rgb(229 229 229);
+  color: rgb(23 23 23);
+}
+
+.v3-toolbar-button-disabled {
+  cursor: not-allowed;
+  color: rgb(212 212 212);
+}
+
+.v3-toolbar-button-disabled:hover {
+  background: transparent;
+  color: rgb(212 212 212);
+}
+
+.v3-toolbar-text-label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.v3-toolbar-separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: rgb(229 229 229);
+}
+
+.v3-toolbar-menu {
+  position: relative;
+}
+
+.v3-toolbar-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 80;
+  border: 1px solid rgb(229 229 229);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.12);
+}
+
+.v3-toolbar-list {
+  width: 150px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.v3-toolbar-list button {
+  display: block;
+  width: 100%;
+  border-radius: 5px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+  color: rgb(23 23 23);
+}
+
+.v3-toolbar-list button:hover,
+.v3-toolbar-list button.active {
+  background: rgb(245 245 245);
+}
+
+.v3-toolbar-palette {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 5px;
+  padding: 8px;
+}
+
+.v3-toolbar-palette button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgb(229 229 229);
+  border-radius: 999px;
+}
+
+.v3-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  background: rgb(23 23 23);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.v3-export-button:hover {
+  background: rgb(38 38 38);
+}
+
+.v3-editor-stage {
+  min-height: calc(100vh - 56px);
+  overflow: auto;
+  background:
+    radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.85), transparent 32rem),
+    linear-gradient(180deg, rgb(245 245 244), rgb(231 229 228));
+  padding: 32px 0;
+}
+
+.v3-editor-canvas-root {
+  --page-margin-top: 0.75in;
+  --page-margin-bottom: 0.75in;
+  --page-margin-left: 1in;
+  --page-margin-right: 1in;
+  --page-content-width: 6.5in;
+  --page-break-screen-gap: 32px;
+  position: relative;
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto;
+}
+
+.v3-editor-canvas-root [data-canvas-root] {
+  position: relative;
+  overflow: visible !important;
+}
+
+.v3-editor-canvas-root .tiptap,
+.v3-editor-canvas-root .ProseMirror {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  min-height: 11in;
+  width: 8.5in;
+  padding: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left);
+  outline: none;
+  /* v2 typography ported from v2/tokens/resume-styles.css. Inter sans-serif,
+   * grayscale palette (#374151 body / #111827 strong / #6b7280 secondary),
+   * 14px body. Mirrors v2's [data-canvas-root] rules exactly. */
+  color: #374151;
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.v3-editor-canvas-root .react-renderer {
+  display: block;
+}
+
+.v3-editor-canvas-root .row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  position: relative;
+  min-height: 16px;
+  /* Use padding-bottom (not margin-bottom) so when a group is hovered the
+   * highlight bg fills the inter-row gap continuously. Margin would leave
+   * 6px of unhighlighted strips between rows. */
+  padding-bottom: 6px;
+  margin: 0;
+  border-radius: 0;
+  transition: background-color 120ms ease;
+  transform-origin: top left;
+  will-change: transform;
+}
+/* Group-aware hover. Mirrors design_handoff_ai_sidebar/ai-sidebar.html:
+ *   .r-section:hover { background: oklch(.97 .01 60) }
+ * The .is-group-hovered class is toggled by ResumeCanvasV3 pointerover. */
+.v3-editor-canvas-root .row.is-group-hovered {
+  background: oklch(0.97 0.01 60);
+}
+/* Block-selected state. Mirrors design_handoff_ai_sidebar:
+ *   .r-section.active { background: oklch(.96 .03 45) }
+ *   .r-section.active::after { left:0; top:8px; bottom:8px; width:2px;
+ *                              background: terracotta }
+ *
+ * In the design HTML .r-section is one container that holds heading +
+ * entries + bullets, so the ::after strip is one element spanning the
+ * full section height with 8px insets at top + bottom.
+ *
+ * v3 emits one .row per row, so the design's single strip becomes a
+ * stack of per-row ::before strips that visually join into a continuous
+ * line. The first/last/single classes adjust the top/bottom inset so
+ * the union has the same 8px top + 8px bottom rounding as the design. */
+.v3-editor-canvas-root .row.is-block-selected {
+  background: oklch(0.96 0.03 45);
+}
+.v3-editor-canvas-root .row.is-block-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: oklch(0.62 0.13 38); /* terracotta */
+  pointer-events: none;
+}
+.v3-editor-canvas-root .row.is-block-selected.is-block-selected-first::before {
+  top: 8px;
+  border-top-right-radius: 2px;
+}
+.v3-editor-canvas-root .row.is-block-selected.is-block-selected-last::before {
+  bottom: 8px;
+  border-bottom-right-radius: 2px;
+}
+/* Drop bg + selection chrome on print canvas. */
+.v3-print-canvas-root .row,
+.v3-print-canvas-root .row.is-group-hovered,
+.v3-print-canvas-root .row.is-block-selected { background: transparent; }
+.v3-print-canvas-root .row.is-block-selected::before,
+.v3-print-canvas-root .row.is-block-selected.is-block-selected-first::before,
+.v3-print-canvas-root .row.is-block-selected.is-block-selected-last::before { content: none; }
+
+/* 6-dot drag handle. Design source: design_handoff_ai_sidebar/ai-sidebar.html
+ * .r-handle — 2 cols × 3 rows of 3px round dots in a CSS grid, 2px gap.
+ * Visible only on row hover. The handle itself takes 14px of flex space
+ * (matches v3 row gutter); the inner grid is the 6-dot visual. */
+.v3-editor-canvas-root .row-handle {
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  grid-template-rows: repeat(3, 3px);
+  gap: 2px;
+  align-content: center;
+  justify-content: center;
+  width: 14px;
+  height: 18px;
+  flex: 0 0 14px;
+  border-radius: 4px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.v3-editor-canvas-root .row-handle > i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #9ca3af;
+}
+/* Handle visibility: only the row directly under the cursor shows its
+ * handle. is-group-hovered (the section/entry-wide highlight) only changes
+ * background, not handle opacity — otherwise hovering on Freelance lights
+ * up 6 handles down the entry; v2 / design intent is one handle at a time. */
+.v3-editor-canvas-root .row:hover .row-handle {
+  opacity: 0.85;
+}
+.v3-editor-canvas-root .row-handle:hover {
+  opacity: 1 !important;
+  background: oklch(0.95 0.008 60);
+}
+
+.v3-editor-canvas-root .row-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.v3-editor-canvas-root .row-content > * {
+  margin: 0;
+}
+
+/* All per-row-kind spacing uses PADDING (not margin) so the group-hover /
+ * block-selected bg fills the inter-row gap continuously. Visual values
+ * mirror v2's resume-styles.css. */
+
+.v3-editor-canvas-root .row-header-name {
+  justify-content: center;
+  padding-bottom: 8px;
+}
+.v3-editor-canvas-root .row-header-name .row-content {
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+  line-height: 1.1;
+}
+
+.v3-editor-canvas-root .row-header-contact {
+  justify-content: center;
+  padding-bottom: 4px;
+}
+.v3-editor-canvas-root .row-header-contact .row-content {
+  text-align: center;
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
+}
+
+/* Section heading — v2: 11px, weight 600, letter-spacing 0.14em, uppercase,
+ * color #6b7280 (secondary), border-bottom 1px solid #e5e7eb (subtle, NOT
+ * heavy black). Top breathing room becomes padding-top so bg fills. */
+.v3-editor-canvas-root .row-section-heading {
+  display: block;
+  padding-top: 18px;
+  padding-bottom: 8px;
+}
+.v3-editor-canvas-root .row-section-heading .row-handle {
+  position: absolute;
+  left: 0;
+  top: 18px;
+}
+.v3-editor-canvas-root .row-section-heading .row-content {
+  margin-left: 22px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  padding-bottom: 5px;
+}
+.v3-editor-canvas-root .section-divider {
+  margin: 0 0 0 22px;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.v3-editor-canvas-root .row-entry-title {
+  padding-top: 6px;
+}
+.v3-editor-canvas-root .row-entry-title .row-content {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.v3-editor-canvas-root .row-entry-meta .row-content {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* v2 parity for bullet rows: bullet text is INDENTED 16px from entry title
+ * (matches v2's `.resume-bullet { padding-left: 1rem }`); the dot floats
+ * inside that 16px gutter at left:5.6px (matches v2's
+ * `.resume-bullet::before { left: 0.35rem }`).
+ *
+ * Layout for a bullet row:
+ *   |handle 14|gap 8|--------- row-content (flex:1) -----------|
+ *                   |padding-left 16|text...
+ *                       ↑
+ *                       marker absolutely positioned here at
+ *                       (handle 14 + gap 8 + 5.6) from row left
+ *
+ * Marker is absolute so it doesn't consume flex space — flex gap between
+ * handle and content stays at 8px regardless of marker presence, and
+ * non-bullet rows (entry-title etc.) align cleanly with bullet content +
+ * content + 16px = entry-title content + 16px (the v2 indent). */
+.v3-editor-canvas-root .row-bullet .row-content,
+.v3-editor-canvas-root .row-plain .row-content {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.v3-editor-canvas-root .row-bullet .row-content {
+  padding-left: 16px;
+}
+.v3-editor-canvas-root .row-marker {
+  position: absolute;
+  /* handle (14) + flex gap (8) + v2 inset (5.6px) = 27.6px from row left */
+  left: 27.6px;
+  /* Vertical alignment is in plain px because we set font-size:0 below to
+   * suppress the literal `•` text glyph in the span — that means `em`
+   * resolves against the marker's own (zero) font-size, not the body 14px,
+   * so 0.65em would be 0. v2 gets ~8.1px from `top:0.65em` against its
+   * 12.5px bullet font-size; we mirror with a literal 9px to land roughly
+   * at first-line baseline center against 14px body / 1.5 line-height. */
+  top: 9px;
+  width: 4px;
+  height: 4px;
+  background: #9ca3af;
+  border-radius: 50%;
+  font-size: 0;
+  color: transparent;
+  pointer-events: none;
+}
+
+/* Inline-mark typography. Mirrors v2's [data-canvas-root] rules in
+ * v2/tokens/resume-styles.css — without these, Bold/Italic/Underline/Link
+ * text shows up but doesn't visually distinguish from body text in v3. */
+.v3-editor-canvas-root strong {
+  color: #111827;
+  font-weight: 600;
+}
+.v3-editor-canvas-root em {
+  font-style: italic;
+}
+.v3-editor-canvas-root u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.v3-editor-canvas-root a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.4);
+  text-underline-offset: 3px;
+}
+
+/* Placeholder text for empty rows. Tiptap's Placeholder extension adds an
+ * `is-empty` class and a `data-placeholder` attribute to each empty row.
+ * We render it via ::after — ::before is reserved for the block-selected
+ * terracotta strip. Each row kind needs its own left/top because the row
+ * is a flex container whose content area starts at handle gutter end +
+ * (kind-specific) padding. Mirrors v2's resume-styles.css placeholder rules. */
+.v3-editor-canvas-root .row.is-empty::after {
+  content: attr(data-placeholder);
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  font-style: italic;
+  color: #9ca3af;
+  opacity: 0.7;
+  white-space: pre;
+  /* Default: align with text inside .row-content for flex rows.
+   * Handle (14) + flex gap (8) = 22px. */
+  left: 22px;
+  top: 0;
+}
+
+/* Bullet / plain row content has padding-left: 16px (v2 indent). */
+.v3-editor-canvas-root .row-bullet.is-empty::after,
+.v3-editor-canvas-root .row-plain.is-empty::after {
+  left: 38px;
+}
+
+/* Section heading: display:block, no flex; row-content has margin-left:22
+ * + the row has padding-top:18px. Match the heading typography so the
+ * placeholder doesn't look like body text. */
+.v3-editor-canvas-root .row-section-heading.is-empty::after {
+  left: 22px;
+  top: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  opacity: 0.5;
+}
+
+/* Header rows are centered; the placeholder should be too. */
+.v3-editor-canvas-root .row-header-name.is-empty::after {
+  left: 50%;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: 26px;
+  font-weight: 700;
+  color: #d1d5db;
+  opacity: 1;
+}
+.v3-editor-canvas-root .row-header-contact.is-empty::after {
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12.5px;
+  color: #9ca3af;
+}
+
+/* Print canvas: hide all placeholders. */
+.v3-print-canvas-root .row.is-empty::after { content: none; }
+
+.v3-editor-canvas-root .row-dragging {
+  opacity: 0.45;
+  filter: drop-shadow(0 10px 18px rgb(0 0 0 / 0.12));
+}
+
+.v3-editor-canvas-root .row:not(.row-dragging) {
+  backface-visibility: hidden;
+}
+
+.v3-editor-canvas-root .pagination-break {
+  display: block;
+  break-before: page;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* PaginationPlugin measures the raw row flow before producing the next set of
+ * break decorations. Hide the previous break widgets during that synchronous
+ * measurement pass; otherwise repeated Enter operations measure rows after old
+ * page gaps have already pushed them down, compounding layout error until
+ * content visually crosses page-card boundaries. */
+.v3-editor-canvas-root .v3-pagination-measuring .pagination-break {
+  display: none !important;
+  height: 0 !important;
+}
+
+.v3-loading {
+  padding: 24px;
+  color: rgb(115 115 115);
+}
+
+/* PrintCanvasV3 always renders in print-page dimensions (NOT inside @media
+ * print) so PaginationPlugin's measure-and-layout pass uses the same rect
+ * geometry that Chromium will see during PDF generation. If we put these
+ * rules under @media print, layout is computed in screen-mode dimensions
+ * (tiptap padding 0.75in/1in, width 8.5in) and breaks land at row positions
+ * that don't fill the print-mode page (causing blank space at the bottom of
+ * each PDF page).
+ *
+ * The .v3-print-canvas-root selector is added by PrintCanvasV3 alongside
+ * .v3-editor-canvas-root and overrides the on-screen editor rules. */
+.v3-print-canvas-root {
+  width: auto !important;
+  margin: 0 !important;
+  background: white;
+}
+
+.v3-print-canvas-root .tiptap,
+.v3-print-canvas-root .ProseMirror {
+  width: var(--page-content-width);
+  min-height: auto;
+  padding: 0;
+}
+
+.v3-print-canvas-root .pagination-break {
+  height: 0 !important;
+}
+
+/* The drag handle is edit-only — keep it laid out so row content alignment
+ * doesn't shift, but make it invisible in the print canvas. */
+.v3-print-canvas-root .row-handle[data-edit-only] {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Edit-only chrome (topbar, page chrome paper card, pagination break gap)
+ * has no role inside the print canvas. */
+.v3-print-canvas-root [data-edit-only]:not(.row-handle) {
+  display: none !important;
+}
+
+/* When the editor route itself is being printed (browser print dialog from
+ * /resume/[id]), use the same dimensions as PrintCanvasV3 + hide chrome. */
+@media print {
+  .v3-topbar,
+  [data-edit-only] {
+    display: none !important;
+  }
+
+  .v3-editor-canvas-root .row-handle[data-edit-only] {
+    display: block !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  .v3-editor-stage {
+    min-height: 0;
+    overflow: visible;
+    background: white;
+    padding: 0;
+  }
+
+  .v3-editor-canvas-root {
+    width: auto;
+    margin: 0;
+  }
+
+  .v3-editor-canvas-root .tiptap,
+  .v3-editor-canvas-root .ProseMirror {
+    width: var(--page-content-width);
+    min-height: auto;
+    padding: 0;
+  }
+
+  .v3-editor-canvas-root .pagination-break {
+    height: 0 !important;
+  }
+}

@@ -1,20 +1,30 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+// frontend/src/stores/conversation.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-export interface Message {
+interface Base {
   id: string;
-  role: "user" | "ai";
-  content: string;
-  /** Unix ms */
   createdAt: number;
 }
 
+export type Message =
+  | (Base & { kind: 'user'; content: string })
+  | (Base & { kind: 'ai-text'; content: string; agentId?: string })
+  | (Base & { kind: 'ai-diff'; suggestionId: string; agentId?: string });
+
+export type NewMessage =
+  | { kind: 'user'; content: string }
+  | { kind: 'ai-text'; content: string; agentId?: string }
+  | { kind: 'ai-diff'; suggestionId: string; agentId?: string };
+
 interface ConversationStore {
   messages: Message[];
-  /** Append a single message, auto-fills id and timestamp. */
-  appendMessage: (msg: Omit<Message, "id" | "createdAt">) => void;
-  /** Clear the entire conversation. */
+  appendMessage: (msg: NewMessage) => void;
   clearConversation: () => void;
+}
+
+function nextId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export const useConversationStore = create<ConversationStore>()(
@@ -23,19 +33,43 @@ export const useConversationStore = create<ConversationStore>()(
       messages: [],
 
       appendMessage: (msg) =>
-        set((s) => ({
-          messages: [
-            ...s.messages,
-            {
-              ...msg,
-              id: `${msg.role[0]}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              createdAt: Date.now(),
-            },
-          ],
-        })),
+        set((s) => {
+          const prefix = msg.kind === 'user' ? 'u' : msg.kind === 'ai-text' ? 'a' : 'd';
+          const full: Message = {
+            ...msg,
+            id: nextId(prefix),
+            createdAt: Date.now(),
+          } as Message;
+          return { messages: [...s.messages, full] };
+        }),
 
       clearConversation: () => set({ messages: [] }),
     }),
-    { name: "careerops-ai-conversation" },
+    {
+      name: 'careerops-ai-conversation',
+      version: 2,
+      // CRITICAL: migrate must return ONLY the persisted slice (here, `messages`).
+      // It must NOT include `appendMessage` / `clearConversation` — zustand
+      // merges the migrate output back into the store object, so any action
+      // passed here would CLOBBER the real implementations from create() with
+      // whatever is in the migrate return (previous bug: noop functions made
+      // chat unable to send anything).
+      migrate: (persisted: unknown, fromVersion: number): { messages: Message[] } => {
+        // v0 / v1 had `{ role: 'user'|'ai', content, action? }`. Map to the new union;
+        // drop the unserialisable `action` field.
+        const p = persisted as { messages?: Array<{ role?: 'user' | 'ai'; content?: string; id?: string; createdAt?: number }>; } | null;
+        if (!p?.messages) return { messages: [] };
+        if (fromVersion >= 2) return { messages: p.messages as unknown as Message[] };
+        const upgraded: Message[] = p.messages
+          .map<Message | null>((m) => {
+            const base = { id: m.id ?? nextId('m'), createdAt: m.createdAt ?? Date.now() };
+            if (m.role === 'user') return { ...base, kind: 'user' as const, content: m.content ?? '' };
+            if (m.role === 'ai')   return { ...base, kind: 'ai-text' as const, content: m.content ?? '' };
+            return null;
+          })
+          .filter((x): x is Message => x !== null);
+        return { messages: upgraded };
+      },
+    },
   ),
 );

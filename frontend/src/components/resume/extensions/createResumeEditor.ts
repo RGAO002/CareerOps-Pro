@@ -40,6 +40,7 @@ export function createResumeEditorExtensions(doc: ResumeDoc) {
         codeBlock: false,
         blockquote: false,
         horizontalRule: false,
+        link: false, // we add Link extension separately below
       }),
       Link.configure({
         openOnClick: false,

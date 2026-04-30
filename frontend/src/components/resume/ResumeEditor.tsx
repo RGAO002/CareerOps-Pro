@@ -2,67 +2,124 @@
 "use client";
 
 import type { Editor } from "@tiptap/core";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+
 import { usePageContext } from "@/hooks/usePageContext";
+import { resumeApi, type Resume } from "@/lib/resumeApi";
 import { useResumeEditorStore } from "@/stores/resumeEditor";
-import { loadFromLocal, saveToLocal } from "@/lib/localResumeStore";
-import { SEED_DOC, SEED_META } from "./seed";
+
+import { AIRewriteBulletPopover } from "./AIRewriteBulletPopover";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorTopBar } from "./EditorTopBar";
-import type { ResumeDoc } from "./types";
+import { HistoryPanel } from "./HistoryPanel";
+import { ImportBanner } from "./ImportBanner";
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
 
 export function ResumeEditor({ id }: { id: string }) {
-  const meta = useResumeEditorStore((s) => s.meta);
-  const doc = useResumeEditorStore((s) => s.doc);
+  const current = useResumeEditorStore((s) => s.current);
+  const available = useResumeEditorStore((s) => s.available);
   const saveStatus = useResumeEditorStore((s) => s.saveStatus);
-  const setAll = useResumeEditorStore((s) => s.setAll);
+  const lastSavedAt = useResumeEditorStore((s) => s.lastSavedAt);
+  const setCurrent = useResumeEditorStore((s) => s.setCurrent);
+  const setAvailable = useResumeEditorStore((s) => s.setAvailable);
   const setDoc = useResumeEditorStore((s) => s.setDoc);
   const setSaveStatus = useResumeEditorStore((s) => s.setSaveStatus);
+  const markSaved = useResumeEditorStore((s) => s.markSaved);
 
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
-  // Load from local or seed on mount / id change
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [showBanner, setShowBanner] = useState(searchParams.get("just_imported") === "1");
+
+  function dismissBanner() {
+    setShowBanner(false);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("just_imported");
+    router.replace(`/resume/${id}${params.toString() ? "?" + params.toString() : ""}`);
+  }
+
+  // Load current + list of all
   useEffect(() => {
-    const stored = loadFromLocal(id);
-    if (stored) {
-      setAll(stored.meta, stored.doc);
-    } else {
-      setAll({ ...SEED_META, id }, SEED_DOC);
-    }
-  }, [id, setAll]);
+    let cancelled = false;
+    setLoadError(null);
+    Promise.all([resumeApi.get(id), resumeApi.list()])
+      .then(([resume, list]) => {
+        if (cancelled) return;
+        setCurrent(resume);
+        setAvailable(list.resumes);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setLoadError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, setCurrent, setAvailable]);
 
-  // AI panel page context
+  // Debounced PUT on doc changes
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSnapshotDocRef = useRef<string>("");
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleChange = (newDoc: Resume["doc"]) => {
+    setDoc(newDoc);
+    setSaveStatus("saving");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const c = useResumeEditorStore.getState().current;
+      if (!c) return;
+      resumeApi
+        .upsert({ ...c, doc: newDoc })
+        .then(() => markSaved())
+        .catch(() => setSaveStatus("error"));
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    // Schedule auto-snapshot 30s after last change, only if doc actually differs
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      const docStr = JSON.stringify(newDoc);
+      if (docStr !== lastSnapshotDocRef.current) {
+        resumeApi
+          .createSnapshot(id, { trigger: "auto" })
+          .then(() => {
+            lastSnapshotDocRef.current = docStr;
+          })
+          .catch(() => {
+            /* silent — snapshots are best-effort */
+          });
+      }
+    }, 30_000);
+  };
+
+  // Page context for AI panel
   usePageContext({
     page: "resume_editor",
-    summary: meta
-      ? `正在编辑「${meta.title}」简历${
-          meta.target_company ? `，目标 ${meta.target_company} · ${meta.target_role ?? ""}` : ""
+    summary: current
+      ? `正在编辑「${current.title}」简历${
+          current.target_company
+            ? `，目标 ${current.target_company} · ${current.target_role ?? ""}`
+            : ""
         }`
       : "Resume editor loading",
     data: { resume_id: id },
   });
 
-  // Debounced autosave
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleChange = (next: ResumeDoc) => {
-    setDoc(next);
-    if (!meta) return;
-    setSaveStatus("saving");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      try {
-        saveToLocal(id, meta, next);
-        setSaveStatus("saved");
-        setTimeout(() => setSaveStatus("idle"), 1500);
-      } catch {
-        setSaveStatus("error");
-      }
-    }, AUTOSAVE_DEBOUNCE_MS);
-  };
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-neutral-600">
+        <div>Couldn't load resume: {loadError}</div>
+        <a href="/upload" className="text-sm text-blue-600 underline">
+          Upload a resume
+        </a>
+      </div>
+    );
+  }
 
-  if (!meta || !doc) {
+  if (!current) {
     return (
       <div className="flex h-screen items-center justify-center text-neutral-400">
         Loading resume…
@@ -72,8 +129,26 @@ export function ResumeEditor({ id }: { id: string }) {
 
   return (
     <div className="min-h-screen bg-neutral-100 pb-[240px]">
-      <EditorTopBar meta={meta} saveStatus={saveStatus} editor={editor} />
-      <EditorCanvas doc={doc} onChange={handleChange} onReady={setEditor} />
+      <EditorTopBar
+        current={current}
+        available={available}
+        saveStatus={saveStatus}
+        lastSavedAt={lastSavedAt}
+        editor={editor}
+        onOpenHistory={() => setShowHistory(true)}
+      />
+      {showBanner && <ImportBanner onDismiss={dismissBanner} />}
+      <EditorCanvas doc={current.doc} onChange={handleChange} onReady={setEditor} />
+      {showHistory && (
+        <HistoryPanel
+          resumeId={id}
+          onClose={() => setShowHistory(false)}
+          onRestored={() => {
+            resumeApi.get(id).then(setCurrent);
+          }}
+        />
+      )}
+      <AIRewriteBulletPopover resumeId={id} editor={editor} />
     </div>
   );
 }
