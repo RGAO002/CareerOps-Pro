@@ -94,6 +94,8 @@ export function FormatToolbarV3({ editor }: Props) {
 
   const has = (mark: string) => !!editor && mark in editor.schema.marks;
   const active = (mark: string, attrs?: Record<string, unknown>) => !!editor && editor.isActive(mark, attrs);
+  const canUndo = canRunEditorCommand(editor, 'undo');
+  const canRedo = canRunEditorCommand(editor, 'redo');
   const noFocusSteal = (event: React.MouseEvent) => event.preventDefault();
   const btn = (isActive = false, disabled = false) =>
     `v3-toolbar-button${isActive ? ' v3-toolbar-button-active' : ''}${disabled ? ' v3-toolbar-button-disabled' : ''}`;
@@ -101,11 +103,11 @@ export function FormatToolbarV3({ editor }: Props) {
 
   return (
     <div className="v3-format-toolbar" aria-label="Formatting toolbar">
-      <button type="button" className={btn(false, !editor?.can().undo())} disabled={!editor?.can().undo()}
+      <button type="button" className={btn(false, !canUndo)} disabled={!canUndo}
         title="Undo (⌘Z)" onMouseDown={noFocusSteal} onClick={() => editor?.chain().focus().undo().run()}>
         <Undo2 className="size-3.5" strokeWidth={1.8} />
       </button>
-      <button type="button" className={btn(false, !editor?.can().redo())} disabled={!editor?.can().redo()}
+      <button type="button" className={btn(false, !canRedo)} disabled={!canRedo}
         title="Redo (⌘⇧Z)" onMouseDown={noFocusSteal} onClick={() => editor?.chain().focus().redo().run()}>
         <Redo2 className="size-3.5" strokeWidth={1.8} />
       </button>
@@ -199,6 +201,23 @@ export function FormatToolbarV3({ editor }: Props) {
       </button>
     </div>
   );
+}
+
+function canRunEditorCommand(editor: Editor | null, command: 'undo' | 'redo'): boolean {
+  if (!editor) return false;
+  try {
+    const can = editor.can() as unknown;
+    const direct = (can as Record<string, unknown>)[command];
+    if (typeof direct === 'function') return Boolean(direct.call(can));
+    const chain = (can as { chain?: () => unknown }).chain?.();
+    const chained = chain ? (chain as Record<string, unknown>)[command] : undefined;
+    if (typeof chained !== 'function') return false;
+    const afterCommand = chained.call(chain);
+    const run = (afterCommand as { run?: () => boolean })?.run;
+    return typeof run === 'function' ? Boolean(run.call(afterCommand)) : false;
+  } catch {
+    return false;
+  }
 }
 
 function MenuButton({
