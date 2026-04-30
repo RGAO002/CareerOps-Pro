@@ -1,0 +1,73 @@
+/* PoC CSS — defines margin token system used by both screen and print. */
+.poc-canvas-root {
+  --page-margin-top:    0.75in;
+  --page-margin-bottom: 0.75in;
+  --page-margin-left:   1.0in;
+  --page-margin-right:  1.0in;
+  --page-content-width: 6.5in;     /* US letter 8.5in - 1.0in left - 1.0in right */
+  --page-break-screen-gap: 32px;
+
+  position: relative;
+  width: 8.5in;
+  margin: 0 auto;
+  padding: 0;
+  background: oklch(0.92 0.005 60);
+}
+.poc-editor-wrapper {
+  padding-top:    var(--page-margin-top);
+  padding-left:   var(--page-margin-left);
+  padding-right:  var(--page-margin-right);
+  /* No padding-bottom: last page's bottom is implicit (content extends naturally). */
+  max-width: 8.5in;
+  background: white;        /* paper card */
+  box-shadow: 0 2px 12px oklch(0.40 0.04 42 / 0.08);
+}
+[data-row-kind="heading"] {
+  font: 600 14px/1.2 Inter, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid oklch(0.30 0.02 50);
+}
+[data-row-kind="plain"] {
+  font: 400 12px/1.5 Inter, sans-serif;
+  margin: 4px 0;
+}
+[data-row-kind="bullet"] {
+  font: 400 12px/1.5 Inter, sans-serif;
+  margin: 2px 0;
+  padding-left: 16px;
+  position: relative;
+}
+[data-row-kind="bullet"]::before {
+  content: '•';
+  position: absolute;
+  left: 4px;
+  top: 0;
+}
+.pagination-break {
+  /* Height is set per-instance inline by PaginationPlugin (Task 4). The
+     value must be: (remaining unused content space on the breaking page)
+     + bottomMargin + screenGap + topMargin. Constant CSS won't work
+     because remaining-space varies per break (a tall row breaking early
+     leaves more whitespace at the page bottom). */
+  display: block;
+  break-before: page;
+  pointer-events: none;
+  user-select: none;
+}
+@media print {
+  @page {
+    size: 8.5in 11in;
+    margin: var(--page-margin-top) var(--page-margin-right)
+            var(--page-margin-bottom) var(--page-margin-left);
+  }
+  .poc-canvas-root { background: white; }
+  .poc-editor-wrapper {
+    padding: 0;                      /* @page directive owns margins */
+    box-shadow: none;
+    max-width: none;
+  }
+  .pagination-break { height: 0 !important; }   /* override per-instance inline height on print */
+}
