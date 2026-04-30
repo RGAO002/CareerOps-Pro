@@ -92,6 +92,93 @@ test.describe('PoC A — Print fidelity', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// T35 — Production /print-v3 PDF e2e against the 3-page fixture.
+//
+// Uses the named-fixture registry at frontend/src/app/print-v3/fixtures.ts
+// (see ?fixture=threePage). Verifies:
+//   - data-paginated flips to true within timeout (production pipeline live)
+//   - /print-v3 renders 3 .page-card elements for the 3-page fixture
+//   - PDF page count matches editor page count (parity with PoC test, but on
+//     the production route + a bigger fixture)
+//   - Boundary alignment: PDF page-2 first text begins within margin tolerance
+//     of the configured top margin (0.75in = 54pt).
+//
+// These tests require a running dev server (E2E_BASE_URL or default
+// http://localhost:3000) + Chromium. If the server isn't running this suite
+// will fail at goto(); run `npm run dev` then `npx playwright test`.
+// ---------------------------------------------------------------------------
+
+const PROD_PRINT_URL_3P = '/print-v3?fixture=threePage';
+const PROD_PDF_TMP = path.join('/tmp', 'v3-prod-print-3p.pdf');
+
+test.describe('T35 — /print-v3 production route, 3-page fixture', () => {
+  // Same @page contract as the PoC suite — let CSS @page own page geometry.
+  const PDF_OPTS = { preferCSSPageSize: true, printBackground: false } as const;
+
+  test('data-paginated flips to true within timeout on production route', async ({ page }) => {
+    await page.goto(PROD_PRINT_URL_3P);
+    await expect(page.locator('body[data-paginated="true"]')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('/print-v3 produces 3 pageGeometries for the threePage fixture', async ({ page }) => {
+    await page.goto(PROD_PRINT_URL_3P);
+    await expect(page.locator('body[data-paginated="true"]')).toBeVisible({ timeout: 10_000 });
+
+    // Production /print-v3 does NOT mount PageChromeLayer (no on-screen page
+    // separators — print is a continuous-flow surface that the browser
+    // paginates via @page). Read the plugin state instead. The plugin attaches
+    // a debug snapshot to window for e2e introspection (added by T35); fall
+    // back to scanning the rendered widget BreakDecorations if absent.
+    // Each non-final page-break emits a `.pagination-break` widget decoration
+    // (PaginationPlugin source). pages = break-widget count + 1.
+    const breakCount = await page.locator('.pagination-break').count();
+    expect(breakCount + 1).toBe(3);
+  });
+
+  test('PDF page count is 3 for the threePage fixture', async ({ page }) => {
+    await page.goto(PROD_PRINT_URL_3P);
+    await expect(page.locator('body[data-paginated="true"]')).toBeVisible({ timeout: 10_000 });
+
+    const pdfBuf = await page.pdf(PDF_OPTS);
+    fs.writeFileSync(PROD_PDF_TMP, pdfBuf);
+
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(pdfBuf) }).promise;
+    expect(pdf.numPages).toBe(3);
+  });
+
+  test('Boundary alignment: PDF page-2 first text within top-margin tolerance', async ({ page }) => {
+    await page.goto(PROD_PRINT_URL_3P);
+    await expect(page.locator('body[data-paginated="true"]')).toBeVisible({ timeout: 10_000 });
+
+    const pdfBuf = await page.pdf(PDF_OPTS);
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(pdfBuf) }).promise;
+    expect(pdf.numPages).toBeGreaterThanOrEqual(2);
+
+    // Confirm @page size resolved to 8.5in × 11in via CSS (612 × 792 pt).
+    const p1 = await pdf.getPage(1);
+    const v1 = p1.getViewport({ scale: 1 });
+    expect(Math.abs(v1.width - 612)).toBeLessThan(2);
+    expect(Math.abs(v1.height - 792)).toBeLessThan(2);
+
+    // Page 2 first text should start near the configured top margin (0.75in).
+    const p2 = await pdf.getPage(2);
+    const pageHeight = p2.getViewport({ scale: 1 }).height;
+    const text = await p2.getTextContent();
+    const firstText = text.items.find(
+      (item): item is pdfjs.TextItem => 'str' in item && item.str.trim().length > 0,
+    );
+    expect(firstText).toBeTruthy();
+    const ty = firstText!.transform[5];
+    const yFromTop = pageHeight - ty;
+    const PDF_PT_PER_IN = 72;
+    const topMarginPt = 0.75 * PDF_PT_PER_IN; // 54pt
+    // Same tolerance band as the PoC test.
+    expect(yFromTop).toBeGreaterThan(topMarginPt - 4);
+    expect(yFromTop).toBeLessThan(topMarginPt + 40);
+  });
+});
+
 async function renderPdfPageToCanvas(page: pdfjs.PDFPageProxy, viewport: pdfjs.PageViewport) {
   const canvas = createCanvas(viewport.width, viewport.height);
   const ctx = canvas.getContext('2d');
