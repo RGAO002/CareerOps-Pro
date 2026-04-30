@@ -49,10 +49,19 @@ function transactionTouchesRanges(
   if (touched) return true;
   // Mark steps (AddMarkStep / RemoveMarkStep) and any step whose stepMap is
   // empty (no position changes) — inspect raw step from/to.
+  //
+  // Fail-closed: if PM ever introduces a doc-changing step type that exposes
+  // neither position-changing stepMap entries NOR `from`/`to` properties, this
+  // gate would silently let it through. Treat unknown step shapes as touching
+  // the locked ranges (i.e. block) when ranges are non-empty, and re-audit on
+  // PM upgrade.
   for (const step of tr.steps) {
     const anyStep = step as unknown as { from?: number; to?: number };
     if (typeof anyStep.from === 'number' && typeof anyStep.to === 'number') {
       if (rangesOverlap(anyStep.from, anyStep.to, ranges)) return true;
+    } else {
+      // Unknown step shape with docChanged=true and locks active → fail closed.
+      return true;
     }
   }
   return false;
@@ -63,8 +72,8 @@ function lockedRanges(state: EditorState): { from: number; to: number }[] {
   if (keys.size === 0) return [];
   const out: { from: number; to: number }[] = [];
   state.doc.forEach((node, offset) => {
-    const rid = node.attrs?.id as string | undefined;
-    const gid = node.attrs?.semanticGroupId as string | null | undefined;
+    const rid = node.attrs.id as string | undefined;
+    const gid = node.attrs.semanticGroupId as string | null | undefined;
     if ((rid && keys.has(rid)) || (gid && keys.has(gid))) {
       out.push({ from: offset, to: offset + node.nodeSize });
     }

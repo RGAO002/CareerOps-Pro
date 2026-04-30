@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
-import { EditorState, TextSelection, Plugin } from '@tiptap/pm/state';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { useAILockStore } from '@/stores/aiLock';
 import { aiLockPlugin } from '../AILockPlugin';
 import type { GroupId, RowId } from '../../schema/types';
@@ -211,6 +211,3 @@ describe('AILockPlugin (T24)', () => {
     expect(keys.has(bid)).toBe(true);
   });
 });
-
-// Suppress "unused" warning for Plugin import in environments where it's only used by aiLockPlugin.
-void Plugin;

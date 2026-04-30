@@ -22,7 +22,8 @@ interface AILockStoreState {
   lock: (ids: AILockKey[]) => void;
   unlock: (ids: AILockKey[]) => void;
   isLocked: (id: AILockKey) => boolean;
-  lockedKeys: () => Set<AILockKey>;
+  /** Returns the live lock set as a read-only view. Do not mutate. */
+  lockedKeys: () => ReadonlySet<AILockKey>;
   clear: () => void;
 }
 
