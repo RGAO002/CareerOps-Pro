@@ -101,6 +101,15 @@ export class DragController {
   private onDropIndicator: DropIndicatorListener;
   private drag: ActiveDrag | null = null;
   private windowListeners: { type: string; fn: EventListener }[] = [];
+  /**
+   * Frozen drop-target Y midlines, captured once at drag activation. v2's fix
+   * for the adjacent-row jitter problem (see v2/DragController.ts:73-87): the
+   * preview animation translates non-dragged rows via CSS transform, so
+   * `getBoundingClientRect()` reflects the transform — distance recomputes
+   * against shifted Ys → "nearest" flips → preview re-shifts → loop. Snapshot
+   * once before any transform applies, reuse for the whole drag.
+   */
+  private snapshotMids: Array<{ id: RowId; mid: number }> | null = null;
 
   constructor(opts: DragControllerOptions) {
     this.view = opts.view;
@@ -155,9 +164,13 @@ export class DragController {
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-      // Activate.
+      // Activate. Snapshot all row Ys BEFORE the preview applies any
+      // transforms — once dropIndicator fires below, ResumeCanvasV3
+      // translates non-source rows via CSS, which would corrupt
+      // getBoundingClientRect on subsequent moves.
       d.active = true;
       d.range = resolveBlockRange(this.view.state, d.startRowId);
+      this.snapshotDropTargets();
       this.applyDraggingClass(d.range);
     }
     // Emit drop indicator for renderer (T29).
@@ -237,9 +250,36 @@ export class DragController {
     document.querySelectorAll('.row-dragging').forEach(el => el.classList.remove('row-dragging'));
   }
 
-  /** Walk the doc's row positions and return the id of the first row whose
-   *  rendered top is greater-than-or-equal-to the cursor Y. null = end of doc. */
+  /** Snapshot every row's Y-midline once at drag activation. Used by
+   *  findDropTargetRowId for the rest of the drag, instead of live rect
+   *  reads — see jitter fix above. */
+  private snapshotDropTargets(): void {
+    const state = this.view.state;
+    const ids: RowId[] = [];
+    state.doc.forEach((c) => { ids.push(c.attrs.id as RowId); });
+    const snap: Array<{ id: RowId; mid: number }> = [];
+    for (const id of ids) {
+      const el = document.querySelector(`[data-row-id="${id}"]`);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      snap.push({ id, mid: rect.top + rect.height / 2 });
+    }
+    this.snapshotMids = snap;
+  }
+
+  /** Walk the snapshot in doc order and return the id of the first row whose
+   *  pre-drag midline is below the cursor Y. null = past last row (end of
+   *  doc). Falls back to a live read if no snapshot is available (defensive
+   *  for tests / edge cases). */
   private findDropTargetRowId(cursorY: number): RowId | null {
+    const snap = this.snapshotMids;
+    if (snap) {
+      for (const { id, mid } of snap) {
+        if (cursorY < mid) return id;
+      }
+      return null;
+    }
+    // Fallback (no snapshot — drag never activated, or snapshot cleared).
     const state = this.view.state;
     const ids: RowId[] = [];
     state.doc.forEach((c) => { ids.push(c.attrs.id as RowId); });
@@ -350,6 +390,7 @@ export class DragController {
     this.clearDraggingClass();
     this.removeWindowListeners();
     this.drag = null;
+    this.snapshotMids = null;
     this.onDropIndicator(null);
   }
 }
