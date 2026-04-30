@@ -175,10 +175,11 @@ Open `docs/superpowers/specs/2026-04-29-resume-editor-v3-design.md` and read all
 cd /Users/fred/Desktop/CareerOps-Pro
 git status                                    # must be clean
 git checkout -b feature/resume-editor-v3      # base = feature/resume-editor-v2
-git push -u origin feature/resume-editor-v3
 ```
 
-Expected: branch created, tracking remote.
+Expected: local branch created, no remote tracking yet.
+
+Optional: if you want a remote backup of the PoC branch, run `git push -u origin feature/resume-editor-v3`. **Skip this if M1 is purely local exploration** — discarding the branch on PoC failure is cleaner without a remote artifact. Push only when M1 has passed or when you want the branch reviewable by others.
 
 - [ ] **Step 3: Verify project conventions**
 
@@ -221,48 +222,13 @@ echo "Branch feature/resume-editor-v3 ready for M1 PoC work."
 **Goal:** Mount a minimal TipTap editor under `/v3-poc` route with 3 row kinds. Self-contained, no integration with v2 store / AI / sidebar.
 
 **Files:**
-- Create: `frontend/src/components/resume/v3-poc/pmSchemaMin.ts`
 - Create: `frontend/src/components/resume/v3-poc/PocEditor.tsx`
 - Create: `frontend/src/app/v3-poc/page.tsx`
 - Create: `frontend/src/components/resume/v3-poc/poc.css`
 
-- [ ] **Step 1: Define minimal schema (3 kinds)**
+- [ ] **Step 1: Create PocEditor with Tiptap Node extensions**
 
-Create `frontend/src/components/resume/v3-poc/pmSchemaMin.ts`:
-
-```ts
-import { Schema } from '@tiptap/pm/model';
-
-// 3 row kinds for PoC: heading (large text + divider), plain (body), bullet (with marker)
-// Real schema in M3 will have all 7. PoC only validates layout/pagination/print/selection.
-export const pocSchema = new Schema({
-  nodes: {
-    doc: { content: 'row+' },
-    text: {},
-    heading_row: {
-      attrs: { id: { default: '' } },
-      content: 'text*',
-      toDOM: () => ['div', { 'data-row-kind': 'heading' }, ['span', { class: 'row-content' }, 0]],
-      parseDOM: [{ tag: 'div[data-row-kind="heading"]' }],
-    },
-    plain_row: {
-      attrs: { id: { default: '' } },
-      content: 'text*',
-      toDOM: () => ['div', { 'data-row-kind': 'plain' }, ['span', { class: 'row-content' }, 0]],
-      parseDOM: [{ tag: 'div[data-row-kind="plain"]' }],
-    },
-    bullet_row: {
-      attrs: { id: { default: '' } },
-      content: 'text*',
-      toDOM: () => ['div', { 'data-row-kind': 'bullet' }, ['span', { class: 'row-content' }, 0]],
-      parseDOM: [{ tag: 'div[data-row-kind="bullet"]' }],
-    },
-  },
-  marks: {},
-});
-```
-
-- [ ] **Step 2: Create PocEditor component**
+Schema is defined as Tiptap `Node.create` extensions (one per row kind) — same pattern as production v3 will use, no separate `Schema` object needed.
 
 Create `frontend/src/components/resume/v3-poc/PocEditor.tsx`:
 
@@ -270,13 +236,45 @@ Create `frontend/src/components/resume/v3-poc/PocEditor.tsx`:
 'use client';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Document } from '@tiptap/extension-document';
-import { Extension } from '@tiptap/core';
-import { pocSchema } from './pmSchemaMin';
+import { Node } from '@tiptap/core';
 import './poc.css';
 
-const PocSchemaExt = Extension.create({
-  name: 'pocSchema',
-  addProseMirrorPlugins() { return []; },
+export const PocDoc = Document.extend({ content: 'row+' });
+
+export const HeadingRow = Node.create({
+  name: 'heading_row',
+  group: 'row',
+  content: 'text*',
+  defining: true,
+  addAttributes() { return { id: { default: '' } }; },
+  parseHTML() { return [{ tag: 'div[data-row-kind="heading"]' }]; },
+  renderHTML({ node }) {
+    return ['div', { 'data-row-kind': 'heading', 'data-row-id': node.attrs.id }, 0];
+  },
+});
+
+export const PlainRow = Node.create({
+  name: 'plain_row',
+  group: 'row',
+  content: 'text*',
+  defining: true,
+  addAttributes() { return { id: { default: '' } }; },
+  parseHTML() { return [{ tag: 'div[data-row-kind="plain"]' }]; },
+  renderHTML({ node }) {
+    return ['div', { 'data-row-kind': 'plain', 'data-row-id': node.attrs.id }, 0];
+  },
+});
+
+export const BulletRow = Node.create({
+  name: 'bullet_row',
+  group: 'row',
+  content: 'text*',
+  defining: true,
+  addAttributes() { return { id: { default: '' } }; },
+  parseHTML() { return [{ tag: 'div[data-row-kind="bullet"]' }]; },
+  renderHTML({ node }) {
+    return ['div', { 'data-row-kind': 'bullet', 'data-row-id': node.attrs.id }, 0];
+  },
 });
 
 interface PocEditorProps {
@@ -286,10 +284,7 @@ interface PocEditorProps {
 
 export function PocEditor({ readOnly = false }: PocEditorProps) {
   const editor = useEditor({
-    extensions: [
-      Document.extend({ content: 'row+' }),
-      PocSchemaExt,
-    ],
+    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow],
     editable: !readOnly,
     content: buildPocContent(),
     immediatelyRender: false,
@@ -305,8 +300,8 @@ export function PocEditor({ readOnly = false }: PocEditorProps) {
   );
 }
 
-function buildPocContent() {
-  // 4-page worth of content to stress pagination
+export function buildPocContent() {
+  // 4 sections × 18 bullets — exercises 3-4 page boundaries to validate pagination.
   const sections = ['Experience', 'Education', 'Skills', 'Projects'];
   const content: { type: string; attrs: { id: string }; content?: { type: 'text'; text: string }[] }[] = [];
   let i = 0;
@@ -324,67 +319,9 @@ function buildPocContent() {
 }
 ```
 
-The schema declared inline via `Document.extend({ content: 'row+' })` plus PocSchemaExt is a TipTap idiom; the actual node types (heading_row, plain_row, bullet_row) need to be registered as Tiptap Node extensions for production but PoC inlines them via custom Document content rule + raw schema.
+NodeViews (and the matching React row container template) get added in Task 2; for now `renderHTML` is enough to mount the editor.
 
-For PoC simplicity, register them as Tiptap Nodes:
-
-Replace the extensions block with:
-
-```tsx
-import { Node } from '@tiptap/core';
-
-const HeadingRow = Node.create({
-  name: 'heading_row',
-  group: 'row',
-  content: 'text*',
-  defining: true,
-  addAttributes() { return { id: { default: '' } }; },
-  parseHTML() { return [{ tag: 'div[data-row-kind="heading"]' }]; },
-  renderHTML({ node }) {
-    return ['div', { 'data-row-kind': 'heading', 'data-row-id': node.attrs.id }, 0];
-  },
-});
-
-const PlainRow = Node.create({
-  name: 'plain_row',
-  group: 'row',
-  content: 'text*',
-  defining: true,
-  addAttributes() { return { id: { default: '' } }; },
-  parseHTML() { return [{ tag: 'div[data-row-kind="plain"]' }]; },
-  renderHTML({ node }) {
-    return ['div', { 'data-row-kind': 'plain', 'data-row-id': node.attrs.id }, 0];
-  },
-});
-
-const BulletRow = Node.create({
-  name: 'bullet_row',
-  group: 'row',
-  content: 'text*',
-  defining: true,
-  addAttributes() { return { id: { default: '' } }; },
-  parseHTML() { return [{ tag: 'div[data-row-kind="bullet"]' }]; },
-  renderHTML({ node }) {
-    return ['div', { 'data-row-kind': 'bullet', 'data-row-id': node.attrs.id }, 0];
-  },
-});
-
-const PocDoc = Document.extend({ content: 'row+' });
-
-export function PocEditor({ readOnly = false }: PocEditorProps) {
-  const editor = useEditor({
-    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow],
-    editable: !readOnly,
-    content: buildPocContent(),
-    immediatelyRender: false,
-  });
-  // ... rest as before
-}
-```
-
-Delete `pmSchemaMin.ts` (no longer needed; the Tiptap Node extensions ARE the schema).
-
-- [ ] **Step 3: Create PoC CSS with margin tokens**
+- [ ] **Step 2: Create PoC CSS with margin tokens**
 
 Create `frontend/src/components/resume/v3-poc/poc.css`:
 
@@ -460,7 +397,7 @@ Create `frontend/src/components/resume/v3-poc/poc.css`:
 }
 ```
 
-- [ ] **Step 4: Mount PoC route**
+- [ ] **Step 3: Mount PoC route**
 
 Create `frontend/src/app/v3-poc/page.tsx`:
 
@@ -476,7 +413,7 @@ export default function V3PocPage() {
 }
 ```
 
-- [ ] **Step 5: Smoke-test the route boots**
+- [ ] **Step 4: Smoke-test the route boots**
 
 ```bash
 cd frontend
@@ -485,7 +422,7 @@ npm run dev
 
 Open `http://localhost:3000/v3-poc` in Chromium. Expect: 4 sections of bullets rendered as continuous content, no pagination yet (that's Task 4–6).
 
-- [ ] **Step 6: Commit PoC scaffold**
+- [ ] **Step 5: Commit PoC scaffold**
 
 ```bash
 git add frontend/src/components/resume/v3-poc/ frontend/src/app/v3-poc/
@@ -964,6 +901,12 @@ export function PageChromeLayerMin({ editor }: Props) {
         <div
           key={g.pageIndex}
           className="page-card"
+          // Data attributes record the plugin-source geometry verbatim so PoC C
+          // can verify PageChromeLayer is a pure pass-through (C3 single SoT).
+          // The CSS position values come from the SAME numbers — any drift
+          // indicates the chrome is doing its own math, which violates contract.
+          data-plugin-top={g.topPx}
+          data-plugin-height={g.heightPx}
           style={{
             position: 'absolute',
             top: g.topPx,
@@ -1173,19 +1116,25 @@ const POC_PRINT_URL = '/v3-poc/print';
 const PDF_TMP = path.join('/tmp', 'v3-poc-print.pdf');
 
 test.describe('PoC A — Print fidelity', () => {
+  // CRITICAL: page.pdf() options must let CSS @page own the page size and
+  // margins. `format: 'Letter'` and explicit `margin:` options OVERRIDE any
+  // CSS @page rule, so a test that uses them does NOT verify our @page
+  // contract. We must use `preferCSSPageSize: true` and pass NO format/margin
+  // options. Then the PDF page geometry == whatever CSS @page resolved to,
+  // which is what we want to verify.
+  const PDF_OPTS = { preferCSSPageSize: true, printBackground: false } as const;
+
   test('PDF page count equals pageGeometries length', async ({ page }) => {
     await page.goto(POC_PRINT_URL);
     await expect(page.locator('body[data-paginated="true"]')).toBeVisible({ timeout: 5000 });
 
-    // Read pageGeometries length from the in-page React state via DOM count of .page-card
     const pageCount = await page.locator('.page-card').count();
     expect(pageCount).toBeGreaterThanOrEqual(2);
 
-    const pdfBuf = await page.pdf({ format: 'Letter', printBackground: false });
+    const pdfBuf = await page.pdf(PDF_OPTS);
     fs.writeFileSync(PDF_TMP, pdfBuf);
 
-    const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdfBuf) });
-    const pdf = await loadingTask.promise;
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(pdfBuf) }).promise;
     expect(pdf.numPages).toBe(pageCount);
   });
 
@@ -1193,39 +1142,43 @@ test.describe('PoC A — Print fidelity', () => {
     await page.goto(POC_PRINT_URL);
     await expect(page.locator('body[data-paginated="true"]')).toBeVisible();
 
-    const pdfBuf = await page.pdf({ format: 'Letter', printBackground: false });
+    const pdfBuf = await page.pdf(PDF_OPTS);   // preferCSSPageSize so CSS @page rules.
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(pdfBuf) }).promise;
+
+    // Verify CSS @page actually drove the page size: at @page { size: 8.5in 11in },
+    // pdfjs viewport at scale=1 (= 72 dpi PDF points) should be 612 × 792 ± 1pt.
+    const page1 = await pdf.getPage(1);
+    const v1 = page1.getViewport({ scale: 1 });
+    expect(Math.abs(v1.width - 612)).toBeLessThan(2);
+    expect(Math.abs(v1.height - 792)).toBeLessThan(2);
 
     // Render page 2 at high DPI and find first non-empty pixel from top.
     const page2 = await pdf.getPage(2);
-    const viewport = page2.getViewport({ scale: 4 });           // 4x for sub-pixel precision
+    const viewport = page2.getViewport({ scale: 4 });
     const canvas = await renderPdfPageToCanvas(page2, viewport);
     const firstNonEmptyY = findFirstNonEmptyRow(canvas);
 
     // 0.75in topMargin × 4 scale × 96 dpi ≈ 288 px. Allow ±4 px (≈ 0.04in / 1px @ 96dpi).
     const expectedTopMarginPx = 0.75 * 96 * 4;
     expect(firstNonEmptyY).toBeGreaterThan(expectedTopMarginPx - 4);
-    expect(firstNonEmptyY).toBeLessThan(expectedTopMarginPx + 12);  // tolerance for first row's intrinsic top padding
+    expect(firstNonEmptyY).toBeLessThan(expectedTopMarginPx + 12);
   });
 
   test('editor view boundary aligns with PDF boundary (< 1% pixel diff)', async ({ page }) => {
     await page.goto('/v3-poc');
     await page.waitForLoadState('networkidle');
-    const editorScreenshot = await page.locator('.poc-canvas-root').screenshot();
 
     await page.goto(POC_PRINT_URL);
     await expect(page.locator('body[data-paginated="true"]')).toBeVisible();
-    const pdfBuf = await page.pdf({ format: 'Letter' });
+    const pdfBuf = await page.pdf(PDF_OPTS);
 
-    // Both should agree on page-1 boundary location.
-    // Render PDF page 1 at the same effective DPI as editor screenshot (96 dpi at scale 1).
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(pdfBuf) }).promise;
     const pdfPage1 = await pdf.getPage(1);
-    const pdfCanvas = await renderPdfPageToCanvas(pdfPage1, pdfPage1.getViewport({ scale: 1 }));
+    // PDF coordinate units are points (72 dpi). 1in = 72pt. At scale=96/72,
+    // the rendered canvas has 1in == 96px so it matches editor screenshot DPI.
+    const pdfCanvas = await renderPdfPageToCanvas(pdfPage1, pdfPage1.getViewport({ scale: 96 / 72 }));
     const pdfPage1HeightPx = pdfCanvas.height;
 
-    // Find page card 1 height in editor screenshot.
-    // Crude check: the .page-card has a known top + height. We trust the .page-card geometry.
     const cardBox = await page.locator('.page-card').nth(0).boundingBox();
     expect(cardBox).not.toBeNull();
     const editorPage1HeightPx = cardBox!.height;
@@ -1432,26 +1385,37 @@ Create `frontend/playwright/v3/chrome-alignment.spec.ts`:
 import { test, expect } from '@playwright/test';
 
 test.describe('PoC C — PageChromeLayer alignment with plugin output', () => {
-  test('page card top and height match plugin pageGeometries within 1px', async ({ page }) => {
+  test('page card geometry matches plugin pageGeometries (single-SoT contract)', async ({ page }) => {
     await page.goto('/v3-poc');
     await page.waitForSelector('.page-card');
     await page.waitForSelector('.pagination-break');
 
+    // PageChromeLayerMin (Task 5) writes the plugin-source geometry onto each
+    // card as data attributes: data-plugin-top, data-plugin-height. The test
+    // verifies the rendered card's actual layout MATCHES those values — i.e.
+    // PageChromeLayer is a pure pass-through of plugin state, not its own
+    // recomputation. This directly enforces C3 (single SoT).
     const cardCount = await page.locator('.page-card').count();
     expect(cardCount).toBeGreaterThanOrEqual(2);
 
     for (let i = 0; i < cardCount; i++) {
       const card = page.locator('.page-card').nth(i);
+      const pluginTop = await card.getAttribute('data-plugin-top');
+      const pluginHeight = await card.getAttribute('data-plugin-height');
+      expect(pluginTop).not.toBeNull();
+      expect(pluginHeight).not.toBeNull();
+
       const box = await card.boundingBox();
       expect(box).not.toBeNull();
-      // We don't have direct read access to the plugin state from Playwright, but we can check
-      // the inline-style top/height matches expected values from token math.
-      const top = await card.evaluate(el => parseFloat((el as HTMLElement).style.top));
-      const height = await card.evaluate(el => parseFloat((el as HTMLElement).style.height));
-      // Page heights at 11in × 96dpi = 1056px (approx; depends on actual DPR).
-      const expectedHeight = 11 * 96;     // Token-based; if DPR differs, this needs tuning.
-      expect(Math.abs(height - expectedHeight)).toBeLessThan(2);
-      expect(Math.abs(top - i * expectedHeight)).toBeLessThan(2);
+
+      // Card must be positioned exactly where the plugin said it should be.
+      // The card's offsetTop within the canvas root + canvas root's offsetTop
+      // adds up to bounding-box .y. We compare against pluginTop directly.
+      const cardOffsetTop = await card.evaluate(el => (el as HTMLElement).offsetTop);
+      const cardOffsetHeight = await card.evaluate(el => (el as HTMLElement).offsetHeight);
+
+      expect(Math.abs(cardOffsetTop - parseFloat(pluginTop!))).toBeLessThan(1);
+      expect(Math.abs(cardOffsetHeight - parseFloat(pluginHeight!))).toBeLessThan(1);
     }
   });
 
@@ -1952,49 +1916,43 @@ git commit -m "feat(v3): GroupOps applyGroupOps + gcUnreferencedGroups + tests"
 **Files:**
 - Create: `frontend/src/components/resume/v3/plugins/GroupsPlugin.ts`
 
-- [ ] **Step 1: Implement plugin**
+**Architectural note (discovered while writing Task 14 tests):**
+
+The spec § 2.6 originally specified auto-GC inside `GroupsPlugin.apply` on `tr.docChanged`. That's incompatible with PM's undo model — PM history only restores doc Steps, not plugin state. If the plugin auto-GCs a group on row deletion, undo replays the inverse step but the plugin's `apply` runs from the CURRENT (post-GC) state — it can't restore a group it already dropped.
+
+Resolution: **GC moves to serialize time** (Task 17). Plugin's `apply` only handles explicit ops (`groupsHydrate`, `groupOps`). Orphaned groups linger in plugin state during a session — that's fine because:
+- Save/serialize drops them via `gcUnreferencedGroups` at output time
+- AI context assembly skips groups whose anchor rows are missing
+- A session typically lasts minutes; the in-memory orphan-set is small
+
+When v3 production code deletes a row whose group should also vanish (e.g. backspace empty entry.title → entry group gone), it issues an explicit `{type: 'delete', groupId}` paired with the doc step via `dispatchWithGroups`. That makes the deletion atomic AND reversible.
+
+- [ ] **Step 1: Implement plugin (no auto-GC)**
 
 Create `frontend/src/components/resume/v3/plugins/GroupsPlugin.ts`:
 
 ```ts
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state';
-import type { Node as PMNode } from '@tiptap/pm/model';
-import type { GroupId, GroupOp } from '../schema/types';
-import { applyGroupOps, gcUnreferencedGroups, type GroupsState } from './GroupOps';
+import type { GroupOp } from '../schema/types';
+import { applyGroupOps, type GroupsState } from './GroupOps';
 
 export const groupsPluginKey = new PluginKey<GroupsState>('groupsPlugin');
-
-/** Walk doc top-level children, collect every semanticGroupId used by any row. */
-function collectReferencedGroupIds(doc: PMNode): Set<GroupId> {
-  const ids = new Set<GroupId>();
-  doc.forEach((rowNode) => {
-    const id = rowNode.attrs.semanticGroupId as GroupId | undefined;
-    if (id) ids.add(id);
-  });
-  return ids;
-}
 
 export function createGroupsPlugin() {
   return new Plugin<GroupsState>({
     key: groupsPluginKey,
     state: {
       init: () => ({ byId: new Map() }),
-      apply(tr: Transaction, oldState: GroupsState, _oldEditorState: EditorState, newEditorState: EditorState): GroupsState {
+      apply(tr: Transaction, oldState: GroupsState): GroupsState {
         // 1. Hydration meta: seed entire state from passed-in groups.
         const hydrate = tr.getMeta('groupsHydrate') as GroupsState | undefined;
         if (hydrate) return hydrate;
 
-        // 2. Apply explicit ops.
+        // 2. Apply explicit ops only. NO auto-GC: see architectural note in Task 13.
+        //    Production code that wants a group deleted must emit an explicit
+        //    {type:'delete'} groupOp paired with the doc step (via dispatchWithGroups).
         const ops = tr.getMeta('groupOps') as GroupOp[] | undefined;
-        let next = ops ? applyGroupOps(oldState, ops) : oldState;
-
-        // 3. GC unreferenced groups whenever the doc structure changes.
-        if (tr.docChanged) {
-          const referenced = collectReferencedGroupIds(newEditorState.doc);
-          next = gcUnreferencedGroups(next, referenced);
-        }
-
-        return next;
+        return ops ? applyGroupOps(oldState, ops) : oldState;
       },
     },
   });
@@ -2025,9 +1983,26 @@ git commit -m "feat(v3): GroupsPlugin with apply method + GC + hydration"
 
 ### Task 14: GroupsPlugin undo/redo verification (the reviewer's specific concern)
 
-**Spec ref:** § 2.6 architectural risk; reviewer note "GroupsPlugin state is/redo behavior must be tested in M2 (not just trusted)".
+**Spec ref:** § 2.6 architectural risk; reviewer note "GroupsPlugin state undo/redo behavior must be tested in M2 (not just trusted)".
 
-**Goal:** Empirically verify that ProseMirror's history extension captures plugin state alongside doc state, so Cmd+Z restores both atomically.
+**Goal:** Empirically verify that ProseMirror's history extension captures plugin state alongside doc-changing transactions, so Cmd+Z restores both atomically.
+
+**Architectural constraint discovered while writing this test (key insight):**
+
+ProseMirror's `prosemirror-history` plugin records **doc steps**, not arbitrary plugin-state-only transactions. A transaction with `tr.setMeta('groupOps', [...])` and **no doc change** does NOT enter the history stack — `undo` will skip past it.
+
+This means **`groupOps` must always travel with a doc-changing transaction** to be undoable. The natural flows we care about all satisfy this:
+
+- Drag drop → moves rows (doc change) + rebelongs groupId (`groupOps`) ✓
+- Backspace empty entry.title → downgrades node kind (doc change) + deletes entry group (`groupOps`) ✓
+- Slash `/heading` → setNodeMarkup (doc change) + creates section group (`groupOps`) ✓
+- AI apply → modifies row content/positions (doc change) + group ops as needed ✓
+
+**Pure group-state-only operations** (e.g. UI to change a section's `role` without touching rows) are rare, and v3 handles them via either:
+- (a) Pair with a no-op doc transaction (e.g. `tr.setNodeAttribute(pos, 'id', sameId)` to force a step) — preferred when undo is desired
+- (b) Use a meta `addToHistory: false` flag — when the operation is intentionally not undoable
+
+The test below covers the common (doc + groupOps) path AND verifies that group-only transactions are NOT undoable as expected — so we don't silently rely on undefined PM behavior.
 
 **Files:**
 - Create: `frontend/src/components/resume/v3/plugins/__tests__/GroupsPlugin.undoredo.test.ts`
@@ -2061,18 +2036,17 @@ function makeRow(id: string, groupId?: string) {
 }
 
 describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verification)', () => {
-  it('undo restores groups state alongside doc state', () => {
+  it('undo restores groups state alongside doc state when groupOps travel with a doc step', () => {
     const initialDoc = schema.node('doc', null, [makeRow('r1', 'g1')]);
     let state = EditorState.create({
       schema,
       doc: initialDoc,
       plugins: [history(), createGroupsPlugin()],
     });
-    // Hydrate initial groups.
     state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }]]) }));
     expect(getGroupsState(state).byId.size).toBe(1);
 
-    // User action: insert row r2 with groupId g2 + create group op.
+    // User action: insert row r2 with groupId g2 + create group op (one transaction, doc-changing).
     const r2 = makeRow('r2', 'g2');
     let tr = state.tr.replaceWith(state.doc.content.size, state.doc.content.size, r2);
     const ops: GroupOp[] = [{ type: 'create', group: { id: 'g2' as GroupId, kind: 'entry' } }];
@@ -2081,14 +2055,14 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
     expect(getGroupsState(state).byId.size).toBe(2);
     expect(state.doc.childCount).toBe(2);
 
-    // Undo: doc and groups should both revert to pre-action state.
+    // Undo: doc and groups both revert (the transaction had a doc step, so it's in history).
     const undoCommand = undo(state, (newTr) => { state = state.apply(newTr); });
     expect(undoCommand).toBe(true);
     expect(state.doc.childCount).toBe(1);
     expect(getGroupsState(state).byId.size).toBe(1);
     expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(false);
 
-    // Redo: doc and groups should both re-apply the action.
+    // Redo: same single step replays both.
     const redoCommand = redo(state, (newTr) => { state = state.apply(newTr); });
     expect(redoCommand).toBe(true);
     expect(state.doc.childCount).toBe(2);
@@ -2096,46 +2070,147 @@ describe('GroupsPlugin undo/redo atomicity (REVIEWER CONCERN — empirical verif
     expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
   });
 
-  it('multi-step undo correctly restores groups state per step', () => {
+  it('multi-step undo across paired (doc + groupOps) transactions restores groups per step', () => {
     let state = EditorState.create({
       schema,
-      doc: schema.node('doc', null, [makeRow('r1')]),
+      doc: schema.node('doc', null, [makeRow('r1', 'g1')]),
       plugins: [history(), createGroupsPlugin()],
     });
+    state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }]]) }));
 
-    // Step 1: create group g1.
-    state = state.apply(state.tr.setMeta('groupOps', [{ type: 'create', group: { id: 'g1' as GroupId, kind: 'section', role: 'experience' } } satisfies GroupOp]));
-    // Step 2: create group g2.
-    state = state.apply(state.tr.setMeta('groupOps', [{ type: 'create', group: { id: 'g2' as GroupId, kind: 'entry' } } satisfies GroupOp]));
-    expect(getGroupsState(state).byId.size).toBe(2);
+    // Step A: insert row r2 referencing new group g2 — groupOps PAIRED with doc step.
+    {
+      const r2 = makeRow('r2', 'g2');
+      const tr = state.tr
+        .replaceWith(state.doc.content.size, state.doc.content.size, r2)
+        .setMeta('groupOps', [{ type: 'create', group: { id: 'g2' as GroupId, kind: 'entry' } } satisfies GroupOp]);
+      state = state.apply(tr);
+    }
+    // Step B: insert row r3 referencing new group g3 — paired again.
+    {
+      const r3 = makeRow('r3', 'g3');
+      const tr = state.tr
+        .replaceWith(state.doc.content.size, state.doc.content.size, r3)
+        .setMeta('groupOps', [{ type: 'create', group: { id: 'g3' as GroupId, kind: 'entry' } } satisfies GroupOp]);
+      state = state.apply(tr);
+    }
+    expect(getGroupsState(state).byId.size).toBe(3);
+    expect(state.doc.childCount).toBe(3);
 
-    // Undo once → g2 gone, g1 remains.
+    // Undo once → step B reverts: r3 gone, g3 gone, r2 + g2 still here.
     undo(state, (newTr) => { state = state.apply(newTr); });
-    expect(getGroupsState(state).byId.size).toBe(1);
-    expect(getGroupsState(state).byId.has('g1' as GroupId)).toBe(true);
+    expect(state.doc.childCount).toBe(2);
+    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
+    expect(getGroupsState(state).byId.has('g3' as GroupId)).toBe(false);
+
+    // Undo again → step A reverts.
+    undo(state, (newTr) => { state = state.apply(newTr); });
+    expect(state.doc.childCount).toBe(1);
     expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(false);
-
-    // Undo again → both gone.
-    undo(state, (newTr) => { state = state.apply(newTr); });
-    expect(getGroupsState(state).byId.size).toBe(0);
   });
 
-  it('GC running on doc changes does not interfere with explicit op-driven undo', () => {
-    const initialDoc = schema.node('doc', null, [makeRow('r1', 'g1')]);
+  it('group-only transaction (no doc change) is NOT recorded by history — explicit guard against silent reliance on PM internals', () => {
+    let state = EditorState.create({
+      schema,
+      doc: schema.node('doc', null, [makeRow('r1', 'g1')]),
+      plugins: [history(), createGroupsPlugin()],
+    });
+    state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }]]) }));
+
+    // groupOps-only transaction (no doc step).
+    state = state.apply(
+      state.tr.setMeta('groupOps', [{ type: 'create', group: { id: 'g2' as GroupId, kind: 'entry' } } satisfies GroupOp])
+    );
+    expect(getGroupsState(state).byId.size).toBe(2);
+
+    // Undo: PM history has no step for this transaction, so undo() returns false (or
+    // pops nothing). Either way, group state remains the post-transaction value.
+    const before = state;
+    const didUndo = undo(state, (newTr) => { state = state.apply(newTr); });
+    if (didUndo) {
+      // Some PM versions return true while popping nothing meaningful; verify state unchanged.
+      expect(getGroupsState(state).byId.size).toBe(getGroupsState(before).byId.size);
+    } else {
+      expect(state).toBe(before);
+    }
+    // KEY ASSERTION: the design contract holds — group-only ops are not undoable.
+    // v3 production code MUST always pair groupOps with a doc step (or accept non-undoability).
+  });
+
+  it('explicit paired (doc-delete + groupOp delete) transaction is undoable atomically', () => {
+    // doc has TWO rows so deleting one keeps the doc valid for `row+` schema.
+    const initialDoc = schema.node('doc', null, [makeRow('r1', 'g1'), makeRow('r2', 'g2')]);
     let state = EditorState.create({
       schema,
       doc: initialDoc,
       plugins: [history(), createGroupsPlugin()],
     });
-    state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }]]) }));
+    state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([
+      ['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }],
+      ['g2' as GroupId, { id: 'g2' as GroupId, kind: 'entry' }],
+    ]) }));
+    expect(getGroupsState(state).byId.size).toBe(2);
 
-    // Delete row r1 (which references g1) → GC should drop g1 from state.
-    state = state.apply(state.tr.delete(0, state.doc.content.size));
-    expect(getGroupsState(state).byId.size).toBe(0);
-
-    // Undo → row r1 restored, g1 should re-appear.
-    undo(state, (newTr) => { state = state.apply(newTr); });
+    // Production code path: delete row r1 + emit explicit delete groupOp for g1.
+    // (In the real editor, dispatchWithGroups builds this transaction.)
+    const r1Size = state.doc.firstChild!.nodeSize;
+    const tr = state.tr
+      .delete(0, r1Size)
+      .setMeta('groupOps', [{ type: 'delete', groupId: 'g1' as GroupId } satisfies GroupOp]);
+    state = state.apply(tr);
     expect(state.doc.childCount).toBe(1);
+    expect(getGroupsState(state).byId.has('g1' as GroupId)).toBe(false);
+    expect(getGroupsState(state).byId.has('g2' as GroupId)).toBe(true);
+
+    // Undo: doc step restores r1; groupOps meta is on the original transaction
+    // but PM history doesn't preserve meta, so undo's inverse transaction has
+    // the inverse doc step but no inverse group op. GroupsPlugin.apply on the
+    // undo runs without ops → groups state remains as it is.
+    //
+    // RESULT: doc is restored but g1 is NOT restored. This is the documented
+    // limitation of pairing approach. To recover, production code includes the
+    // group's prior state in the inverse via a custom undo command, OR keeps
+    // the group around (no auto-GC) and lets the orphan-aware AI/serialize
+    // layer skip it.
+    //
+    // For v3, this test confirms: undo restores doc; group state is what
+    // explicit groupOps + plugin apply produce. If we want exact symmetry on
+    // undo, we need a higher-level undo command that re-emits the inverse
+    // groupOp. v3 production code should NOT auto-emit `{type:'delete'}` for
+    // groups whose row is being deleted — leave them as orphans, drop at
+    // serialize time. This makes undo trivially correct.
+    undo(state, (newTr) => { state = state.apply(newTr); });
+    expect(state.doc.childCount).toBe(2);
+    // g1 NOT restored (asymmetric undo because PM history doesn't preserve
+    // plugin meta). This documents the contract.
+    expect(getGroupsState(state).byId.has('g1' as GroupId)).toBe(false);
+  });
+
+  it('LEAVING groups orphaned (no auto-GC, no paired delete op) gives clean undo symmetry', () => {
+    // The recommended production pattern: do NOT emit groupOp on row deletion.
+    // Group lingers in plugin state as an orphan; serialize-time GC drops it.
+    // Undo trivially restores doc + groups (groups never changed).
+    const initialDoc = schema.node('doc', null, [makeRow('r1', 'g1'), makeRow('r2', 'g2')]);
+    let state = EditorState.create({
+      schema,
+      doc: initialDoc,
+      plugins: [history(), createGroupsPlugin()],
+    });
+    state = state.apply(state.tr.setMeta('groupsHydrate', { byId: new Map([
+      ['g1' as GroupId, { id: 'g1' as GroupId, kind: 'section', role: 'experience' }],
+      ['g2' as GroupId, { id: 'g2' as GroupId, kind: 'entry' }],
+    ]) }));
+
+    // Delete r1 with NO groupOps — group state unchanged.
+    const r1Size = state.doc.firstChild!.nodeSize;
+    state = state.apply(state.tr.delete(0, r1Size));
+    expect(state.doc.childCount).toBe(1);
+    expect(getGroupsState(state).byId.size).toBe(2);   // g1 still here, orphaned
+
+    // Undo restores doc; group state was never touched.
+    undo(state, (newTr) => { state = state.apply(newTr); });
+    expect(state.doc.childCount).toBe(2);
+    expect(getGroupsState(state).byId.size).toBe(2);
     expect(getGroupsState(state).byId.has('g1' as GroupId)).toBe(true);
   });
 });
@@ -2467,6 +2542,18 @@ git commit -m "feat(v3): schema validator (I1-I4) + load-time header.name normal
 
 **Goal:** `serializeEditorState(state): ResumeDocV3` and `hydrateInitialState(doc): { docJSON, groups }`. Round-trip must be byte-identical.
 
+**Important — RichText wrap/unwrap adapter** (P1 issue surfaced during plan review):
+
+Persisted RichText is a PM doc JSON `{type:'doc',content:[paragraph,...]}`. The PM `plain` / `bullet` row node has `content: 'paragraph'` (test schema) or `content: 'inline*'` (production § 3.1). Either way, a `doc` node cannot be directly inserted as a row's content — the content models don't match.
+
+`hydrateInitialState` (rowToPMNodeJSON for plain/bullet) UNWRAPS the doc: it copies `row.content.content` (the paragraphs array) into the row's content. If the persisted doc is empty, hydrate inserts an empty paragraph so the schema's `paragraph` content rule is satisfied.
+
+`serializeEditorState` (pmNodeToRow for plain/bullet) WRAPS back into a doc: takes `node.content.toJSON()` (paragraphs) and embeds them into a `{type:'doc',content:[...]}` shape. If the only paragraph is empty, persists as `content:[]` to keep round-trip byte-identical.
+
+**Apply this adapter logic in both Tasks 17's `hydrate.ts` and `serialize.ts` exactly as shown below.** The round-trip test asserts byte-identity — any drift is caught immediately.
+
+Production § 3.1 schema uses `content: 'inline*'`. The same wrap/unwrap principle applies, just with inline children directly (no wrapping `paragraph` node). The test schema in this task uses `content: 'paragraph'` for compatibility with the `inline+` issue identified in the review — production code's `inline*` works the same way conceptually.
+
 **Files:**
 - Create: `frontend/src/components/resume/v3/schema/serialize.ts`
 - Create: `frontend/src/components/resume/v3/schema/hydrate.ts`
@@ -2485,18 +2572,22 @@ import { hydrateInitialState } from '../hydrate';
 import { serializeEditorState } from '../serialize';
 import { createGroupsPlugin } from '../../plugins/GroupsPlugin';
 
-// Use a minimal schema for testing — production schema in M3.
+// Test schema mirrors production § 3.1: plain/bullet have inline content
+// (here: text* + paragraph). Production M3 schema uses 'inline*' allowing marks;
+// for round-trip, text-only inline is sufficient to exercise the wrap/unwrap
+// adapters between persisted RichText (PM doc JSON) and row inline content.
 const schema = new Schema({
   nodes: {
     doc: { content: 'row+' },
     text: {},
+    paragraph: { content: 'text*' },
     header_name:     { attrs: { id: { default: '' } }, content: 'text*' },
     header_contact:  { attrs: { id: { default: '' } }, content: 'text*' },
     section_heading: { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
     entry_title:     { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
     entry_meta:      { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
-    plain:           { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
-    bullet:          { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'text*' },
+    plain:           { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'paragraph' },
+    bullet:          { attrs: { id: { default: '' }, semanticGroupId: { default: null } }, content: 'paragraph' },
   },
 });
 
@@ -2510,6 +2601,9 @@ describe('serialize/hydrate round-trip', () => {
         { id: 'r3' as RowId, kind: 'section.heading', content: { text: 'Experience' }, semanticGroupId: 'g1' as GroupId },
         { id: 'r4' as RowId, kind: 'entry.title', content: { text: 'Senior PM' }, semanticGroupId: 'g2' as GroupId },
         { id: 'r5' as RowId, kind: 'entry.meta', content: { text: '2022-Present' }, semanticGroupId: 'g2' as GroupId },
+        // RichText: persisted as a 'doc' wrapper with paragraph children.
+        // hydrate copies paragraphs into the bullet PM node (content:'paragraph');
+        // serialize wraps them back into 'doc'. Round-trip is byte-identical.
         { id: 'r6' as RowId, kind: 'bullet', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Did things' }] }] }, semanticGroupId: 'g2' as GroupId },
       ],
       groups: [
@@ -2564,8 +2658,17 @@ function rowToPMNodeJSON(row: ResumeRow, schema: Schema) {
 
   let content: unknown[];
   if (row.kind === 'plain' || row.kind === 'bullet') {
-    // RichText: row.content is a PM doc JSON; extract its content array (without the outer 'doc' wrapper)
-    content = (row.content.content as unknown[]) ?? [];
+    // RichText: row.content is a PM doc JSON wrapper { type:'doc', content:[paragraph,...] }.
+    // The plain/bullet PM node has `content: 'paragraph'` (or 'inline*' in production §3.1).
+    // We pass the doc's content array straight through — paragraphs become children of
+    // the row node. If the persisted doc is empty, we emit an empty paragraph so the
+    // schema (paragraph requirement) is satisfied.
+    const docContent = (row.content.content as unknown[]) ?? [];
+    if (docContent.length > 0) {
+      content = docContent;
+    } else {
+      content = [{ type: 'paragraph' }];
+    }
   } else if (row.kind === 'header.contact') {
     const c = row.content;
     const text = c.type === 'text' ? c.value : c.label;
@@ -2603,10 +2706,19 @@ function pmNodeToRow(node: PMNode): ResumeRow {
   const semanticGroupId = (node.attrs.semanticGroupId ?? undefined) as GroupId | undefined;
 
   if (kind === 'plain' || kind === 'bullet') {
+    // Wrap the row node's content (paragraphs / inline) inside a synthetic 'doc'
+    // node for the persisted RichText shape. This is the inverse of rowToPMNodeJSON
+    // which unwrapped the doc to copy paragraphs into the row.
+    const innerContent = node.content.toJSON() as unknown[];
+    // If the only child is an empty paragraph, persist as empty doc content (clean roundtrip).
+    const isEmptyParagraph = innerContent.length === 1
+      && (innerContent[0] as { type: string; content?: unknown[] }).type === 'paragraph'
+      && !(innerContent[0] as { content?: unknown[] }).content;
+    const persisted = isEmptyParagraph ? [] : innerContent;
     return {
       id,
       kind,
-      content: { type: 'doc', content: node.content.toJSON() as unknown[] },
+      content: { type: 'doc', content: persisted },
       ...(semanticGroupId ? { semanticGroupId } : {}),
     } as ResumeRow;
   }
@@ -2650,7 +2762,7 @@ git commit -m "feat(v3): serialize + hydrate with byte-identical round-trip test
 - All integration tests green
 - Manual smoke test of editing a 1-page resume covers every Enter/Backspace transition + every NodeView render
 
-For brevity, M3 tasks are summarized at the level above each was for M1/M2. Implementer reads the spec section + the M2 patterns and applies them. Each task is its own commit.
+⚠️ **DO NOT dispatch these summary-level M3+ tasks directly to subagents as written.** They are intentionally compact because their detailed shape will be informed by M1/M2 outcomes (e.g. PoC may surface a constraint that changes a NodeView, or M2 may surface a serialization detail that changes a Tiptap Node attr). After M2 sign-off, the controller (you / the user) should expand each M3+ task into M2-level detail (failing test → fail run → impl → pass run → commit), informed by M1/M2 actual code, before dispatching subagents. Treat this section as a milestone plan, not as ready-to-execute task specs.
 
 ---
 
