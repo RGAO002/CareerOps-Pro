@@ -12,7 +12,7 @@ export function hydrateInitialState(doc: ResumeDocV3, schema: Schema): { docJSON
   return { docJSON, groups };
 }
 
-function rowToPMNodeJSON(row: ResumeRow, schema: Schema) {
+export function rowToPMNodeJSON(row: ResumeRow, schema: Schema) {
   const attrs: Record<string, unknown> = { id: row.id };
   if ('semanticGroupId' in row && row.semanticGroupId) attrs.semanticGroupId = row.semanticGroupId;
 
