@@ -37,7 +37,6 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
   const pageBreaks: PageBreak[] = [];
   const pageGeometries: PageGeometry[] = [];
   let pageIndex = 0;
-  let yWithinContent = 0;               // distance from current page's CONTENT top (= page-card top + topMargin)
 
   // KEY INSIGHT (P1 review fix):
   //
@@ -58,17 +57,51 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
   //
   // The break decoration's height varies (depends on which row caused the break),
   // but the CARD positions don't.
+  //
+  // POSITION-BASED MEASUREMENT (bug fix):
+  //
+  // We must NOT track progress by summing row heights alone.  CSS margins
+  // between rows (.row-heading { margin: 16px 0 8px }, .row-plain { margin:
+  // 4px 0 }, etc.) create gaps that are NOT captured by rect.height.
+  // Summing heights therefore under-counts the real vertical space used,
+  // causing the algorithm to place rows that visually overflow the page card
+  // onto page 1 instead of page 2.
+  //
+  // Fix: anchor against the first row's viewport top and measure every row's
+  // position as (rect.top − firstRowTop).  This captures margins and any
+  // other layout contributions automatically, since getBoundingClientRect()
+  // reflects the actual rendered position.
+  //
+  // On subsequent pages, reset the anchor to the first row on that page and
+  // compare against the same contentHeightPerPage budget.
 
   pageGeometries.push({ pageIndex, topPx: 0, heightPx: pageHeightPx });
 
-  for (let i = 0; i < rowElements.length; i++) {
-    const rect = rowElements[i].getBoundingClientRect();
-    const rowHeight = rect.height;
+  // Read all rects once in a single synchronous pass to avoid interleaved
+  // layout thrashing.
+  const rects = rowElements.map((el) => el.getBoundingClientRect());
 
-    // If this row would overflow current page's content area, break before it.
-    if (yWithinContent + rowHeight > contentHeightPerPage && yWithinContent > 0) {
-      // Whitespace at bottom of breaking page (could not fit the row).
-      const remainingContentSpace = contentHeightPerPage - yWithinContent;
+  // viewport top of the first row on the current page.  Used as the anchor
+  // so that CSS margins between rows (which are NOT captured by rect.height)
+  // are automatically included in our content-height accounting.
+  let pageFirstRowTop = rects.length > 0 ? rects[0].top : 0;
+
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i];
+
+    // Distance from current page's first row top to this row's top.
+    // Captures inter-row margins; comparable to (contentHeightPerPage - row.height)
+    // as an upper bound for fitting.
+    const yFromPageStart = rect.top - pageFirstRowTop;
+    const rowBottomFromPageStart = yFromPageStart + rect.height;
+
+    // If this row's bottom exceeds the content height budget, break before it.
+    // Guard yFromPageStart > 0 so we never break before the first row on a page.
+    if (rowBottomFromPageStart > contentHeightPerPage && yFromPageStart > 0) {
+      // Remaining content space on the breaking page = budget minus where this
+      // row's top is.  Can be small (row just barely didn't fit) or large (a
+      // tall inter-row gap pushed the row past the boundary).
+      const remainingContentSpace = contentHeightPerPage - yFromPageStart;
       // Screen widget height: remainingSpace + bottomMargin + screenGap + topMargin
       // pushes the next row to land exactly at next-card-top + topMargin.
       const screenHeightPx = remainingContentSpace + marginBottomPx + screenGapPx + marginTopPx;
@@ -80,9 +113,12 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
       pageIndex += 1;
       const nextCardTopPx = pageIndex * (pageHeightPx + screenGapPx);
       pageGeometries.push({ pageIndex, topPx: nextCardTopPx, heightPx: pageHeightPx });
-      yWithinContent = 0;
+
+      // Reset anchor to this row — it is the first row on the new page.
+      // All subsequent rows on this page will be measured relative to it,
+      // capturing their real inter-row spacing correctly.
+      pageFirstRowTop = rect.top;
     }
-    yWithinContent += rowHeight;
   }
 
   return { pageBreaks, pageGeometries };
