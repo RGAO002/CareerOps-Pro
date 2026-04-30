@@ -71,24 +71,19 @@ const PaginationExt = Extension.create({
   },
 });
 
-// F2 — emit a literal @page rule from resolved tokens. Returns cleanup fn.
-// IMPORTANT: the emitted CSS contains literal in/px values, NEVER `var(...)`.
-function emitStaticPageRuleFromTokens(canvasRoot: HTMLElement): () => void {
-  const cs = getComputedStyle(canvasRoot);
-  const get = (name: string, fallback: string) => {
-    const v = cs.getPropertyValue(name).trim();
-    return v || fallback;
-  };
-  // Defaults match v3-poc/poc.css for parity with the PoC-validated layout.
-  const top = get('--page-margin-top', '0.75in');
-  const right = get('--page-margin-right', '1.0in');
-  const bottom = get('--page-margin-bottom', '0.75in');
-  const left = get('--page-margin-left', '1.0in');
-
+// F2 — emit a literal @page rule. The page margin is intentionally 0 so the
+// tiptap element's own padding (0.75in/1in via --page-margin-* CSS vars) is
+// what produces the visual page margin in BOTH editor and print. If we set
+// @page margin > 0 here AND tiptap also has padding, content gets double-
+// offset and PDF diverges from the editor view. Keeping margin: 0 guarantees
+// PDF == editor, byte-for-byte tokenwise.
+//
+// Note: still emit a literal value (no var()) — Chromium does not resolve CSS
+// custom properties inside @page blocks. The literal `0` keeps that contract.
+function emitStaticPageRuleFromTokens(_canvasRoot: HTMLElement): () => void {
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-v3-print-page-rule', 'true');
-  // Literal values only — no var(), no calc() with vars. Chromium parses this.
-  styleEl.textContent = `@page { size: 8.5in 11in; margin: ${top} ${right} ${bottom} ${left}; }`;
+  styleEl.textContent = `@page { size: 8.5in 11in; margin: 0; }`;
   document.head.appendChild(styleEl);
   return () => { styleEl.remove(); };
 }
