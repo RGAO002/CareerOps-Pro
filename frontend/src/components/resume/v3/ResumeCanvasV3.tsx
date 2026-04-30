@@ -20,7 +20,77 @@ import type { EditorView } from '@tiptap/pm/view';
 import { DragController } from './interaction/DragController';
 import type { DropIndicator } from './interaction/DragController';
 import { InteractionLayer } from './layers/InteractionLayer';
-import type { RowId } from './schema/types';
+import type { RowId, GroupId } from './schema/types';
+import { groupsPluginKey } from './plugins/GroupsPlugin';
+import { useAssistantStore } from '@/stores/assistant';
+
+// Resolve which rows should be highlighted when the user hovers `targetRow`.
+// Hovering on a section heading lights up the whole section group; hovering
+// on entry.title / entry.meta lights up the whole entry group; other rows
+// light up just themselves. Mirrors v2's atom-aware hover scopes.
+function resolveHoverGroup(view: EditorView, targetRow: HTMLElement): HTMLElement[] {
+  const kind = targetRow.getAttribute('data-row-kind');
+  const gid = targetRow.getAttribute('data-group-id') || null;
+  const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
+
+  if (kind === 'section.heading' && gid) {
+    // Section: heading row + all entry rows whose parentSectionGroupId === gid.
+    const groupsState = groupsPluginKey.getState(view.state);
+    const memberEntryGids = new Set<string>();
+    if (groupsState) {
+      for (const [eid, g] of groupsState.byId.entries()) {
+        if (g.kind === 'entry' && g.parentSectionGroupId === (gid as GroupId)) {
+          memberEntryGids.add(eid as string);
+        }
+      }
+    }
+    return rows.filter((r) => {
+      if (r === targetRow) return true;
+      const rgid = r.getAttribute('data-group-id') || null;
+      return rgid !== null && (rgid === gid || memberEntryGids.has(rgid));
+    });
+  }
+
+  if ((kind === 'entry.title' || kind === 'entry.meta') && gid) {
+    // Entry: all rows tagged with this entry's gid.
+    return rows.filter((r) => r.getAttribute('data-group-id') === gid);
+  }
+
+  // Single-row hover for bullet / plain / header.* — just the hovered row.
+  return [targetRow];
+}
+
+// Map a hovered row to a label for the AI sidebar scope pill.
+function rowLabel(view: EditorView, row: HTMLElement): { blockId: string; label: string } | null {
+  const kind = row.getAttribute('data-row-kind');
+  const rowId = row.getAttribute('data-row-id') || '';
+  const gid = row.getAttribute('data-group-id') || '';
+  const text = row.querySelector('.row-content')?.textContent?.trim() ?? '';
+  const truncated = text.length > 40 ? text.slice(0, 38) + '…' : text;
+
+  if (kind === 'section.heading') {
+    return { blockId: gid || rowId, label: truncated || 'Section' };
+  }
+  if (kind === 'entry.title' || kind === 'entry.meta') {
+    // Use the entry group's title as the label if available.
+    const groupsState = groupsPluginKey.getState(view.state);
+    const sectionGid = groupsState?.byId.get(gid as GroupId);
+    let sectionLabel = '';
+    if (sectionGid && sectionGid.kind === 'entry' && sectionGid.parentSectionGroupId) {
+      const parent = groupsState?.byId.get(sectionGid.parentSectionGroupId);
+      if (parent && parent.kind === 'section') sectionLabel = parent.label ?? '';
+    }
+    const titleText = view.dom.querySelector(
+      `:scope > div > .row[data-row-kind="entry.title"][data-group-id="${gid}"] .row-content`,
+    )?.textContent?.trim() ?? truncated;
+    const lab = sectionLabel ? `${sectionLabel} · ${titleText}` : titleText;
+    return { blockId: gid || rowId, label: lab || 'Entry' };
+  }
+  if (kind === 'header.name' || kind === 'header.contact') {
+    return { blockId: rowId, label: 'Header' };
+  }
+  return { blockId: rowId, label: truncated || 'Row' };
+}
 
 export interface ResumeCanvasV3Props {
   /** The PM EditorView for the v3 doc. Drag controller installs around it. */
@@ -44,16 +114,15 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
 
   React.useEffect(() => {
     if (!view) return;
-    const handleCleanups: Array<() => void> = [];
+    const handleCleanups: Array<() => void> = [];   // per-row pointer/click handlers — torn down on rebind
+    const sessionCleanups: Array<() => void> = [];  // canvas-wide listeners — survive rebind, torn down on unmount
     const ctl = new DragController({
       view,
       onDropIndicator: (payload) => {
         setDropIndicator(payload);
         if (payload === null) {
-          // Drag ended (cleanup or never started).
           setDraggedRowIds([]);
         } else {
-          // Update dragged row ids from the controller's resolved range.
           const range = ctl.getDraggedRange();
           if (range) setDraggedRowIds([...range.rowIds]);
         }
@@ -62,10 +131,43 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
     controllerRef.current = ctl;
 
     const clearHandleBindings = () => {
-      while (handleCleanups.length > 0) {
-        handleCleanups.pop()?.();
-      }
+      while (handleCleanups.length > 0) handleCleanups.pop()?.();
     };
+
+    // Group-aware hover: when the pointer enters a row, scope-resolve to find
+    // all rows that should highlight together (whole section / whole entry /
+    // single row), and toggle .is-group-hovered on each. v2 parity.
+    let lastHoveredScope: Set<HTMLElement> | null = null;
+    const clearHoverScope = () => {
+      if (!lastHoveredScope) return;
+      for (const r of lastHoveredScope) r.classList.remove('is-group-hovered');
+      lastHoveredScope = null;
+    };
+    const onPointerOver = (ev: PointerEvent) => {
+      const target = (ev.target as HTMLElement | null)?.closest<HTMLElement>('.row');
+      if (!target) { clearHoverScope(); return; }
+      const scope = resolveHoverGroup(view, target);
+      const next = new Set(scope);
+      if (lastHoveredScope) {
+        for (const r of lastHoveredScope) {
+          if (!next.has(r)) r.classList.remove('is-group-hovered');
+        }
+      }
+      for (const r of next) r.classList.add('is-group-hovered');
+      lastHoveredScope = next;
+    };
+    const onPointerLeave = (ev: PointerEvent) => {
+      const related = ev.relatedTarget as HTMLElement | null;
+      if (related && view.dom.contains(related)) return;
+      clearHoverScope();
+    };
+    view.dom.addEventListener('pointerover', onPointerOver);
+    view.dom.addEventListener('pointerleave', onPointerLeave);
+    sessionCleanups.push(() => {
+      view.dom.removeEventListener('pointerover', onPointerOver);
+      view.dom.removeEventListener('pointerleave', onPointerLeave);
+      clearHoverScope();
+    });
 
     const bindRowHandles = () => {
       clearHandleBindings();
@@ -75,8 +177,19 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         const rowId = row.getAttribute('data-row-id') as RowId | null;
         if (!handle || !rowId) continue;
         const onPointerDown = (ev: PointerEvent) => ctl.onPointerDown(ev, rowId, handle);
+        // Click on .row-handle (without dragging) → open AI sidebar with the
+        // group-aware scope. Block-select UX: the handle is the affordance to
+        // pick a section / entry / row as the AI assistant target.
+        const onClick = (ev: MouseEvent) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const labelInfo = rowLabel(view, row);
+          if (labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
+        };
         handle.addEventListener('pointerdown', onPointerDown);
+        handle.addEventListener('click', onClick);
         handleCleanups.push(() => handle.removeEventListener('pointerdown', onPointerDown));
+        handleCleanups.push(() => handle.removeEventListener('click', onClick));
       }
     };
 
@@ -87,6 +200,7 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
     return () => {
       observer.disconnect();
       clearHandleBindings();
+      while (sessionCleanups.length > 0) sessionCleanups.pop()?.();
       controllerRef.current = null;
       setDropIndicator(null);
       setDraggedRowIds([]);

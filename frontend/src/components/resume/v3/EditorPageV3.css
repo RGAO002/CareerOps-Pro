@@ -243,12 +243,16 @@
   transform-origin: top left;
   will-change: transform;
 }
-.v3-editor-canvas-root .row:hover {
-  background: rgb(254 252 251);
+/* Group-aware hover: highlight all rows in the same section / entry scope.
+ * Class is added by ResumeCanvasV3 pointerover handler (v2 parity for the
+ * "hover-on-section-heading lights up the whole section" UX). v2's
+ * SectionHighlightLayer used oklch(0.97 0.01 60) — match it exactly. */
+.v3-editor-canvas-root .row.is-group-hovered {
+  background: oklch(0.97 0.01 60);
 }
 /* Drop bg on print canvas — no hover state in PDF. */
 .v3-print-canvas-root .row,
-.v3-print-canvas-root .row:hover { background: transparent; }
+.v3-print-canvas-root .row.is-group-hovered { background: transparent; }
 
 .v3-editor-canvas-root .row-handle {
   width: 14px;
