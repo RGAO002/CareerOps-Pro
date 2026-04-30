@@ -22,6 +22,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { usePageContext } from '@/hooks/usePageContext';
 import { useAssistantStore } from '@/stores/assistant';
 import { useSuggestionStore } from '@/stores/aiSuggestion';
+import { useResumeStore } from '../v2/store/useResumeStore';
 import { _registerV3EditorView } from '@/components/ai/applySuggestion';
 import { Download } from 'lucide-react';
 
@@ -163,6 +164,12 @@ export function EditorPageV3({ initialResume }: Props) {
     const schema = editor.schema as Schema;
     const { docJSON, groups } = hydrateInitialState(v3, schema);
 
+    // Hydrate v2 useResumeStore so AI features (SidebarPose / BarPose) that
+    // read useResumeStore.getState().resume can find the current doc. v3 is
+    // the editor of record but v2 store stays the source of truth for AI
+    // calls (and for the v2 atom renderers used in PrintCanvasClient).
+    useResumeStore.getState().hydrate(initialResume);
+
     queueMicrotask(() => {
       if (cancelled) return;
       editor.commands.setContent(docJSON as Parameters<typeof editor.commands.setContent>[0], { emitUpdate: false });
@@ -216,6 +223,9 @@ export function EditorPageV3({ initialResume }: Props) {
       latestSnapshotRef.current = snapshot;
       previousResumeRef.current = next;
       setSaveStatus('saved');
+      // Keep v2 useResumeStore in sync so AI features always see the
+      // freshest content (not the stale initialResume from page mount).
+      useResumeStore.getState().hydrate(next);
       useSuggestionStore.getState().hydrate(next.id);
     }).catch((err) => {
       setSaveStatus('error');
