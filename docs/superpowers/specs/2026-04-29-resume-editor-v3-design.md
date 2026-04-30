@@ -407,6 +407,12 @@ PM doc contains only row nodes. Page break markers are widget decorations inject
 
 ## § 4 Pagination layer
 
+> **M1 PoC findings (locked in, sign-off doc: `2026-04-29-resume-editor-v3-poc-results.md`):**
+>
+> 1. **Chromium PDF does NOT resolve CSS custom properties inside `@page` rules.** Writing `@page { margin: var(--page-margin-top) ... }` produces zero margins in PDF output. Production `/print` MUST implement `emitStaticPageRuleFromTokens()` — at mount, JS reads `--page-margin-*` from the canvas root and injects a static `<style>@page { margin: 0.75in 1in 0.75in 1in; }</style>` into `<head>`. Tokens still drive the values; emission is just the workaround. C5 contract preserved.
+> 2. **Position-based layout measurement, NOT height summation.** CSS margins between row siblings (`.row-heading { margin: 16px 0 8px }` etc.) are NOT included in `rect.height`. Production LayoutEngine MUST compute each row's extent as `(rect.top − pageFirstRowTop) + rect.height` and reset `pageFirstRowTop` on each break. `screenHeightPx` formula is unchanged; only the accumulator changes.
+> 3. **Hardened ready pipeline required for /print.** PaginationPlugin's first layout pass must retry if rows are not yet measured (any row with `getBoundingClientRect().height === 0`), with a frame-count cap (~30 frames). Stamp `data-row-count` / `data-break-count` / `data-layout-error` on the canvas root for observability. Without this, /print silently mounted with zero break decorations.
+
 ### § 4.1 Goal
 
 - Single contenteditable PM doc with continuous DOM

@@ -2920,7 +2920,19 @@ git commit -m "feat(v3): serialize + hydrate with byte-identical round-trip test
 - All integration tests green
 - Manual smoke test of editing a 1-page resume covers every Enter/Backspace transition + every NodeView render
 
-⚠️ **DO NOT dispatch these summary-level M3+ tasks directly to subagents as written.** They are intentionally compact because their detailed shape will be informed by M1/M2 outcomes (e.g. PoC may surface a constraint that changes a NodeView, or M2 may surface a serialization detail that changes a Tiptap Node attr). After M2 sign-off, the controller (you / the user) should expand each M3+ task into M2-level detail (failing test → fail run → impl → pass run → commit), informed by M1/M2 actual code, before dispatching subagents. Treat this section as a milestone plan, not as ready-to-execute task specs.
+⚠️ **DO NOT dispatch these summary-level M3+ tasks directly to subagents as written.** They are intentionally compact because their detailed shape will be informed by M1/M2 outcomes. After M2 sign-off, the controller should expand each M3+ task into M2-level detail (failing test → fail run → impl → pass run → commit), informed by M1/M2 actual code, before dispatching subagents.
+
+**M1 PoC findings to encode in M3+ expansion** (sign-off doc: `2026-04-29-resume-editor-v3-poc-results.md`):
+
+1. **(M3 — NodeView wiring)** `ReactNodeViewRenderer` wraps each PM node in a `<div class="react-renderer">`. Code that walks editor DOM by row (PaginationPlugin selector, drag system row hit-test, AI context row enumeration) MUST account for this wrapper. The PoC found this empirically — production NodeView wiring should encapsulate it (e.g. tag the wrapper consistently or use `[data-row-kind]` ancestor lookup).
+
+2. **(M5 — production PaginationPlugin)** Layout MUST use position-based measurement, NOT height-summation. Each row's extent on a page is `(rect.top − pageFirstRowTop) + rect.height` (because CSS margins between row siblings are not in `rect.height`). The `screenHeightPx` formula is unchanged. Reset `pageFirstRowTop` on each break.
+
+3. **(M5 — production /print)** Must implement `emitStaticPageRuleFromTokens()` because Chromium PDF doesn't resolve CSS custom properties inside `@page` rules. JS reads `--page-margin-*` from canvas root at mount, injects a static `<style>@page { ... }</style>`. Cleanup on unmount.
+
+4. **(M5 — PaginationPlugin ready pipeline)** Hardened first-layout retry: if any row has `getBoundingClientRect().height === 0`, retry next frame (cap ~30 frames). Stamp `data-row-count` / `data-break-count` / `data-layout-error` on canvas root for observability. /print's `data-paginated="true"` flag must NOT fire if `data-layout-error` is set.
+
+Treat this section as a milestone plan, not as ready-to-execute task specs.
 
 ---
 
