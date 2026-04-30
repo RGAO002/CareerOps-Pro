@@ -113,11 +113,11 @@ A `regression` test checklist runs at every implementation milestone (§ 7).
 
 These are non-negotiable. Any implementation that violates them is wrong by definition.
 
-- **C1.** PM doc is the primary runtime source of truth. ResumeDocV3 JSON is `serialize(PM doc + groups state)`. Persistence is one-way derivation; no bidirectional sync layer. Save = serialize once.
+- **C1.** ProseMirror `EditorState` is the primary runtime source of truth, comprising both PM doc (rows) AND GroupsPlugin state (groups). All mutations to either go through one dispatched transaction. ResumeDocV3 JSON is `serialize(EditorState)`. Persistence is one-way derivation; no bidirectional sync layer. Save = serialize once. PM history undo/redo restores both doc and plugin state atomically (§ 2.6).
 - **C2.** Page break markers are runtime-only. They are never persisted in `rows`, never present in PM doc serialization, never enter undo history, never sent to the AI as part of context.
 - **C3.** PaginationPlugin / LayoutEngine is the single source of truth for `pageBreaks` and `pageGeometries`. PageChromeLayer, BreakDecoration, and the /print route all consume the same plugin output. No layer recomputes layout independently.
 - **C4.** /print route uses a separate readonly TipTap Editor instance that shares schema, NodeView code, CSS tokens, and PaginationPlugin with the /edit route. It does not reuse the live editor's DOM. /print waits for `body[data-paginated="true"]` (set after layout done + fonts.ready + 2× requestAnimationFrame) before triggering PDF export.
-- **C5.** Page card padding is the only margin source of truth (top + bottom + left + right). `@page { margin: 0 }`. The widget BreakDecoration height is the on-screen page-to-page gap; on print it collapses to 0 and `break-before: page` triggers the actual break.
+- **C5.** A set of CSS custom properties — `--page-margin-top`, `--page-margin-bottom`, `--page-margin-left`, `--page-margin-right` — is the single source of truth for page margins. Both screen and print consume the same tokens. Screen consumes them via padding on the editor wrapper (left/right/top) plus BreakDecoration height (top + bottom of inter-page boundary). Print consumes them via `@page { margin: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left) }` and BreakDecoration `height: 0`. PageChromeLayer is purely decorative (positioned to align with the resulting editor geometry); it is `display: none` on print and never the source of any margin value.
 - **C6.** Position is the visual / layout / drag truth. `semanticGroupId` is a semantic anchor for AI / diff / suggestion targeting. There is never a state where "visually in A but semantically in B" persists past a single drag commit — drop always rewrites groupId per new position.
 - **C7.** No `window` or `document` capture-phase pointerdown / mousedown listener may exist anywhere in v3 code. Block-drag input is captured at the row's `.row-handle` / `.section-divider` element, with `setPointerCapture` for the duration of the drag. Once drag is in flight, temporary `window` listeners for `pointermove` / `pointerup` / `pointercancel` / `keydown(Esc)` are allowed and required.
 - **C8.** Pointer Events (not mouse events) for all drag input.
@@ -203,7 +203,73 @@ type SemanticGroup =
 - I5. When a section group is GC'd, all entry groups that had it as parent get `parentSectionGroupId = undefined`. They are not deleted.
 - I6. Undo restores invariants by replaying the pre-edit snapshot.
 
-Invariants are enforced by store actions, not by PM schema.
+Invariants are enforced inside the GroupsPlugin (§ 2.6), not by PM schema.
+
+### § 2.6 Group state ownership (transactional, atomic with PM)
+
+The architectural risk we are explicitly avoiding: ResumeDocV3 carries both `rows` and `groups`. PM transactions move row nodes natively — but `groups[]` is external state. Without a defined owner, a drag-drop transaction could update doc but leave groups stale, and undo could restore rows without restoring matching group GC. This is a real foot-gun, especially for AI apply.
+
+Owner: a dedicated **GroupsPlugin** (a ProseMirror plugin) holds groups state inside `EditorState`. The plugin's `state.apply(tr)` is the only place groups change. Transactions that mutate groups carry their group operations via `tr.setMeta('groupOps', GroupOp[])`.
+
+```ts
+type GroupOp =
+  | { type: 'create'; group: SemanticGroup }
+  | { type: 'delete'; groupId: GroupId }
+  | { type: 'updateRole';   groupId: GroupId; role: SectionRole; label?: string }
+  | { type: 'updateParent'; groupId: GroupId; parentSectionGroupId?: GroupId };
+
+const groupsPlugin = new Plugin<GroupsState>({
+  state: {
+    init(): GroupsState { return { byId: new Map() }; },
+    apply(tr, oldState, oldEditorState, newEditorState): GroupsState {
+      const ops = tr.getMeta('groupOps') as GroupOp[] | undefined;
+      let next = ops ? applyGroupOps(oldState, ops) : oldState;
+
+      // GC: walk new doc to find which groups are still referenced;
+      // delete groups with zero member rows (post-row-deletion cleanup).
+      // This runs on every doc-change transaction so manual deletion of
+      // entry-title rows etc. cascades to group GC without explicit ops.
+      if (tr.docChanged) {
+        next = gcUnreferencedGroups(next, newEditorState.doc);
+      }
+      return next;
+    },
+  },
+});
+```
+
+**Why this gives transactional atomicity**:
+
+- ProseMirror's history (`@tiptap/extensions UndoRedo`) automatically captures the full `EditorState` for each transaction added to history. EditorState includes plugin states.
+- One `dispatch(tr)` updates doc AND plugin states atomically.
+- `Cmd+Z` rewinds to the previous EditorState — both doc and groups state restored together.
+- No "doc undone but groups stale" race possible.
+
+**Mutation pathways that must use this contract** (every place that touches groups):
+
+- `Drag drop` → builds tr with: `tr.replace(...)` for row movement + `tr.setMeta('groupOps', [{type:'updateParent',...}, {type:'delete', groupId}])` for group rebelong + GC.
+- `Backspace empty entry.title` (§ 3.6) → tr with row downgrade + `groupOps: [{type:'delete', entryGroupId}]`.
+- `Slash → /entry` (§ 3.7) → tr with kind change + `groupOps: [{type:'create', entryGroup}]`.
+- `AI apply` (§ 6.2) → tr with row patches + any required `groupOps` derived from suggestion target.
+- `Initial load` → set state via `tr.setMeta('groupsHydrate', SemanticGroup[])`.
+
+A helper `dispatchWithGroups(view, { docOps, groupOps })` wraps the common case so we can't accidentally dispatch row changes without their group counterparts.
+
+**Serialization**:
+
+```ts
+function serializeResumeDoc(state: EditorState): ResumeDocV3 {
+  return {
+    schemaVersion: 3,
+    rows: state.doc.content.toJSON().map(rowFromPMNode),
+    groups: Array.from(state.groupsPlugin.byId.values()),
+  };
+}
+```
+
+Both `rows` and `groups` come from the same `EditorState` snapshot, atomic by construction.
+
+**ESLint rule (added in § 7.1)**: `no-direct-groups-mutation` — fails on any code that mutates groups state outside the plugin's apply method or the `dispatchWithGroups` helper.
 
 ---
 
@@ -313,10 +379,12 @@ User can override with slash commands (§ 3.7).
 | Empty entry.title | Downgrade to plain; entry group GC; downstream rows recompute groupId |
 | Empty section.heading | Downgrade to plain; section group GC; downstream rows recompute groupId |
 | Empty header.contact | Delete row; merge cursor to previous |
-| Empty header.name | Downgrade to plain |
+| Empty header.name | **No-op** (protected — see below) |
 | Empty plain | Delete row; merge cursor to previous |
 
 The principle: empty + Backspace = uniform downgrade-to-plain (same as v2's existing bullet→plain). No special-case protection; deletion of a section is an explicit gesture (6-dot menu).
+
+**One exception**: `header.name` is the only protected row. A resume must have a name; downgrading or deleting it leaves the AI context (`assembleAIContext` in § 6.4) without a name field, and forces normalization to recreate the row out of nowhere. Backspace on empty `header.name` is a no-op (cursor stays, no transaction dispatched). Users can still empty the text content, but the row stays as `header.name` kind. Schema validation (§ 7.1) enforces `header.name` row count = 1 — load-time hydration auto-inserts an empty one if missing (defensive).
 
 ### § 3.7 Slash commands
 
@@ -449,22 +517,67 @@ The PM editor layer sits at z-index above this layer. The InteractionLayer (drop
 
 This guarantees PDF capture happens after fonts are loaded, layout is final, and 2 paint frames have stabilized.
 
-### § 4.6 Margin ownership (single SoT)
+### § 4.6 Margin ownership (single SoT via CSS tokens)
+
+The architectural mistake we are explicitly avoiding here: PageChromeLayer is a decorative absolute layer that does not contain the editor's row DOM, so its padding cannot constrain row geometry. And it is `display: none` on print, so its padding cannot create PDF margins either. Margin truth must live somewhere both screen and print can consume.
+
+The fix: define margins as CSS custom properties consumed by both modes through different mechanisms that produce the same numeric result.
 
 ```
+TOKENS (single SoT, defined once on the canvas root):
+  --page-margin-top:    0.75in
+  --page-margin-bottom: 0.75in
+  --page-margin-left:   1.0in
+  --page-margin-right:  1.0in
+  --page-break-screen-gap: 32px   /* extra visual gap between pages on screen only */
+
 HORIZONTAL margins (left / right):
-  - PageChromeLayer page-card has padding-left = padding-right = horizontalMargin
-  - Editor row content renders within the page card's padded area (visually)
-  - On print: @page { margin: 0 } — page card padding is the only margin
+  Screen:
+    .pm-editor-wrapper {
+      padding-left:  var(--page-margin-left);
+      padding-right: var(--page-margin-right);
+      max-width:     var(--page-content-width); /* paperWidth = content + L + R */
+    }
+  Print:
+    @page { margin-left: var(--page-margin-left); margin-right: var(--page-margin-right); }
+    .pm-editor-wrapper { padding-left: 0; padding-right: 0; }
+      ↑ on print only — @page directive owns left/right, wrapper padding zeroed
 
 VERTICAL margins (top / bottom):
-  - Each page-card has padding-top = topMargin, padding-bottom = bottomMargin
-  - Page 1 row 1 starts at page1.top + topMargin
-  - Page 2 row 1 starts at page2.top + topMargin (NOT flush to page edge)
-  - On print: page-card padding is the only margin source
-  - BreakDecoration height (screen) = visual gap between pages (e.g. 32px)
-  - BreakDecoration height (print) = 0
+  Screen:
+    First page top margin:    .pm-editor-wrapper { padding-top: var(--page-margin-top); }
+    Inter-page boundary:      .pagination-break {
+                                height: calc(var(--page-margin-bottom)
+                                           + var(--page-break-screen-gap)
+                                           + var(--page-margin-top));
+                              }
+                              /* This produces: bottom-margin of page N
+                                 + visual gap (decorative)
+                                 + top-margin of page N+1 */
+    Last page bottom:          implicit (content extends, no decoration after last row)
+  Print:
+    @page { margin-top: var(--page-margin-top); margin-bottom: var(--page-margin-bottom); }
+    .pm-editor-wrapper { padding-top: 0; }
+    .pagination-break { height: 0; }    /* @page handles per-page top/bottom margin */
+    .pagination-break still has `break-before: page` — break point only
+
+POSITION OF PAGE CHROME (decorative cards):
+  PageChromeLayer reads pageGeometries from PaginationPlugin (which itself
+  computes page heights using the SAME CSS tokens). Card top/height align
+  pixel-perfect with the editor wrapper's actual rendered geometry — but
+  the chrome is paint-only, never constrains layout.
+  On print: PageChromeLayer is display:none; Chromium paints actual paper.
 ```
+
+**Why this works for both modes**:
+
+- Screen mode: editor wrapper padding (top + L + R) + BreakDecoration heights (top of next + bottom of prev) collectively produce all margin whitespace. Total page card visual = paper rectangle the user sees.
+- Print mode: `@page` directive owns all per-page margins. BreakDecoration's `break-before: page` triggers Chromium to start a new page. Wrapper padding zeroed because @page handles it.
+- Numeric values are the SAME in both modes (both consume `--page-margin-*` tokens). Editor view and PDF have identical paper-relative content positions.
+
+**Why PageChromeLayer cannot own margins**: it has no children that PM lays out into. PM rows are siblings (or in a separate stacking layer), not descendants of page cards. Padding on a page card affects its children only — and there are no children.
+
+**Concrete invariant for the implementation**: changing any `--page-margin-*` value at runtime updates BOTH the editor wrapper padding (via CSS) AND the @page rule (via CSS) AND triggers a PaginationPlugin re-layout (since available content height changed). All three are kept in sync because they read the same CSS variables.
 
 ### § 4.7 Performance
 
@@ -514,7 +627,7 @@ A spike branch must validate three things before v3 implementation begins. PoC d
 - PageChromeLayer never recomputes layout.
 - /print uses readonly TipTap instance, same schema / NodeViews / CSS / LayoutEngine.
 - /print waits for body[data-paginated="true"] before export.
-- Page card padding is the only margin source; @page margin = 0.
+- CSS tokens (`--page-margin-*`) are the only margin SoT. Screen consumes via editor-wrapper padding + BreakDecoration height; print consumes via @page directive + zeroed wrapper padding + zeroed BreakDecoration height. PageChromeLayer is paint-only and never the source of a margin value.
 - Break decoration is widget-only (Plan A); not persisted in any form.
 ```
 
@@ -692,17 +805,22 @@ Resolution priority on suggestion apply:
   4. Apply runs against the current PM doc, never against a snapshot taken at suggestion-creation time.
 
 Apply pipeline (single transaction):
-  Runtime write path = PM transaction (primary):
+  Runtime write path = single dispatched PM transaction (primary):
     1. Resolve target → PM positions
-    2. Build a single transaction:
+    2. Compute required `GroupOp[]` for the suggestion (e.g. updateParent if the apply
+       moves a row across sections; create if it inserts a new entry; delete if it
+       removes the last row of an entry group)
+    3. Build one transaction:
        - replaceRangeWith / addMark / deleteRange / insert as needed
-       - setMeta('allowLockedEdit', true)
-       - setMeta('aiApply', { runId, suggestionIds: [sid] })
+       - setMeta('groupOps', GroupOp[])              ← consumed by GroupsPlugin
+       - setMeta('allowLockedEdit', true)            ← passes filterTransaction
+       - setMeta('aiApply', { runId, suggestionIds: [sid] })  ← signal to listeners
        - addToHistory: true
-    3. dispatch
+    4. Use dispatchWithGroups(view, { docOps, groupOps }) helper to enforce both
+       fields are present together
   Persistence path (one-way, on save):
-    Serialize PM doc + groups → ResumeDocV3 JSON
-    No bidirectional sync. PM doc is authoritative at runtime.
+    Serialize EditorState (doc + GroupsPlugin state) → ResumeDocV3 JSON
+    No bidirectional sync. EditorState is authoritative at runtime.
   Post-commit:
     PaginationPlugin observes the transaction and schedules one layout pass
     (no special "skip pagination during apply" flag needed; single transaction = single commit)
@@ -838,71 +956,115 @@ A markdown checklist of v2 user-visible behaviors run by hand before each milest
 
 ## § 8 Implementation phasing
 
-Total estimate: **9–12 working days** (incl. PoC).
+Total estimate: **17–22 working days** (incl. PoC). Earlier draft (9–12) was optimistic — this is a full schema + editor + drag/selection + pagination + AI + regression rewrite, not a small refactor. The v2 polish items (drag animations, selection visuals, page chrome) take time to re-implement under the new architecture even though their CSS is reused.
 
-### Week 1: PoC (3–4 days, isolated branch)
+Each milestone has explicit pass criteria. Subsequent milestones do not start until the prior milestone is signed off. Implementation lives behind `ENABLE_RESUME_V3` feature flag throughout; v2 stays the production editor until M6 ships.
 
-- Day 1–2: Build minimal TipTap demo with PaginationPlugin, BreakDecoration, PageChromeLayer
-- Day 3: Run PoC A (print fidelity), B (selection traversal), C (chrome alignment)
-- Day 4: Document findings in PoC results file. If pass → green-light v3. If fail → re-analyze, attempt alternative injection paths, escalate to design re-review if all fail.
+### M1 — PoC sign-off (4–5 days, isolated branch)
 
-### Week 2: Schema + store (1.5 days)
+Build the minimum needed to answer "does single-PM + widget-decoration pagination actually work in this stack". Runs on a throwaway demo, not integrated with store / AI / sidebar.
 
-- Define `ResumeDocV3` types
-- Implement store (`useResumeStoreV3`) with row + group lifecycle actions
-- Schema validator
-- No editor / UI yet — store is testable in isolation
-- Unit tests for § 7.2
+Deliverables:
+- Minimal TipTap demo with 2-3 row kinds (heading + bullet + plain)
+- PaginationPlugin emitting widget BreakDecorations
+- PageChromeLayer rendering page cards from plugin state
+- /print route with readonly TipTap instance + `data-paginated` flag
+- PoC results document (pass/fail per § 4.9 criteria)
 
-### Week 2–3: Editor + NodeViews (3 days)
+Pass criteria: § 4.9 PoC A + B + C all pass on Chromium.
+Failure handling: re-analyze root cause, try alternative injection paths, escalate to design review if no path passes. Do not silently fall back to Plan B atom node.
 
-- Single TipTap editor scaffold with the 7 row node types
-- One NodeView per kind, including section.heading's `<hr>` decoration, bullet's `<•>` marker, all `.row-handle` elements
+### M2 — Schema, store, GroupsPlugin (2 days)
+
+- `ResumeDocV3` types (§ 2)
+- `GroupsPlugin` PM plugin (§ 2.6) with full GroupOp handling + GC
+- `dispatchWithGroups` helper enforcing atomic transactions
+- Schema validator (§ 2.5 invariants I1–I6)
+- Serializer / hydrator (EditorState ↔ ResumeDocV3 JSON)
+- Unit tests for § 7.2 (group resolution, lifecycle, drag rebelong, GC)
+
+Pass criteria: all unit tests green; round-trip serialize+hydrate is byte-identical.
+
+### M3 — Editor + 7 NodeViews + slash + keymaps + AI lock (5 days)
+
+The biggest single milestone. Each NodeView is unique visual + interaction code.
+
+- Single TipTap editor scaffold with 7 row node types (§ 3.1)
+- 7 NodeViews:
+  - header.name (large title styling)
+  - header.contact (inline list with separators)
+  - section.heading (with `<hr>` divider element + click forwarding)
+  - entry.title
+  - entry.meta (italic / muted styling)
+  - plain
+  - bullet (with `<•>` marker)
 - Slash command menu (§ 3.7)
-- Keymap for Enter / Backspace per § 3.5 / § 3.6
-- Cmd+A progressive (§ 3.4)
+- Enter keymap (§ 3.5) — full transition table
+- Backspace keymap (§ 3.6) — uniform downgrade + header.name protection
+- Cmd+A progressive selection (§ 3.4)
 - AI lock plugin via filterTransaction (§ 6.3)
-- Integration tests for § 7.3
+- Integration tests for § 7.3 (cross-row PM behaviors, lock, transitions)
 
-### Week 3: Drag + selection + interaction layer (1.5 days)
+Pass criteria: all integration tests green; manual smoke test of editing a 1-page resume covers every Enter / Backspace transition + every NodeView's render.
 
-- SelectionManager adapted for RowId | GroupId
+### M4 — Drag + selection + interaction layer (3 days)
+
+- SelectionManager adapted for `RowId | GroupId` (v2 SelectionManager refactored, not rewritten)
 - Block-select range resolver (§ 5.2)
-- Drag with Pointer Events + setPointerCapture (§ 5.3 / § 5.4)
-- Drop animation, drop indicator, drag ghost (preserve v2 polish)
-- ESLint custom rule for capture-phase listeners (§ 7.1)
-- E2E tests for § 7.4 selection / drag
+- Drag system with Pointer Events + setPointerCapture (§ 5.3 / § 5.4)
+- Drop indicator, drag ghost, drop animation (preserve v2 polish; reuse v2 CSS)
+- Auto-scroll during drag near canvas edges (v2 carryover)
+- ESLint custom rules: `no-global-pointer-capture`, `no-direct-groups-mutation` (§ 7.1)
+- E2E tests for § 7.4 selection / drag scenarios
 
-### Week 4: Pagination + page chrome + /print (2 days)
+Pass criteria: ESLint rules block any violation in CI; e2e drag tests across rows / sections / orphan zones all green.
 
-- PaginationPlugin completed (initial scaffold from PoC)
-- PageChromeLayer connected to plugin state
-- /print route with readonly TipTap instance
-- `data-paginated` flag pipeline
-- PDF export end-to-end test (§ 7.4)
+### M5 — Pagination + page chrome + /print integration (3 days)
 
-### Week 4–5: AI integration migration (1.5 days)
+Builds on the M1 PoC artifact, integrating it with the M3 editor.
+
+- PaginationPlugin productionized (incremental layout, debounce, diff)
+- PageChromeLayer connected to plugin state via React hook
+- /print route productionized: readonly TipTap, full schema, full NodeView set, full PaginationPlugin
+- `data-paginated` flag pipeline (layout done → fonts.ready → 2× rAF)
+- CSS token system for `--page-margin-*` (§ 4.6)
+- @page directive on print only, wrapper padding zeroed on print
+- PDF export e2e test (Playwright `page.pdf()` waits on flag)
+
+Pass criteria: PDF export pixel-diff vs editor view < 1% across 3-page test resume; performance budget met (typing latency < 16ms p50 on 50-row doc).
+
+### M6 — AI integration migration (2 days)
 
 - AI target types (§ 6.1) + resolver (§ 6.2)
-- AI context assembly (§ 6.4)
-- Apply transaction wrapper (single transaction, allowLockedEdit, aiApply meta)
-- Suggestion store status updates via PM transaction meta listener (replaces v0 `_onAiApplyUndo`)
-- E2E test for AI apply mid-edit (§ 7.4)
+- AI context assembly (§ 6.4) from EditorState (doc + groups)
+- Apply transaction wrapper using `dispatchWithGroups` (§ 6.2)
+- AI lock store keys migrated from `BlockId` → `RowId | GroupId`
+- Suggestion store status updates via PM transaction meta listener (replaces v0 `_onAiApplyUndo` callback)
+- E2E test for AI apply with concurrent user edit (§ 7.4)
 
-### Week 5: Polish + manual regression (1 day)
+Pass criteria: AI apply works for all suggestion target kinds (row / group / selection / document); concurrent-edit scenario doesn't corrupt state; AI lock prevents user edits during pending suggestion.
 
-- Run § 7.6 manual regression checklist
-- Visual regression diff against v2 baseline screenshots
-- Performance pass: typing latency, drag smoothness, AI apply latency
-- Bug fixes
-- Commit / PR
+### M7 — Regression sweep + polish + ship (2–3 days)
+
+- Run § 7.6 manual regression checklist; fix any v2-behavior gap
+- Visual regression diff against v2 baseline screenshots (must be < 2% per surface)
+- Performance pass: typing latency, drag smoothness, AI apply latency, page chrome render
+- IME composition stability (Chinese / Japanese input across rows)
+- Edge cases: empty doc, single-row doc, very long content (5+ pages), all section roles
+- Final code review of new modules
+- Remove `ENABLE_RESUME_V3` flag → v3 becomes production
+- Archive v2 code paths (do not delete in this PR — separate cleanup PR after stability soak)
+
+Pass criteria: all regression checklist items green; visual diff under threshold; PR review approved.
 
 ### Phasing rules
 
-- **R1.** PoC must pass before any v3 work merges. PoC failure → design review, do not unblock implementation.
-- **R2.** Each week's deliverables ship behind a feature flag (`ENABLE_RESUME_V3`). v2 remains the active editor until v3 is fully green.
-- **R3.** Manual regression checklist runs at end of each phase. Any v2 regression blocks the phase.
-- **R4.** Migration strategy: none. v3 reads only v3-format JSON. v2 resumes are not loadable in v3. User re-uploads.
+- **R1.** M1 PoC must pass before any M2+ work merges. PoC failure → design review, do not unblock implementation.
+- **R2.** Each milestone ships behind `ENABLE_RESUME_V3` feature flag. v2 remains the production editor until M7 ships.
+- **R3.** Each milestone has explicit pass criteria (listed inline). Subsequent milestones do not start until prior milestone is signed off.
+- **R4.** Manual regression checklist (§ 7.6) runs at end of each milestone touching user-visible behavior (M3 onward). Any v2 regression blocks the milestone.
+- **R5.** Migration strategy: none. v3 reads only v3-format JSON. v2 resumes are not loadable in v3. User re-uploads.
+- **R6.** Total estimate (17–22 days) is contingent on M1 PoC passing. PoC failure forces re-design and pushes the entire timeline.
 
 ### What doesn't change
 
