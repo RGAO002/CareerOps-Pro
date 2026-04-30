@@ -10,7 +10,7 @@ export function BulletNodeView(props: NodeViewProps) {
       kindClass="bullet"
       kindDataAttr="bullet"
       prefix={
-        <span className="row-marker" contentEditable={false} data-edit-only="" aria-hidden="true">
+        <span className="row-marker" contentEditable={false} aria-hidden="true">
           {'•'}
         </span>
       }

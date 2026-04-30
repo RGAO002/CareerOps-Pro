@@ -74,13 +74,13 @@ describe('v3 NodeViews — per-kind render', () => {
     });
   }
 
-  it('bullet renders .row-marker with contenteditable=false and data-edit-only', async () => {
+  it('bullet renders .row-marker with contenteditable=false (NOT data-edit-only — bullet point is part of resume visuals, must appear in PDF)', async () => {
     const { container } = render(<MountEditor nodeType="bullet" />);
     await flushFrames();
     const marker = container.querySelector('.row.row-bullet .row-marker') as HTMLElement | null;
     expect(marker).toBeTruthy();
     expect(marker!.getAttribute('contenteditable')).toBe('false');
-    expect(marker!.hasAttribute('data-edit-only')).toBe(true);
+    expect(marker!.hasAttribute('data-edit-only')).toBe(false);
   });
 
   it('section_heading renders <hr.section-divider> with contenteditable=false (NOT data-edit-only — divider is part of resume visuals, must appear in PDF)', async () => {

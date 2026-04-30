@@ -119,6 +119,25 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
     return null;
   });
 
+  // Paint <html> and <body> white for the entire print surface lifetime.
+  // The app's default body bg (--background = warm cream / oklch(0.985 0.004 70))
+  // bleeds onto pages where content doesn't fill paper-bottom — Chromium prints
+  // body bg on every paper, so without this override the PDF shows a tan
+  // rectangle on the last page (and any short page).
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const htmlEl = document.documentElement;
+    const bodyEl = document.body;
+    const prevHtmlBg = htmlEl.style.background;
+    const prevBodyBg = bodyEl.style.background;
+    htmlEl.style.background = 'white';
+    bodyEl.style.background = 'white';
+    return () => {
+      htmlEl.style.background = prevHtmlBg;
+      bodyEl.style.background = prevBodyBg;
+    };
+  }, []);
+
   // Build initial editor content from the v3 doc using the M2 hydrate adapter.
   // We need the schema to call hydrateInitialState; useEditor provides it via
   // editor.schema after creation, so we hydrate inside the `content` factory.
