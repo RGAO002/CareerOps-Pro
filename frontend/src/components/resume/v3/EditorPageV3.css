@@ -466,6 +466,68 @@
   text-underline-offset: 3px;
 }
 
+/* Placeholder text for empty rows. Tiptap's Placeholder extension adds an
+ * `is-empty` class and a `data-placeholder` attribute to each empty row.
+ * We render it via ::after — ::before is reserved for the block-selected
+ * terracotta strip. Each row kind needs its own left/top because the row
+ * is a flex container whose content area starts at handle gutter end +
+ * (kind-specific) padding. Mirrors v2's resume-styles.css placeholder rules. */
+.v3-editor-canvas-root .row.is-empty::after {
+  content: attr(data-placeholder);
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  font-style: italic;
+  color: #9ca3af;
+  opacity: 0.7;
+  white-space: pre;
+  /* Default: align with text inside .row-content for flex rows.
+   * Handle (14) + flex gap (8) = 22px. */
+  left: 22px;
+  top: 0;
+}
+
+/* Bullet / plain row content has padding-left: 16px (v2 indent). */
+.v3-editor-canvas-root .row-bullet.is-empty::after,
+.v3-editor-canvas-root .row-plain.is-empty::after {
+  left: 38px;
+}
+
+/* Section heading: display:block, no flex; row-content has margin-left:22
+ * + the row has padding-top:18px. Match the heading typography so the
+ * placeholder doesn't look like body text. */
+.v3-editor-canvas-root .row-section-heading.is-empty::after {
+  left: 22px;
+  top: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6b7280;
+  opacity: 0.5;
+}
+
+/* Header rows are centered; the placeholder should be too. */
+.v3-editor-canvas-root .row-header-name.is-empty::after {
+  left: 50%;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: 26px;
+  font-weight: 700;
+  color: #d1d5db;
+  opacity: 1;
+}
+.v3-editor-canvas-root .row-header-contact.is-empty::after {
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12.5px;
+  color: #9ca3af;
+}
+
+/* Print canvas: hide all placeholders. */
+.v3-print-canvas-root .row.is-empty::after { content: none; }
+
 .v3-editor-canvas-root .row-dragging {
   opacity: 0.45;
   filter: drop-shadow(0 10px 18px rgb(0 0 0 / 0.12));
