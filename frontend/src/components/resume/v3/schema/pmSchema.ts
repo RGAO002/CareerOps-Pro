@@ -1,6 +1,6 @@
 import type * as React from 'react';
 import { Node } from '@tiptap/core';
-import { ReactNodeViewRenderer } from '@tiptap/react';
+import { ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import type { Schema } from '@tiptap/pm/model';
 import type { ResumeRow } from './types';
 import { rowToPMNodeJSON } from './hydrate';
@@ -12,16 +12,26 @@ import { EntryMetaNodeView } from '../nodeviews/EntryMetaNodeView';
 import { PlainNodeView } from '../nodeviews/PlainNodeView';
 import { BulletNodeView } from '../nodeviews/BulletNodeView';
 
+type RowKindUnderscore =
+  | 'header_name'
+  | 'header_contact'
+  | 'section_heading'
+  | 'entry_title'
+  | 'entry_meta'
+  | 'plain'
+  | 'bullet';
+
 // Map PM node name → React NodeView component (T19).
-// Centralized here so makeRowNode can wire `addNodeView()` for each kind.
-const NODE_VIEW_BY_NAME: Record<string, React.ComponentType<unknown>> = {
-  header_name: HeaderNameNodeView as unknown as React.ComponentType<unknown>,
-  header_contact: HeaderContactNodeView as unknown as React.ComponentType<unknown>,
-  section_heading: SectionHeadingNodeView as unknown as React.ComponentType<unknown>,
-  entry_title: EntryTitleNodeView as unknown as React.ComponentType<unknown>,
-  entry_meta: EntryMetaNodeView as unknown as React.ComponentType<unknown>,
-  plain: PlainNodeView as unknown as React.ComponentType<unknown>,
-  bullet: BulletNodeView as unknown as React.ComponentType<unknown>,
+// Tightened to Record<RowKindUnderscore, ...> so TS enforces exhaustiveness;
+// removes the dead-code guard branch and the `as unknown as` casts.
+const NODE_VIEW_BY_NAME: Record<RowKindUnderscore, React.ComponentType<NodeViewProps>> = {
+  header_name: HeaderNameNodeView,
+  header_contact: HeaderContactNodeView,
+  section_heading: SectionHeadingNodeView,
+  entry_title: EntryTitleNodeView,
+  entry_meta: EntryMetaNodeView,
+  plain: PlainNodeView,
+  bullet: BulletNodeView,
 };
 
 // Production PM Node extensions for the 7 v3 row kinds.
@@ -35,15 +45,6 @@ const NODE_VIEW_BY_NAME: Record<string, React.ComponentType<unknown>> = {
 //   - renderHTML: ['div', { 'data-row-kind', 'data-row-id', 'data-group-id' }, 0]
 //
 // NodeViews and keymaps are NOT wired here (T19/T21).
-
-type RowKindUnderscore =
-  | 'header_name'
-  | 'header_contact'
-  | 'section_heading'
-  | 'entry_title'
-  | 'entry_meta'
-  | 'plain'
-  | 'bullet';
 
 interface MakeRowOpts {
   name: RowKindUnderscore;
@@ -96,13 +97,7 @@ function makeRowNode(opts: MakeRowOpts) {
     // which wraps the row in a <div class="react-renderer">. F1 wrapper-selector
     // contract: consumers walking view.dom must use ':scope > div > .row'.
     addNodeView() {
-      const Component = NODE_VIEW_BY_NAME[name];
-      if (!Component) {
-        // Defensive: should never happen because NODE_VIEW_BY_NAME covers all 7.
-        // Returning undefined falls back to renderHTML.
-        return undefined as unknown as ReturnType<typeof ReactNodeViewRenderer>;
-      }
-      return ReactNodeViewRenderer(Component);
+      return ReactNodeViewRenderer(NODE_VIEW_BY_NAME[name]);
     },
   });
 }
