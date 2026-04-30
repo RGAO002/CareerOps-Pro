@@ -1,9 +1,12 @@
 // frontend/src/app/resume/[id]/print/page.tsx
 //
-// Headless-Chromium prints THIS route to PDF. We fetch the resume on the
-// server so the client component receives v2 data immediately — no client
-// loading flicker, faster ready-flag for Playwright.
-import { PrintCanvasClientV3 } from "@/components/resume/v3/PrintCanvasClientV3";
+// Headless-Chromium prints THIS route to PDF.
+//
+// Print route reverted to v2's PrintCanvasClient (ResumeDocumentCanvas + template
+// + atom renderers): the v3 NodeView path produces a different visual rendering
+// than the v3 editor panel and breaks PDF/panel parity. v2's atom-based renderer
+// is the proven visually-correct print path. The editor panel itself remains v3.
+import { PrintCanvasClient } from "@/components/resume/v2/PrintCanvasClient";
 import type { ResumeDoc } from "@/components/resume/v2/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
@@ -28,5 +31,5 @@ export default async function PrintPage({ params }: PageProps) {
   }
 
   const resume = (await resp.json()) as ResumeDoc;
-  return <PrintCanvasClientV3 resume={resume} />;
+  return <PrintCanvasClient resume={resume} />;
 }
