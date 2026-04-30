@@ -7,6 +7,11 @@ import { Text } from '@tiptap/extension-text';
 import { Bold } from '@tiptap/extension-bold';
 import { Italic } from '@tiptap/extension-italic';
 import { Link } from '@tiptap/extension-link';
+import Underline from '@tiptap/extension-underline';
+import Highlight from '@tiptap/extension-highlight';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import FontFamily from '@tiptap/extension-font-family';
 import { Extension } from '@tiptap/core';
 import { history } from '@tiptap/pm/history';
 import { keymap } from '@tiptap/pm/keymap';
@@ -34,6 +39,8 @@ import { v2ToV3, v3ToV2 } from './schema/v2Adapter';
 import { handleEnter } from './interaction/keymap/enter';
 import { handleBackspace } from './interaction/keymap/backspace';
 import { handleCmdA, notePressBreak } from './interaction/keymap/cmdA';
+import { FormatToolbarV3 } from './interaction/FormatToolbarV3';
+import { FontSize } from '../v2/extensions/FontSize';
 
 import './EditorPageV3.css';
 
@@ -124,8 +131,14 @@ export function EditorPageV3({ initialResume }: Props) {
     extensions: [
       V3Doc,
       Text,
+      TextStyle,
       Bold,
       Italic,
+      Underline,
+      Color,
+      FontFamily.configure({ types: ['textStyle'] }),
+      FontSize.configure({ types: ['textStyle'] }),
+      Highlight.configure({ multicolor: true }),
       Link,
       HistoryExt,
       GroupsExt,
@@ -285,6 +298,7 @@ export function EditorPageV3({ initialResume }: Props) {
         saveStatus={saveStatus}
         pageCount={pageCount}
         onExport={exportPdf}
+        editor={editor}
       />
       <div className="v3-editor-stage ai-host-reflow">
         <div className="v3-editor-canvas-root">
@@ -306,6 +320,7 @@ function V3TopBar({
   saveStatus,
   pageCount,
   onExport,
+  editor,
 }: {
   title: string;
   targetCompany: string | null;
@@ -313,6 +328,7 @@ function V3TopBar({
   saveStatus: SaveStatus;
   pageCount: number;
   onExport: () => void;
+  editor: Editor | null;
 }) {
   const tailoringLabel =
     targetCompany && targetRole
@@ -324,6 +340,7 @@ function V3TopBar({
       <span className="v3-topbar-title">{title || 'Untitled Resume'}</span>
       <span className="v3-topbar-divider" />
       <span className="v3-topbar-version">v3 NodeView editor</span>
+      <FormatToolbarV3 editor={editor} />
       <div className="v3-topbar-center">
         {tailoringLabel && (
           <>

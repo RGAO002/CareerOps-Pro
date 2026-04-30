@@ -29,6 +29,11 @@ import { Text } from '@tiptap/extension-text';
 import { Bold } from '@tiptap/extension-bold';
 import { Italic } from '@tiptap/extension-italic';
 import { Link } from '@tiptap/extension-link';
+import Underline from '@tiptap/extension-underline';
+import Highlight from '@tiptap/extension-highlight';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import FontFamily from '@tiptap/extension-font-family';
 import { history } from '@tiptap/pm/history';
 import { Extension } from '@tiptap/core';
 
@@ -37,6 +42,7 @@ import { hydrateInitialState } from './schema/hydrate';
 import { createPaginationPlugin, paginationPluginKey } from './plugins/PaginationPlugin';
 import type { ResumeDocV3 } from './schema/types';
 import type { Schema } from '@tiptap/pm/model';
+import { FontSize } from '../v2/extensions/FontSize';
 
 // Restrict the doc node to the v3 row group only — same pattern used by
 // integration tests + V3TestHarness. Print mode is structurally identical.
@@ -112,8 +118,14 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
     extensions: [
       PrintDoc,
       Text,
+      TextStyle,
       Bold,
       Italic,
+      Underline,
+      Color,
+      FontFamily.configure({ types: ['textStyle'] }),
+      FontSize.configure({ types: ['textStyle'] }),
+      Highlight.configure({ multicolor: true }),
       Link,
       HistoryExt,
       ...v3RowExtensions,

@@ -256,6 +256,7 @@ export class DragController {
   private commitDrop(range: BlockRange, targetRowId: RowId | null): void {
     const state = this.view.state;
     const doc = state.doc;
+    const beforeRects = this.view.dom ? snapshotRowRects(this.view.dom) : new Map();
     // Source row indices in doc order.
     const srcIdxSet = new Set<number>();
     const draggedRowIds = new Set(range.rowIds);
@@ -338,6 +339,7 @@ export class DragController {
     };
 
     dispatchWithGroups(this.view, { docOp, groupOps });
+    if (this.view.dom && beforeRects.size > 0) animateRowFlip(this.view.dom, beforeRects);
   }
 
   private cleanup(): void {
@@ -354,6 +356,40 @@ export class DragController {
 
 // ---- helpers ----
 
+function snapshotRowRects(root: HTMLElement): Map<string, DOMRect> {
+  const rects = new Map<string, DOMRect>();
+  for (const row of Array.from(root.querySelectorAll<HTMLElement>(':scope > div > .row'))) {
+    const id = row.getAttribute('data-row-id');
+    if (id) rects.set(id, row.getBoundingClientRect());
+  }
+  return rects;
+}
+
+function animateRowFlip(root: HTMLElement, beforeRects: Map<string, DOMRect>): void {
+  requestAnimationFrame(() => {
+    for (const row of Array.from(root.querySelectorAll<HTMLElement>(':scope > div > .row'))) {
+      const id = row.getAttribute('data-row-id');
+      if (!id) continue;
+      const before = beforeRects.get(id);
+      if (!before) continue;
+      const after = row.getBoundingClientRect();
+      const dx = before.left - after.left;
+      const dy = before.top - after.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      row.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: 'translate(0, 0)' },
+        ],
+        {
+          duration: 180,
+          easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        },
+      );
+    }
+  });
+}
+
 /** Walk back from `insertAt - 1` to find the nearest `section_heading`'s
  *  semanticGroupId. Returns null if no preceding section heading exists. */
 function findEnclosingSectionGid(children: PMNode[], insertAt: number): GroupId | null {
@@ -366,4 +402,3 @@ function findEnclosingSectionGid(children: PMNode[], insertAt: number): GroupId 
   }
   return null;
 }
-

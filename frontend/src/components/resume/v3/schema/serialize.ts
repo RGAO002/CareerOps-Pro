@@ -40,7 +40,7 @@ function pmNodeToRow(node: PMNode): ResumeRow {
     // different content rules (e.g. clipboard, AI prompt context, future schemas).
     // Empty inline content persists as { type:'doc', content: [] } (no paragraph) to keep
     // round-trip byte-identical with the empty-row input shape from hydrateInitialState.
-    const inline = node.content.toJSON() as unknown[];
+    const inline = (node.content.toJSON() ?? []) as unknown[];
     const persisted = inline.length === 0
       ? []
       : [{ type: 'paragraph', content: inline }];

@@ -34,7 +34,7 @@ function toRichText(doc: ProseMirrorBulletDoc | undefined): RichText {
 }
 
 function richTextToV2BulletDoc(doc: RichText): ProseMirrorBulletDoc {
-  const paragraphs = (doc.content ?? []).filter((node): node is { type: 'paragraph'; content?: unknown[] } => {
+  const paragraphs = (doc.content ?? []).filter((node): node is { type: 'paragraph'; content?: unknown[] | null } => {
     if (typeof node !== 'object' || node === null) return false;
     return (node as { type?: unknown }).type === 'paragraph';
   });

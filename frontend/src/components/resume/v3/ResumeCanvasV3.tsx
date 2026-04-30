@@ -93,6 +93,71 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
     };
   }, [view]);
 
+  React.useEffect(() => {
+    if (!view) return;
+    const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
+    const reset = () => {
+      for (const row of rows) {
+        row.style.transform = '';
+        row.style.transition = '';
+        row.style.opacity = '';
+      }
+    };
+
+    if (!dropIndicator || draggedRowIds.length === 0) {
+      reset();
+      return;
+    }
+
+    const dragged = new Set(draggedRowIds);
+    const indices = draggedRowIds
+      .map((id) => rows.findIndex((row) => row.getAttribute('data-row-id') === id))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    if (indices.length === 0) {
+      reset();
+      return;
+    }
+
+    const srcStart = indices[0];
+    const srcEnd = indices[indices.length - 1] + 1;
+    const targetIndex = dropIndicator.targetRowId
+      ? rows.findIndex((row) => row.getAttribute('data-row-id') === dropIndicator.targetRowId)
+      : rows.length;
+    if (targetIndex < 0) {
+      reset();
+      return;
+    }
+
+    const firstRect = rows[srcStart].getBoundingClientRect();
+    const lastRect = rows[srcEnd - 1].getBoundingClientRect();
+    const draggedHeight = Math.max(0, lastRect.bottom - firstRect.top) + 12;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowId = row.getAttribute('data-row-id') as RowId | null;
+      const isDragged = !!rowId && dragged.has(rowId);
+      row.style.transition = 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 120ms ease';
+
+      if (isDragged) {
+        row.style.transform = '';
+        row.style.opacity = '0.42';
+        continue;
+      }
+
+      let shift = 0;
+      if (targetIndex > srcStart && i >= srcEnd && i < targetIndex) {
+        shift = -draggedHeight;
+      } else if (targetIndex < srcStart && i >= targetIndex && i < srcStart) {
+        shift = draggedHeight;
+      }
+      row.style.transform = shift ? `translateY(${shift}px)` : '';
+      row.style.opacity = '';
+    }
+
+    return reset;
+  }, [view, dropIndicator, draggedRowIds]);
+
   return (
     <div
       ref={canvasRef}
