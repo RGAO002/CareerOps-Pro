@@ -184,6 +184,24 @@ export function FluidCanvas({
   const rafRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0.5, y: 0.5 });
   const startTimeRef = useRef(Date.now());
+  const targetWeightsRef = useRef({
+    recruit: recruitWeight,
+    hm: hmWeight,
+    coach: coachWeight,
+  });
+  const displayWeightsRef = useRef({
+    recruit: recruitWeight,
+    hm: hmWeight,
+    coach: coachWeight,
+  });
+
+  useEffect(() => {
+    targetWeightsRef.current = {
+      recruit: recruitWeight,
+      hm: hmWeight,
+      coach: coachWeight,
+    };
+  }, [recruitWeight, hmWeight, coachWeight]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const canvas = canvasRef.current;
@@ -271,18 +289,31 @@ export function FluidCanvas({
     // Mouse
     canvas.addEventListener("mousemove", handleMouseMove);
 
-    // Render loop — respect reduced motion
+    // Render loop — respect reduced motion. Agent weights are eased inside
+    // the loop so chip changes fade/fly the color fields instead of snapping
+    // or recreating the WebGL program.
     startTimeRef.current = Date.now();
+    let lastFrameAt = performance.now();
     const render = () => {
+      const now = performance.now();
+      const deltaMs = Math.min(now - lastFrameAt, 80);
+      lastFrameAt = now;
+      const targetWeights = targetWeightsRef.current;
+      const displayWeights = displayWeightsRef.current;
+      const ease = prefersReducedMotion ? 1 : 1 - Math.exp(-deltaMs / 420);
+      displayWeights.recruit += (targetWeights.recruit - displayWeights.recruit) * ease;
+      displayWeights.hm += (targetWeights.hm - displayWeights.hm) * ease;
+      displayWeights.coach += (targetWeights.coach - displayWeights.coach) * ease;
+
       const elapsed = (Date.now() - startTimeRef.current) / 1000;
       gl.uniform1f(uTime, prefersReducedMotion ? 0 : elapsed);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uMouse, mouseRef.current.x, mouseRef.current.y);
       gl.uniform1f(uSpeed, speed);
       gl.uniform1f(uBrightness, brightness);
-      gl.uniform1f(uW1, recruitWeight);
-      gl.uniform1f(uW2, hmWeight);
-      gl.uniform1f(uW3, coachWeight);
+      gl.uniform1f(uW1, displayWeights.recruit);
+      gl.uniform1f(uW2, displayWeights.hm);
+      gl.uniform1f(uW3, displayWeights.coach);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);
@@ -299,7 +330,7 @@ export function FluidCanvas({
       gl.deleteShader(fs);
       gl.deleteBuffer(buf);
     };
-  }, [handleMouseMove, forceAnimate, speed, brightness, recruitWeight, hmWeight, coachWeight]);
+  }, [handleMouseMove, forceAnimate, speed, brightness]);
 
   return (
     <canvas

@@ -81,7 +81,7 @@ function makeRowNode(opts: MakeRowOpts) {
           parseHTML: (el) => normalizeAlign(el.getAttribute('data-align')),
           renderHTML: (a) => {
             const align = normalizeAlign(a.align);
-            return align ? { 'data-align': align, style: `text-align: ${align}` } : {};
+            return align ? { 'data-align': align, style: `text-align: ${align}` } : null;
           },
         },
       };
