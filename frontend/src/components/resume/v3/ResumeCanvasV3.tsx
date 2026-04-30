@@ -171,32 +171,81 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
 
     // Block-selected state: 6-dot click commits a selection of section /
     // entry / row scope. CSS .is-block-selected paints the deeper warm bg
-    // (oklch(.96 .03 45)) and the first row of the scope gets a terracotta
-    // strip on its left edge.
-    let lastSelectedScope: HTMLElement[] | null = null;
+    // (oklch(.96 .03 45)) and the topmost / bottommost rows of each
+    // contiguous run carry a terracotta strip on their left edge.
+    //
+    // Multi-select via Cmd/Ctrl+click toggles a scope into / out of the
+    // selection union; first/last classes recompute per disjoint run so
+    // each contiguous block gets its own bar.
+    let selectedScopes: HTMLElement[][] = [];
+    const allSelectedRows = (): Set<HTMLElement> => {
+      const s = new Set<HTMLElement>();
+      for (const scope of selectedScopes) for (const r of scope) s.add(r);
+      return s;
+    };
     const clearSelectedScope = () => {
-      if (!lastSelectedScope) return;
-      for (const r of lastSelectedScope) {
+      const all = allSelectedRows();
+      for (const r of all) {
         r.classList.remove('is-block-selected');
         r.classList.remove('is-block-selected-first');
         r.classList.remove('is-block-selected-last');
       }
-      lastSelectedScope = null;
+      selectedScopes = [];
     };
-    const setSelectedScope = (scope: HTMLElement[]) => {
-      clearSelectedScope();
-      if (scope.length === 0) return;
-      for (const r of scope) r.classList.add('is-block-selected');
-      // Mark first + last in document order so the per-row terracotta strips
-      // visually join into one continuous bar with 8px top + 8px bottom
-      // insets, matching design_handoff_ai_sidebar's .r-section.active::after.
-      const sorted = [...scope].sort((a, b) => {
-        const pos = a.compareDocumentPosition(b);
-        return (pos & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
-      });
-      sorted[0]?.classList.add('is-block-selected-first');
-      sorted[sorted.length - 1]?.classList.add('is-block-selected-last');
-      lastSelectedScope = scope;
+    // Re-paint every selected row's classes based on current selectedScopes.
+    // The .is-block-selected-first / -last classes mark each contiguous run's
+    // boundaries; runs are computed from the union of all selected rows in
+    // document order.
+    const repaintSelectedClasses = () => {
+      const allRows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
+      const selected = allSelectedRows();
+      // Clear all marks first.
+      for (const r of allRows) {
+        r.classList.remove('is-block-selected');
+        r.classList.remove('is-block-selected-first');
+        r.classList.remove('is-block-selected-last');
+      }
+      // Paint .is-block-selected on every selected row, plus first/last on
+      // each contiguous run boundary.
+      let runStart: HTMLElement | null = null;
+      let prev: HTMLElement | null = null;
+      const closeRun = () => {
+        if (runStart && prev) {
+          runStart.classList.add('is-block-selected-first');
+          prev.classList.add('is-block-selected-last');
+        }
+        runStart = null;
+      };
+      for (const r of allRows) {
+        if (selected.has(r)) {
+          r.classList.add('is-block-selected');
+          if (!runStart) runStart = r;
+          prev = r;
+        } else {
+          closeRun();
+          prev = null;
+        }
+      }
+      closeRun();
+    };
+    const setSelectedScope = (scope: HTMLElement[], extend: boolean) => {
+      if (!extend) {
+        selectedScopes = scope.length > 0 ? [scope] : [];
+      } else {
+        // Toggle: if every row in `scope` is already selected, remove that
+        // scope (deselect). Otherwise add it (union).
+        const selected = allSelectedRows();
+        const allInScopeSelected = scope.every((r) => selected.has(r));
+        if (allInScopeSelected) {
+          // Remove rows that belong to the scope being toggled.
+          selectedScopes = selectedScopes
+            .map((s) => s.filter((r) => !scope.includes(r)))
+            .filter((s) => s.length > 0);
+        } else {
+          selectedScopes.push(scope);
+        }
+      }
+      repaintSelectedClasses();
     };
     // Click outside any row clears the selection.
     const onCanvasClick = (ev: MouseEvent) => {
@@ -220,14 +269,18 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         if (!handle || !rowId) continue;
         const onPointerDown = (ev: PointerEvent) => ctl.onPointerDown(ev, rowId, handle);
         // Click on .row-handle (without dragging) → block-select scope +
-        // open AI sidebar.
+        // open AI sidebar. Cmd/Ctrl+click extends the existing selection
+        // (toggle: if scope is already selected, remove it; otherwise add).
         const onClick = (ev: MouseEvent) => {
           ev.preventDefault();
           ev.stopPropagation();
           const scope = resolveHoverGroup(view, row);
-          setSelectedScope(scope);
+          const extend = ev.metaKey || ev.ctrlKey;
+          setSelectedScope(scope, extend);
           const labelInfo = rowLabel(view, row);
-          if (labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
+          // Only open / refocus the sidebar on the primary (non-extending)
+          // click so multi-select doesn't keep stealing the scope pill.
+          if (!extend && labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
         };
         handle.addEventListener('pointerdown', onPointerDown);
         handle.addEventListener('click', onClick);
