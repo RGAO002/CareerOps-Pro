@@ -1,7 +1,28 @@
+import type * as React from 'react';
 import { Node } from '@tiptap/core';
+import { ReactNodeViewRenderer } from '@tiptap/react';
 import type { Schema } from '@tiptap/pm/model';
 import type { ResumeRow } from './types';
 import { rowToPMNodeJSON } from './hydrate';
+import { HeaderNameNodeView } from '../nodeviews/HeaderNameNodeView';
+import { HeaderContactNodeView } from '../nodeviews/HeaderContactNodeView';
+import { SectionHeadingNodeView } from '../nodeviews/SectionHeadingNodeView';
+import { EntryTitleNodeView } from '../nodeviews/EntryTitleNodeView';
+import { EntryMetaNodeView } from '../nodeviews/EntryMetaNodeView';
+import { PlainNodeView } from '../nodeviews/PlainNodeView';
+import { BulletNodeView } from '../nodeviews/BulletNodeView';
+
+// Map PM node name → React NodeView component (T19).
+// Centralized here so makeRowNode can wire `addNodeView()` for each kind.
+const NODE_VIEW_BY_NAME: Record<string, React.ComponentType<unknown>> = {
+  header_name: HeaderNameNodeView as unknown as React.ComponentType<unknown>,
+  header_contact: HeaderContactNodeView as unknown as React.ComponentType<unknown>,
+  section_heading: SectionHeadingNodeView as unknown as React.ComponentType<unknown>,
+  entry_title: EntryTitleNodeView as unknown as React.ComponentType<unknown>,
+  entry_meta: EntryMetaNodeView as unknown as React.ComponentType<unknown>,
+  plain: PlainNodeView as unknown as React.ComponentType<unknown>,
+  bullet: BulletNodeView as unknown as React.ComponentType<unknown>,
+};
 
 // Production PM Node extensions for the 7 v3 row kinds.
 // Spec ref: docs/superpowers/specs/2026-04-29-resume-editor-v3-design.md § 3.1.
@@ -69,6 +90,19 @@ function makeRowNode(opts: MakeRowOpts) {
         },
         0,
       ];
+    },
+
+    // T19: wire React NodeView. Each PM node renders through ReactNodeViewRenderer,
+    // which wraps the row in a <div class="react-renderer">. F1 wrapper-selector
+    // contract: consumers walking view.dom must use ':scope > div > .row'.
+    addNodeView() {
+      const Component = NODE_VIEW_BY_NAME[name];
+      if (!Component) {
+        // Defensive: should never happen because NODE_VIEW_BY_NAME covers all 7.
+        // Returning undefined falls back to renderHTML.
+        return undefined as unknown as ReturnType<typeof ReactNodeViewRenderer>;
+      }
+      return ReactNodeViewRenderer(Component);
     },
   });
 }
