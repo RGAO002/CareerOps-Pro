@@ -221,10 +221,13 @@
   width: 8.5in;
   padding: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left);
   outline: none;
-  color: rgb(28 25 23);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 10.5pt;
-  line-height: 1.42;
+  /* v2 typography ported from v2/tokens/resume-styles.css. Inter sans-serif,
+   * grayscale palette (#374151 body / #111827 strong / #6b7280 secondary),
+   * 14px body. Mirrors v2's [data-canvas-root] rules exactly. */
+  color: #374151;
+  font-family: var(--font-resume), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .v3-editor-canvas-root .react-renderer {
@@ -309,69 +312,105 @@
   margin: 0;
 }
 
+/* All per-row-kind spacing uses PADDING (not margin) so the group-hover /
+ * block-selected bg fills the inter-row gap continuously. Visual values
+ * mirror v2's resume-styles.css. */
+
 .v3-editor-canvas-root .row-header-name {
   justify-content: center;
-  margin-bottom: 4px;
+  padding-bottom: 8px;
 }
-
 .v3-editor-canvas-root .row-header-name .row-content {
   text-align: center;
-  font-size: 22pt;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+  color: #111827;
+  line-height: 1.1;
 }
 
 .v3-editor-canvas-root .row-header-contact {
   justify-content: center;
-  margin-bottom: 2px;
+  padding-bottom: 4px;
 }
-
 .v3-editor-canvas-root .row-header-contact .row-content {
   text-align: center;
-  font-size: 9pt;
-  color: rgb(87 83 78);
+  font-size: 12.5px;
+  color: #4b5563;
+  line-height: 1.6;
 }
 
+/* Section heading — v2: 11px, weight 600, letter-spacing 0.14em, uppercase,
+ * color #6b7280 (secondary), border-bottom 1px solid #e5e7eb (subtle, NOT
+ * heavy black). Top breathing room becomes padding-top so bg fills. */
 .v3-editor-canvas-root .row-section-heading {
   display: block;
-  margin-top: 18px;
-  margin-bottom: 8px;
+  padding-top: 18px;
+  padding-bottom: 8px;
 }
-
 .v3-editor-canvas-root .row-section-heading .row-handle {
   position: absolute;
   left: 0;
-  top: 0;
+  top: 18px;
 }
-
 .v3-editor-canvas-root .row-section-heading .row-content {
   margin-left: 22px;
-  font-size: 11pt;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: #6b7280;
+  padding-bottom: 5px;
 }
-
 .v3-editor-canvas-root .section-divider {
-  margin: 4px 0 0 22px;
+  margin: 0 0 0 22px;
   border: 0;
-  border-top: 1px solid rgb(41 37 36);
+  border-top: 1px solid #e5e7eb;
 }
 
+.v3-editor-canvas-root .row-entry-title {
+  padding-top: 6px;
+}
 .v3-editor-canvas-root .row-entry-title .row-content {
-  font-weight: 700;
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
 .v3-editor-canvas-root .row-entry-meta .row-content {
-  color: rgb(87 83 78);
-  font-size: 9.5pt;
-  font-style: italic;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
+.v3-editor-canvas-root .row-bullet {
+  padding-left: 0;
+}
+.v3-editor-canvas-root .row-bullet .row-content {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.v3-editor-canvas-root .row-plain .row-content {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* v2 parity: bullet marker is a 4×4 round dot in #9ca3af (neutral-400),
+ * not the body text color. Hide the original text glyph and paint the dot
+ * as a CSS background so size/color is independent of font rendering. */
 .v3-editor-canvas-root .row-marker {
   flex: 0 0 auto;
-  margin-top: 1px;
+  width: 4px;
+  height: 4px;
+  margin-top: 0.55em;        /* visually centers against first text line */
+  margin-right: 8px;
+  background: #9ca3af;
+  border-radius: 50%;
+  font-size: 0;
+  color: transparent;
   pointer-events: none;
+  align-self: flex-start;
 }
 
 .v3-editor-canvas-root .row-dragging {
