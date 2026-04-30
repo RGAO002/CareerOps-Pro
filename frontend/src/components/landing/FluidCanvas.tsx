@@ -22,6 +22,12 @@ const FRAGMENT_SRC = `
   uniform vec2 u_mouse;
   uniform float u_speed;
   uniform float u_brightness;
+  // Per-orb visibility/scale weights (0..2). 0 hides the orb entirely; 1 is
+  // baseline; >1 makes that orb proportionally bigger and brighter when the
+  // user has narrowed the agent selection.
+  uniform float u_w1;
+  uniform float u_w2;
+  uniform float u_w3;
 
   // Agent colors
   const vec3 c1 = vec3(${COLORS.recruiter.join(", ")});
@@ -112,9 +118,9 @@ const FRAGMENT_SRC = `
     float d1 = max(length(p - center1), 0.05);
     float d2 = max(length(p - center2), 0.05);
     float d3 = max(length(p - center3), 0.05);
-    float field1 = 0.08 / d1;
-    float field2 = 0.07 / d2;
-    float field3 = 0.06 / d3;
+    float field1 = (0.08 / d1) * u_w1;
+    float field2 = (0.07 / d2) * u_w2;
+    float field3 = (0.06 / d3) * u_w3;
 
     // Noise distortion on fields — sampled in unit UV space (not aspect-stretched p),
     // so narrow/wide panels don't get over-sampled noise that reads as grain.
@@ -123,7 +129,9 @@ const FRAGMENT_SRC = `
     field2 += noise * 0.12;
     field3 += noise * 0.10;
 
-    float totalField = field1 + field2 + field3;
+    // +epsilon: when all weights are 0 (degenerate, store should prevent it
+    // but be defensive) avoid divide-by-zero in the color mix below.
+    float totalField = field1 + field2 + field3 + 0.0001;
 
     // Color blending based on field dominance
     vec3 color = vec3(0.0);
@@ -155,6 +163,9 @@ export function FluidCanvas({
   forceAnimate = false,
   speed = 1.0,
   brightness = 1.0,
+  recruitWeight = 1.0,
+  hmWeight = 1.0,
+  coachWeight = 1.0,
 }: {
   className?: string;
   forceAnimate?: boolean;
@@ -162,6 +173,12 @@ export function FluidCanvas({
   speed?: number;
   /** Multiplier on the vignette-clamped luminance. Default 1.0 (landing). Higher = brighter. */
   brightness?: number;
+  /** Per-orb weights (0..2). 0 hides that color, 1 is baseline (all three on),
+   *  >1 makes the orb bigger/brighter (used when caller has narrowed the
+   *  agent selection — e.g. only "Recruiter" → recruitWeight ~ 1.7). */
+  recruitWeight?: number;
+  hmWeight?: number;
+  coachWeight?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
@@ -234,6 +251,9 @@ export function FluidCanvas({
     const uMouse = gl.getUniformLocation(program, "u_mouse");
     const uSpeed = gl.getUniformLocation(program, "u_speed");
     const uBrightness = gl.getUniformLocation(program, "u_brightness");
+    const uW1 = gl.getUniformLocation(program, "u_w1");
+    const uW2 = gl.getUniformLocation(program, "u_w2");
+    const uW3 = gl.getUniformLocation(program, "u_w3");
 
     // Resize handler
     const resize = () => {
@@ -260,6 +280,9 @@ export function FluidCanvas({
       gl.uniform2f(uMouse, mouseRef.current.x, mouseRef.current.y);
       gl.uniform1f(uSpeed, speed);
       gl.uniform1f(uBrightness, brightness);
+      gl.uniform1f(uW1, recruitWeight);
+      gl.uniform1f(uW2, hmWeight);
+      gl.uniform1f(uW3, coachWeight);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);
@@ -276,7 +299,7 @@ export function FluidCanvas({
       gl.deleteShader(fs);
       gl.deleteBuffer(buf);
     };
-  }, [handleMouseMove, forceAnimate, speed, brightness]);
+  }, [handleMouseMove, forceAnimate, speed, brightness, recruitWeight, hmWeight, coachWeight]);
 
   return (
     <canvas

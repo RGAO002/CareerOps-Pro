@@ -6,26 +6,11 @@ import { EditorTopBar } from './EditorTopBar';
 import { useResumeStore } from './store/useResumeStore';
 import { setSaveBackend, defaultBackendSave, startAutoSave } from './store/flush-save';
 import { installKeyboardRouter } from './interaction/keyboard-router';
-import { atomFocusManager } from './interaction/AtomFocusManager';
-import { selectionManager } from './interaction/SelectionManager';
 import { getTemplate } from './templates/registry';
 import type { ResumeDoc } from './types';
 import { usePageContext } from '@/hooks/usePageContext';
 import { useAssistantStore } from '@/stores/assistant';
 import { useSuggestionStore } from '@/stores/aiSuggestion';
-
-/** Resolve a TipTap field key (e.g. `bullet.content:abc123`) to the block id
- *  that field belongs to. Header rows aren't selectable blocks → null. */
-function blockIdForFieldKey(key: string): string | null {
-  const colon = key.indexOf(':');
-  if (colon < 0) return null;
-  const kind = key.slice(0, colon);
-  const id = key.slice(colon + 1);
-  if (kind === 'section.heading') return id;
-  if (kind === 'entry.title' || kind === 'entry.meta') return id;
-  if (kind === 'bullet.content') return id;
-  return null; // header.name / header.contact:N — no block-level selection
-}
 
 interface Props {
   initialResume: ResumeDoc;
@@ -43,35 +28,12 @@ export function EditorPage({ initialResume }: Props) {
     const stopSave = startAutoSave();
     const stopKbd = installKeyboardRouter();
 
-    // Sync block selection to TipTap focus: whenever the user enters any
-    // text field (mouse click, Tab, programmatic focus), set selectionManager
-    // to the parent block of that field. This is what makes "Cmd+A while
-    // typing" work — by the time the user presses Cmd+A, the section the
-    // cursor is in is already the selected block.
-    const stopFocusClear = atomFocusManager.subscribe(() => {
-      const ed = atomFocusManager.currentEditor();
-      if (!ed) {
-        selectionManager.notifyTipTapFocus();
-        return;
-      }
-      const key = atomFocusManager.currentFieldKey();
-      if (!key) {
-        selectionManager.notifyTipTapFocus();
-        return;
-      }
-      const blockId = blockIdForFieldKey(key);
-      if (blockId) {
-        selectionManager.selectSingleBlock(blockId);
-      }
-      selectionManager.notifyTipTapFocus();
-    });
-
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       setHideInteraction(params.get('hideInteractionLayer') === '1');
     }
     setHydrated(true);
-    return () => { stopSave(); stopKbd(); stopFocusClear(); };
+    return () => { stopSave(); stopKbd(); };
   }, [initialResume]);
 
   // Register page context for the global AI panel:

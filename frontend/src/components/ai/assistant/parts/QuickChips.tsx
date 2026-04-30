@@ -14,7 +14,7 @@ export function QuickChips({ onPick }: { onPick: (text: string) => void }) {
             padding: '5px 10px', borderRadius: 999,
             border: '1px solid var(--p-border)', background: 'transparent',
             color: 'var(--p-text-mute)',
-            font: '500 11px/1 Inter, sans-serif',
+            font: 'var(--ai-w-ui) 11px/1 var(--ai-font)',
             cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
           }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--p-surface)'; e.currentTarget.style.color = 'var(--p-text-body)'; }}

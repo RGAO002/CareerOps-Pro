@@ -4,6 +4,7 @@ import { DragHandle } from '../interaction/DragHandle';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId, SelectableBlock } from '../types';
 import { useAssistantStore } from '@/stores/assistant';
+import { labelForBlock } from '../interaction/scopeLabel';
 
 interface Props {
   headerId: BlockId;
@@ -54,7 +55,7 @@ export function HeaderRowInteractionOverlay({
         onDropIndicator={onDropIndicator ?? (() => {})}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          useAssistantStore.getState().openSidebarWithScope({ blockId: headerId, label: headerId.slice(0, 8) });
+          useAssistantStore.getState().openSidebarWithScope({ blockId: headerId, label: labelForBlock('header', headerId) });
         }}
       />
     </div>

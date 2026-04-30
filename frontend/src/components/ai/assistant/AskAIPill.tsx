@@ -21,7 +21,7 @@ export function AskAIPill({ blockId, label }: Props) {
         border: '1px solid var(--p-border)',
         background: 'oklch(0.18 0.022 34 / 0.55)',
         color: 'var(--p-text-mute)',
-        font: '500 10.5px/1 Inter, sans-serif',
+        font: 'var(--ai-w-ui) 10.5px/1 var(--ai-font)',
         cursor: 'pointer',
         transition: 'background 0.15s, color 0.15s',
         pointerEvents: 'auto',

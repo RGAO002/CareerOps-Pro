@@ -21,6 +21,7 @@ import type { NormalizedTemplate } from '../layout/normalize-template';
 import { useAssistantStore } from '@/stores/assistant';
 import { useBlockHover } from '@/stores/sectionHighlight';
 import { AskAIPill } from '@/components/ai/assistant/AskAIPill';
+import { labelForBlock as labelForBlockShared } from '../interaction/scopeLabel';
 
 interface Props {
   atoms: LayoutAtom[];
@@ -38,29 +39,10 @@ function selectableForAtom(atom: LayoutAtom): SelectableBlock | null {
   return section ? { kind: 'entry', id: atom.sourceBlockId, sectionId: section.id } : null;
 }
 
-/** Build a human-readable AI-scope label for a selected block. */
-function labelForBlock(kind: 'section' | 'entry' | 'bullet', id: BlockId): string {
-  const r = useResumeStore.getState().resume;
-  if (!r) return id.slice(0, 8);
-  if (kind === 'section') {
-    const s = r.sections.find(x => x.id === id);
-    return s?.heading || id.slice(0, 8);
-  }
-  if (kind === 'entry') {
-    for (const s of r.sections) {
-      const e = s.entries.find(x => x.id === id);
-      if (e) return `${s.heading} · ${e.title || 'entry'}`;
-    }
-  }
-  if (kind === 'bullet') {
-    for (const s of r.sections) {
-      for (const e of s.entries) {
-        if (e.bullets.some(b => b.id === id)) return `${s.heading} · bullet`;
-      }
-    }
-  }
-  return id.slice(0, 8);
-}
+/** Build a human-readable AI-scope label for a selected block.
+ *  Delegates to the shared util so the text-click path stays in sync with
+ *  the 6-dot / Ask-AI-pill paths. */
+const labelForBlock = labelForBlockShared;
 
 /** Returns the section.id that an atom belongs to, or null if it's a header. */
 function sectionForAtom(atom: LayoutAtom): BlockId | null {
@@ -133,7 +115,17 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
       // Plain text drag/click inside TipTap must remain native browser text
       // selection. Only Cmd/Ctrl-click and Shift-click inside text are routed
       // to block multi-select/range-select.
-      if (t.closest('.ProseMirror') && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+      //
+      // `e.detail` is the click count: 1 = single click, 2 = double, 3 =
+      // triple. Double-click is the browser's "select word" gesture and
+      // triple-click is "select line/paragraph". Both must reach the
+      // browser/TipTap untouched — if we preventDefault on those, the user
+      // loses word/line selection (a basic editor expectation).
+      if (
+        t.closest('.ProseMirror') &&
+        !e.metaKey && !e.ctrlKey && !e.shiftKey &&
+        e.detail < 2
+      ) {
         startCrossEditorSelectionDrag(e);
         selectionManager.clear();
         return;
@@ -373,7 +365,15 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                 onDropIndicator={setDropPayload}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  useAssistantStore.getState().openSidebarWithScope({ blockId: aiScopeForBlock(block), label: aiScopeForBlock(block).slice(0, 8) });
+                  {
+                    const scopeBlockId = aiScopeForBlock(block);
+                    const scopeKind: 'header' | 'section' | 'entry' | 'bullet' =
+                      block.kind === 'header-row' ? 'header'
+                      : block.kind === 'section' ? 'section'
+                      : block.kind === 'entry' ? 'entry'
+                      : 'bullet';
+                    useAssistantStore.getState().openSidebarWithScope({ blockId: scopeBlockId, label: labelForBlockShared(scopeKind, scopeBlockId) });
+                  }
                 }}
                 // Selection (click-without-drag → selectSingleBlock) is
                 // already handled inside DragController.onUp. We deliberately
@@ -398,7 +398,7 @@ export function InteractionLayer({ atoms, layouts, template }: Props) {
                   pointerEvents: isHovered ? 'auto' : 'none',
                 }}
               >
-                <AskAIPill blockId={block.id} label={`Section ${block.id.slice(0, 6)}`} />
+                <AskAIPill blockId={block.id} label={labelForBlockShared('section', block.id)} />
               </div>
             )}
           </>

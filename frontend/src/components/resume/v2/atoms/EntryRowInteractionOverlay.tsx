@@ -5,6 +5,7 @@ import { useResumeStore } from '../store/useResumeStore';
 import type { DropIndicatorPayload } from '../interaction/DragController';
 import type { BlockId, SelectableBlock } from '../types';
 import { useAssistantStore } from '@/stores/assistant';
+import { labelForBlock } from '../interaction/scopeLabel';
 
 interface Props {
   entryId: BlockId;
@@ -80,7 +81,7 @@ export function EntryRowInteractionOverlay({
         onDropIndicator={onDropIndicator ?? (() => {})}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          useAssistantStore.getState().openSidebarWithScope({ blockId: entryId, label: entryId.slice(0, 8) });
+          useAssistantStore.getState().openSidebarWithScope({ blockId: entryId, label: labelForBlock('entry', entryId) });
         }}
         // Selection is handled by DragController.onUp (click-without-drag).
       />

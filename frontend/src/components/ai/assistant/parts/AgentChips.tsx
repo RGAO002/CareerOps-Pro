@@ -1,8 +1,9 @@
 // frontend/src/components/ai/assistant/parts/AgentChips.tsx
 'use client';
-import { useAssistantStore, type AssistantTargetAgent } from '@/stores/assistant';
+import { useAssistantStore } from '@/stores/assistant';
 
-const CHIPS: Array<{ key: AssistantTargetAgent; label: string; dotVar: string | null }> = [
+type ChipKey = 'all' | 'recruit' | 'hm' | 'coach';
+const CHIPS: Array<{ key: ChipKey; label: string; dotVar: string | null }> = [
   { key: 'all',     label: 'All agents',  dotVar: null },
   { key: 'recruit', label: 'Recruiter',   dotVar: 'var(--p-recruit)' },
   { key: 'hm',      label: 'HM',          dotVar: 'var(--p-hm)' },
@@ -13,19 +14,35 @@ const CHIPS: Array<{ key: AssistantTargetAgent; label: string; dotVar: string | 
  * Per design (.targets / .tgt): pill chips, hairline border, 5×5 dot for
  * persona color, hover lifts text + border, active uses surface-hi bg with
  * brighter text. Caller-side "Ask:" label hidden by design (labels none).
+ *
+ * Multi-select: individual agent chips toggle independently and drive the
+ * FluidCanvas orb visibility. Auto-promote-to-all kicks in when the user
+ * has all 3 individual chips on (handled in store.toggleAgent).
  */
 export function AgentChips() {
-  const target = useAssistantStore((s) => s.targetAgent);
-  const setTargetAgent = useAssistantStore((s) => s.setTargetAgent);
+  const agentMode = useAssistantStore((s) => s.agentMode);
+  const agentMask = useAssistantStore((s) => s.agentMask);
+  const selectAllAgents = useAssistantStore((s) => s.selectAllAgents);
+  const toggleAgent = useAssistantStore((s) => s.toggleAgent);
+
+  const isActive = (k: ChipKey): boolean => {
+    if (k === 'all') return agentMode === 'all';
+    if (agentMode === 'all') return false;
+    return agentMask[k];
+  };
+
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       {CHIPS.map((c) => {
-        const active = target === c.key;
+        const active = isActive(c.key);
         return (
           <button
             key={c.key}
             type="button"
-            onClick={() => setTargetAgent(c.key)}
+            onClick={() => {
+              if (c.key === 'all') selectAllAgents();
+              else toggleAgent(c.key);
+            }}
             aria-pressed={active}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -34,7 +51,7 @@ export function AgentChips() {
               border: `1px solid ${active ? 'var(--p-border2)' : 'var(--p-border)'}`,
               background: active ? 'var(--p-surface-hi)' : 'transparent',
               color: active ? 'var(--p-text)' : 'var(--p-text-mute)',
-              font: '500 11px/1 Inter, sans-serif',
+              font: 'var(--ai-w-ui) 11px/1 var(--ai-font)',
               cursor: 'pointer',
               transition: 'background 0.15s, color 0.15s, border-color 0.15s',
             }}

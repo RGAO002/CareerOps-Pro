@@ -7,7 +7,7 @@ export function ChatTab() {
   const messages = useConversationStore((s) => s.messages);
   if (messages.length === 0) {
     return (
-      <p style={{ color: 'var(--p-text-mute)', font: '400 12px/1.5 Inter, sans-serif' }}>
+      <p style={{ color: 'var(--p-text-mute)', font: 'var(--ai-w-body) 12px/1.5 var(--ai-font)' }}>
         No conversation yet. Type a request below or click <em>Ask AI</em> on a resume section.
       </p>
     );
@@ -30,7 +30,7 @@ function MessageRow({ m }: { m: Message }) {
           background: 'var(--p-surface-hi)',
           border: '1px solid var(--p-border2)',
           color: 'oklch(0.82 0.012 52)',
-          font: '400 13px/1.55 Inter, sans-serif',
+          font: 'var(--ai-w-body) 13px/1.55 var(--ai-font)',
           whiteSpace: 'pre-wrap',
         }}>{m.content}</div>
       </div>
@@ -40,7 +40,7 @@ function MessageRow({ m }: { m: Message }) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <i style={{ flexShrink: 0, width: 6, height: 6, borderRadius: 999, background: 'var(--p-accent)', marginTop: 7 }} />
-        <div style={{ font: '400 13px/1.65 Inter, sans-serif', color: 'var(--p-text-body)', whiteSpace: 'pre-wrap' }}>{m.content}</div>
+        <div style={{ font: 'var(--ai-w-body) 13px/1.65 var(--ai-font)', color: 'var(--p-text-body)', whiteSpace: 'pre-wrap' }}>{m.content}</div>
       </div>
     );
   }

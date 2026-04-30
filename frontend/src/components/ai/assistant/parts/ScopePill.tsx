@@ -20,7 +20,7 @@ export function ScopePill() {
         borderRadius: 7,
         background: 'transparent',
         border: '1px solid var(--p-border)',
-        font: '500 11px/1.2 Inter, sans-serif',
+        font: 'var(--ai-w-ui) 11px/1.2 var(--ai-font)',
         color: 'var(--p-text-body)',
         maxWidth: 'fit-content',
         cursor: 'pointer',
@@ -30,7 +30,7 @@ export function ScopePill() {
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--p-border)'; }}
     >
       <span style={{
-        font: '500 9px/1 Inter, sans-serif', textTransform: 'uppercase', letterSpacing: '0.13em',
+        font: 'var(--ai-w-strong) 9px/1 var(--ai-font)', textTransform: 'uppercase', letterSpacing: '0.13em',
         color: 'var(--p-text-dim)',
       }}>Scope</span>
       <span>{scope.label}</span>

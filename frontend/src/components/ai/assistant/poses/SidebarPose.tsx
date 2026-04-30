@@ -28,7 +28,22 @@ export function SidebarPose() {
   const setTab = useAssistantStore((s) => s.setTab);
   const setPose = useAssistantStore((s) => s.setPose);
   const isStreaming = useAssistantStore((s) => s.activeRunId !== null);
+  const agentMask = useAssistantStore((s) => s.agentMask);
   const [input, setInput] = useState('');
+
+  // Translate the agent mask into per-orb weights for FluidCanvas.
+  // count===3 → all on at baseline (1.0). count===2 → those two slightly
+  // emphasised (1.35). count===1 → that one prominently larger (1.7).
+  // count===0 is prevented by the store (auto-promotes to 'all').
+  const orbWeights = (() => {
+    const count = (agentMask.recruit ? 1 : 0) + (agentMask.hm ? 1 : 0) + (agentMask.coach ? 1 : 0);
+    const scale = count === 1 ? 1.7 : count === 2 ? 1.35 : 1.0;
+    return {
+      recruit: agentMask.recruit ? scale : 0,
+      hm: agentMask.hm ? scale : 0,
+      coach: agentMask.coach ? scale : 0,
+    };
+  })();
 
   const onSubmit = async () => {
     const text = input.trim();
@@ -58,9 +73,9 @@ export function SidebarPose() {
         // FULL transparent test — the panel itself adds zero color; only
         // the FluidCanvas orbs and the (light) scrim are visible. This lets
         // you see how transparent the look CAN go before legibility breaks.
-        background: 'transparent',
+        background: 'oklch(0.13 0.022 34 / 0.5)',
         // Light backdrop blur so host content behind the sidebar is softened.
-        backdropFilter: 'blur(20px) saturate(1.2)',
+        backdropFilter: 'blur(10px) saturate(1.2)',
         WebkitBackdropFilter: 'blur(20px) saturate(1.2)',
         borderLeft: '1px solid var(--p-border)',
         zIndex: 40,
@@ -81,16 +96,23 @@ export function SidebarPose() {
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
         mixBlendMode: 'screen',
-        filter: 'blur(40px) saturate(1.3)',
+        filter: 'blur(10px) saturate(1.2)',
+        opacity: 0.6,
       }}>
-        <FluidCanvas className="absolute inset-0" forceAnimate speed={3} brightness={1.8} />
+        <FluidCanvas
+          className="absolute inset-0"
+          forceAnimate speed={3} brightness={2.4}
+          recruitWeight={orbWeights.recruit}
+          hmWeight={orbWeights.hm}
+          coachWeight={orbWeights.coach}
+        />
       </div>
       {/* Minimal scrim — kept very low so the sidebar reads as nearly
           transparent. Bumps slightly at the bottom where the input lives so
           placeholder/typing stays legible. */}
       <div aria-hidden style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, oklch(0.10 0.018 34 / 0.05) 0%, oklch(0.10 0.018 34 / 0.18) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.10 0.018 34 / 0.05) 0%, oklch(0.10 0.018 34 / 0.3) 100%)',
       }} />
 
       {/* Header row */}
@@ -98,7 +120,7 @@ export function SidebarPose() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <Mark size={24} />
-            <span style={{ font: '600 13px/1 Inter, sans-serif', color: 'var(--p-text)' }}>AI assistant</span>
+            <span style={{ font: 'var(--ai-w-strong) 13px/1 var(--ai-font)', color: 'var(--p-text)', letterSpacing: '-0.01em' }}>AI assistant</span>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <MiniButton ariaLabel="New thread" onClick={() => useConversationStore.getState().clearConversation()}>
@@ -127,7 +149,7 @@ export function SidebarPose() {
                   position: 'relative',
                   padding: '6px 0', marginRight: 18,
                   border: 0, background: 'transparent',
-                  font: '500 12px/1 Inter, sans-serif',
+                  font: 'var(--ai-w-ui) 12px/1 var(--ai-font)', letterSpacing: '-0.005em',
                   color: active ? 'var(--p-text)' : 'var(--p-text-mute)',
                   cursor: 'pointer',
                 }}
@@ -156,7 +178,7 @@ export function SidebarPose() {
         <div style={{ position: 'relative', zIndex: 3, padding: '14px 18px 16px', borderTop: '1px solid var(--p-border)', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
           <AgentChips />
           {/* `.side-input` — surface bg, hairline border, radius 11, padding 11/12 */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '11px 12px', borderRadius: 11, background: 'var(--p-surface)', border: '1px solid var(--p-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px', borderRadius: 11, background: 'var(--p-surface)', border: '1px solid var(--p-border)' }}>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -164,7 +186,7 @@ export function SidebarPose() {
               placeholder="Reply or @ an agent…"
               style={{
                 flex: 1, border: 0, outline: 'none', background: 'transparent',
-                font: '400 13px/1.5 Inter, sans-serif',
+                font: 'var(--ai-w-body) 13px/1.5 var(--ai-font)',
                 color: 'var(--p-text-body)',
                 caretColor: 'var(--p-accent-warm)',
                 minWidth: 0,

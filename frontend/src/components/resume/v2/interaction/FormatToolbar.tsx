@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { Editor } from '@tiptap/core';
 import { atomFocusManager } from './AtomFocusManager';
+import { crossEditorSelection } from './CrossEditorSelection';
 import { useResumeStore } from '../store/useResumeStore';
 
 const COLOR_PALETTE = [
@@ -118,6 +119,15 @@ export function FormatToolbar() {
     else if (storeCanRedo) useResumeStore.getState().redo();
   };
 
+  const runOnNativeSelection = (
+    apply: (editor: Editor, from: number, to: number) => void,
+  ): boolean => {
+    const targets = selectedEditorRanges();
+    if (targets.length === 0) return false;
+    for (const t of targets) apply(t.editor, t.from, t.to);
+    return true;
+  };
+
   const btn = (active: boolean, disabled = false) =>
     `flex size-7 items-center justify-center rounded-md transition-colors ${
       disabled
@@ -149,19 +159,34 @@ export function FormatToolbar() {
       {/* B / I / U */}
       <button type="button" aria-label="Bold" title="Bold (⌘B)"
         onMouseDown={noStealFocus}
-        onClick={() => editor?.chain().focus().toggleBold().run()}
+        onClick={() => {
+          if (runOnNativeSelection((ed, from, to) => {
+            ed.chain().setTextSelection({ from, to }).toggleBold().run();
+          })) return;
+          editor?.chain().focus().toggleBold().run();
+        }}
         disabled={!has('bold')} className={btn(isActive('bold'), !has('bold'))}>
         <Bold className="size-3.5" strokeWidth={2.2} />
       </button>
       <button type="button" aria-label="Italic" title="Italic (⌘I)"
         onMouseDown={noStealFocus}
-        onClick={() => editor?.chain().focus().toggleItalic().run()}
+        onClick={() => {
+          if (runOnNativeSelection((ed, from, to) => {
+            ed.chain().setTextSelection({ from, to }).toggleItalic().run();
+          })) return;
+          editor?.chain().focus().toggleItalic().run();
+        }}
         disabled={!has('italic')} className={btn(isActive('italic'), !has('italic'))}>
         <Italic className="size-3.5" strokeWidth={2} />
       </button>
       <button type="button" aria-label="Underline" title="Underline (⌘U)"
         onMouseDown={noStealFocus}
-        onClick={() => editor?.chain().focus().toggleUnderline().run()}
+        onClick={() => {
+          if (runOnNativeSelection((ed, from, to) => {
+            ed.chain().setTextSelection({ from, to }).toggleUnderline().run();
+          })) return;
+          editor?.chain().focus().toggleUnderline().run();
+        }}
         disabled={!has('underline')} className={btn(isActive('underline'), !has('underline'))}>
         <UnderlineIcon className="size-3.5" strokeWidth={2} />
       </button>
@@ -184,6 +209,14 @@ export function FormatToolbar() {
             choices={FONT_CHOICES}
             current={(editor?.getAttributes('textStyle').fontFamily as string | undefined) ?? null}
             apply={(value) => {
+              if (runOnNativeSelection((ed, from, to) => {
+                const chain = ed.chain().setTextSelection({ from, to });
+                if (value === null) chain.unsetFontFamily().run();
+                else chain.setFontFamily(value).run();
+              })) {
+                setFontOpen(false);
+                return;
+              }
               if (!editor) return;
               if (value === null) editor.chain().focus().unsetFontFamily().run();
               else editor.chain().focus().setFontFamily(value).run();
@@ -209,6 +242,14 @@ export function FormatToolbar() {
             choices={FONT_SIZE_CHOICES}
             current={(editor?.getAttributes('textStyle').fontSize as string | undefined) ?? null}
             apply={(value) => {
+              if (runOnNativeSelection((ed, from, to) => {
+                const chain = ed.chain().setTextSelection({ from, to });
+                if (value === null) chain.unsetFontSize().run();
+                else chain.setFontSize(value).run();
+              })) {
+                setSizeOpen(false);
+                return;
+              }
               if (!editor) return;
               if (value === null) editor.chain().focus().unsetFontSize().run();
               else editor.chain().focus().setFontSize(value).run();
@@ -232,6 +273,14 @@ export function FormatToolbar() {
           <Palette
             palette={COLOR_PALETTE}
             apply={(value) => {
+              if (runOnNativeSelection((ed, from, to) => {
+                const chain = ed.chain().setTextSelection({ from, to });
+                if (value === null) chain.unsetColor().run();
+                else chain.setColor(value).run();
+              })) {
+                setColorOpen(false);
+                return;
+              }
               if (!editor) return;
               if (value === null) editor.chain().focus().unsetColor().run();
               else editor.chain().focus().setColor(value).run();
@@ -255,6 +304,14 @@ export function FormatToolbar() {
           <Palette
             palette={HIGHLIGHT_PALETTE}
             apply={(value) => {
+              if (runOnNativeSelection((ed, from, to) => {
+                const chain = ed.chain().setTextSelection({ from, to });
+                if (value === null) chain.unsetHighlight().run();
+                else chain.toggleHighlight({ color: value }).run();
+              })) {
+                setHlOpen(false);
+                return;
+              }
               if (!editor) return;
               if (value === null) editor.chain().focus().unsetHighlight().run();
               else editor.chain().focus().toggleHighlight({ color: value }).run();
@@ -304,6 +361,74 @@ export function FormatToolbar() {
       </button>
     </div>
   );
+}
+
+function selectedEditorRanges(): Array<{ editor: Editor; from: number; to: number }> {
+  const crossRanges = crossEditorSelection.getRanges();
+  if (crossRanges.length > 0) {
+    const byKey = new Map(atomFocusManager.editorsInOrder().map(item => [item.key, item.editor]));
+    return crossRanges
+      .map(({ key, from, to }) => {
+        const editor = byKey.get(key);
+        return editor ? { editor, from, to } : null;
+      })
+      .filter((item): item is { editor: Editor; from: number; to: number } => !!item);
+  }
+
+  if (typeof window === 'undefined') return [];
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return [];
+  const range = selection.getRangeAt(0);
+  const root = document.querySelector('[data-canvas-root][data-mode="edit"]');
+  if (!root || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) return [];
+
+  const targets: Array<{ editor: Editor; from: number; to: number }> = [];
+  for (const { editor } of atomFocusManager.editorsInOrder()) {
+    const dom = editor.view.dom;
+    if (!root.contains(dom)) continue;
+    if (!rangeIntersectsNode(range, dom)) continue;
+    const bounds = editorRangeBounds(editor, range);
+    if (!bounds || bounds.from === bounds.to) continue;
+    targets.push({ editor, ...bounds });
+  }
+  return targets;
+}
+
+function editorRangeBounds(editor: Editor, range: Range): { from: number; to: number } | null {
+  const dom = editor.view.dom;
+  const docSize = editor.state.doc.content.size;
+  let from = 0;
+  let to = docSize;
+  if (dom.contains(range.startContainer)) {
+    from = safePosAtDOM(editor, range.startContainer, range.startOffset);
+  }
+  if (dom.contains(range.endContainer)) {
+    to = safePosAtDOM(editor, range.endContainer, range.endOffset);
+  }
+  from = clampPos(from, docSize);
+  to = clampPos(to, docSize);
+  if (from > to) [from, to] = [to, from];
+  return { from, to };
+}
+
+function safePosAtDOM(editor: Editor, node: Node, offset: number): number {
+  try {
+    return editor.view.posAtDOM(node, offset);
+  } catch {
+    return 0;
+  }
+}
+
+function clampPos(pos: number, docSize: number): number {
+  return Math.max(0, Math.min(pos, docSize));
+}
+
+function rangeIntersectsNode(range: Range, node: Node): boolean {
+  try {
+    return range.intersectsNode(node);
+  } catch {
+    return false;
+  }
 }
 
 function FontList({

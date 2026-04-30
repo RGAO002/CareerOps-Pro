@@ -27,7 +27,7 @@ export function SuggestionsTab() {
 
   if (pending.length === 0) {
     return (
-      <p style={{ color: 'var(--p-text-mute)', font: '400 12px/1.5 Inter, sans-serif' }}>
+      <p style={{ color: 'var(--p-text-mute)', font: 'var(--ai-w-body) 12px/1.5 var(--ai-font)' }}>
         No pending changes.
       </p>
     );
@@ -39,16 +39,16 @@ export function SuggestionsTab() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '10px 12px', borderRadius: 10,
         background: 'var(--p-surface)', border: '1px solid var(--p-border)',
-        font: '500 12px/1 Inter, sans-serif', color: 'var(--p-text-body)',
+        font: 'var(--ai-w-ui) 12px/1 var(--ai-font)', color: 'var(--p-text-body)',
       }}>
         <span>{pending.length} pending</span>
         <span style={{ display: 'flex', gap: 6 }}>
           <button type="button" onClick={onAcceptAll} disabled={working}
-            style={{ background: 'var(--p-accent)', color: 'oklch(0.99 0.003 70)', border: 0, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', font: '500 11px/1 Inter, sans-serif' }}>
+            style={{ background: 'var(--p-accent)', color: 'oklch(0.99 0.003 70)', border: 0, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', font: 'var(--ai-w-ui) 11px/1 var(--ai-font)' }}>
             Accept all
           </button>
           <button type="button" onClick={onRejectAll} disabled={working}
-            style={{ background: 'transparent', color: 'var(--p-text-mute)', border: '1px solid var(--p-border)', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', font: '500 11px/1 Inter, sans-serif' }}>
+            style={{ background: 'transparent', color: 'var(--p-text-mute)', border: '1px solid var(--p-border)', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', font: 'var(--ai-w-ui) 11px/1 var(--ai-font)' }}>
             Reject all
           </button>
         </span>

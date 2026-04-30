@@ -19,6 +19,7 @@ export class AtomFocusManager {
   private editors = new Map<string, Editor>();
   private order: string[] = [];
   private listeners = new Set<Listener>();
+  private activeKey: string | null = null;
   private boundHandlers = new WeakMap<Editor, { focus: () => void; blur: () => void; selUpdate: () => void }>();
 
   /** Subscribe to focus / selection changes across all registered editors.
@@ -39,8 +40,14 @@ export class AtomFocusManager {
     this.editors.set(k, editor);
     if (!this.order.includes(k)) this.order.push(k);
     if (typeof editor.on === 'function' && !this.boundHandlers.has(editor)) {
-      const focus = () => this.emit();
-      const blur = () => this.emit();
+      const focus = () => {
+        this.activeKey = k;
+        this.emit();
+      };
+      const blur = () => {
+        if (this.activeKey === k) this.activeKey = null;
+        this.emit();
+      };
       const selUpdate = () => this.emit();
       editor.on('focus', focus);
       editor.on('blur', blur);
@@ -56,6 +63,7 @@ export class AtomFocusManager {
     const ed = this.editors.get(k);
     this.editors.delete(k);
     this.order = this.order.filter(x => x !== k);
+    if (this.activeKey === k) this.activeKey = null;
     if (ed && typeof ed.off === 'function') {
       const handlers = this.boundHandlers.get(ed);
       if (handlers) {
@@ -74,6 +82,10 @@ export class AtomFocusManager {
   }
 
   currentEditor(): Editor | null {
+    if (this.activeKey) {
+      const active = this.editors.get(this.activeKey);
+      if (active) return active;
+    }
     for (const ed of this.editors.values()) {
       if (ed.isFocused) return ed;
     }
@@ -84,10 +96,20 @@ export class AtomFocusManager {
    *  currently-focused editor, or null. Used by selection-sync to track
    *  which block is "active" purely from cursor position. */
   currentFieldKey(): string | null {
+    if (this.activeKey && this.editors.has(this.activeKey)) return this.activeKey;
     for (const [key, ed] of this.editors.entries()) {
       if (ed.isFocused) return key;
     }
     return null;
+  }
+
+  editorsInOrder(): Array<{ key: string; editor: Editor }> {
+    const out: Array<{ key: string; editor: Editor }> = [];
+    for (const key of this.order) {
+      const editor = this.editors.get(key);
+      if (editor) out.push({ key, editor });
+    }
+    return out;
   }
 
   focusNext(field: EditableField): void {
