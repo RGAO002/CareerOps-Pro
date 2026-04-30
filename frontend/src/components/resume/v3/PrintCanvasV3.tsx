@@ -133,7 +133,7 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
       if (cancelled) return;
       const schema = editor.schema as Schema;
       const { docJSON } = hydrateInitialState(doc, schema);
-      editor.commands.setContent(docJSON, false);
+      editor.commands.setContent(docJSON as Parameters<typeof editor.commands.setContent>[0], { emitUpdate: false });
     });
     return () => { cancelled = true; };
   }, [editor, doc]);

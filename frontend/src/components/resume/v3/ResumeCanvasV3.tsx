@@ -44,6 +44,7 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
 
   React.useEffect(() => {
     if (!view) return;
+    const handleCleanups: Array<() => void> = [];
     const ctl = new DragController({
       view,
       onDropIndicator: (payload) => {
@@ -59,7 +60,33 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       },
     });
     controllerRef.current = ctl;
+
+    const clearHandleBindings = () => {
+      while (handleCleanups.length > 0) {
+        handleCleanups.pop()?.();
+      }
+    };
+
+    const bindRowHandles = () => {
+      clearHandleBindings();
+      const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
+      for (const row of rows) {
+        const handle = row.querySelector<HTMLElement>('.row-handle');
+        const rowId = row.getAttribute('data-row-id') as RowId | null;
+        if (!handle || !rowId) continue;
+        const onPointerDown = (ev: PointerEvent) => ctl.onPointerDown(ev, rowId, handle);
+        handle.addEventListener('pointerdown', onPointerDown);
+        handleCleanups.push(() => handle.removeEventListener('pointerdown', onPointerDown));
+      }
+    };
+
+    bindRowHandles();
+    const observer = new MutationObserver(() => bindRowHandles());
+    observer.observe(view.dom, { childList: true, subtree: true });
+
     return () => {
+      observer.disconnect();
+      clearHandleBindings();
       controllerRef.current = null;
       setDropIndicator(null);
       setDraggedRowIds([]);

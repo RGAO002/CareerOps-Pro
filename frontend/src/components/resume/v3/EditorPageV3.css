@@ -1,0 +1,272 @@
+.v3-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  height: 56px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgb(229 229 229);
+  background: rgb(255 255 255 / 0.86);
+  padding: 0 20px;
+  backdrop-filter: blur(14px);
+}
+
+.v3-topbar-title {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgb(23 23 23);
+}
+
+.v3-topbar-divider {
+  height: 20px;
+  width: 1px;
+  background: rgb(229 229 229);
+}
+
+.v3-topbar-version,
+.v3-topbar-label,
+.v3-topbar-pages,
+.v3-save-status {
+  font-size: 11px;
+  color: rgb(115 115 115);
+}
+
+.v3-topbar-center {
+  min-width: 0;
+  flex: 1;
+  text-align: center;
+}
+
+.v3-topbar-target {
+  margin-left: 8px;
+  font-size: 13px;
+  color: rgb(38 38 38);
+}
+
+.v3-save-status {
+  text-transform: capitalize;
+}
+
+.v3-save-status-saving {
+  color: rgb(37 99 235);
+}
+
+.v3-save-status-error {
+  color: rgb(220 38 38);
+}
+
+.v3-save-status-saved {
+  color: rgb(22 163 74);
+}
+
+.v3-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  background: rgb(23 23 23);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.v3-export-button:hover {
+  background: rgb(38 38 38);
+}
+
+.v3-editor-stage {
+  min-height: calc(100vh - 56px);
+  overflow: auto;
+  background:
+    radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.85), transparent 32rem),
+    linear-gradient(180deg, rgb(245 245 244), rgb(231 229 228));
+  padding: 32px 0;
+}
+
+.v3-editor-canvas-root {
+  --page-margin-top: 0.75in;
+  --page-margin-bottom: 0.75in;
+  --page-margin-left: 1in;
+  --page-margin-right: 1in;
+  --page-content-width: 6.5in;
+  --page-break-screen-gap: 32px;
+  position: relative;
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto;
+}
+
+.v3-editor-canvas-root [data-canvas-root] {
+  position: relative;
+  overflow: visible !important;
+}
+
+.v3-editor-canvas-root .tiptap,
+.v3-editor-canvas-root .ProseMirror {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  min-height: 11in;
+  width: 8.5in;
+  padding: var(--page-margin-top) var(--page-margin-right) var(--page-margin-bottom) var(--page-margin-left);
+  outline: none;
+  color: rgb(28 25 23);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 10.5pt;
+  line-height: 1.42;
+}
+
+.v3-editor-canvas-root .react-renderer {
+  display: block;
+}
+
+.v3-editor-canvas-root .row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  position: relative;
+  min-height: 16px;
+  margin: 0 0 6px;
+}
+
+.v3-editor-canvas-root .row-handle {
+  width: 14px;
+  height: 18px;
+  flex: 0 0 14px;
+  border-radius: 4px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.v3-editor-canvas-root .row-handle::before {
+  content: "⋮⋮";
+  display: block;
+  color: rgb(168 162 158);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.v3-editor-canvas-root .row:hover .row-handle {
+  opacity: 1;
+}
+
+.v3-editor-canvas-root .row-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.v3-editor-canvas-root .row-content > * {
+  margin: 0;
+}
+
+.v3-editor-canvas-root .row-header-name {
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.v3-editor-canvas-root .row-header-name .row-content {
+  text-align: center;
+  font-size: 22pt;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.v3-editor-canvas-root .row-header-contact {
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.v3-editor-canvas-root .row-header-contact .row-content {
+  text-align: center;
+  font-size: 9pt;
+  color: rgb(87 83 78);
+}
+
+.v3-editor-canvas-root .row-section-heading {
+  display: block;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.v3-editor-canvas-root .row-section-heading .row-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.v3-editor-canvas-root .row-section-heading .row-content {
+  margin-left: 22px;
+  font-size: 11pt;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.v3-editor-canvas-root .section-divider {
+  margin: 4px 0 0 22px;
+  border: 0;
+  border-top: 1px solid rgb(41 37 36);
+}
+
+.v3-editor-canvas-root .row-entry-title .row-content {
+  font-weight: 700;
+}
+
+.v3-editor-canvas-root .row-entry-meta .row-content {
+  color: rgb(87 83 78);
+  font-size: 9.5pt;
+  font-style: italic;
+}
+
+.v3-editor-canvas-root .row-marker {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  pointer-events: none;
+}
+
+.v3-editor-canvas-root .row-dragging {
+  opacity: 0.45;
+}
+
+.v3-editor-canvas-root .pagination-break {
+  display: block;
+  break-before: page;
+  pointer-events: none;
+  user-select: none;
+}
+
+.v3-loading {
+  padding: 24px;
+  color: rgb(115 115 115);
+}
+
+@media print {
+  .v3-topbar,
+  [data-edit-only],
+  .v3-editor-canvas-root .row-handle {
+    display: none !important;
+  }
+
+  .v3-editor-stage {
+    min-height: 0;
+    overflow: visible;
+    background: white;
+    padding: 0;
+  }
+
+  .v3-editor-canvas-root {
+    width: auto;
+    margin: 0;
+  }
+
+  .v3-editor-canvas-root .pagination-break {
+    height: 0 !important;
+  }
+}

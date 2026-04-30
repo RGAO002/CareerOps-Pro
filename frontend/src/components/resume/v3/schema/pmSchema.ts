@@ -97,7 +97,7 @@ function makeRowNode(opts: MakeRowOpts) {
     // which wraps the row in a <div class="react-renderer">. F1 wrapper-selector
     // contract: consumers walking view.dom must use ':scope > div > .row'.
     addNodeView() {
-      return ReactNodeViewRenderer(NODE_VIEW_BY_NAME[name]);
+      return ReactNodeViewRenderer(NODE_VIEW_BY_NAME[name] as React.ComponentType<any>);
     },
   });
 }

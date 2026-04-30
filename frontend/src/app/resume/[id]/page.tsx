@@ -1,8 +1,8 @@
 // frontend/src/app/resume/[id]/page.tsx
 //
-// Resume Editor v2 entry point. Server-fetches the v2-shaped doc and hands
-// it to the client EditorPage so the editor mounts with data immediately.
-import { EditorPage } from "@/components/resume/v2/EditorPage";
+// Resume Editor v3 entry point. Server-fetches the current API doc and hands
+// it to the client v3 editor bridge so the editor mounts with data immediately.
+import { EditorPageV3 } from "@/components/resume/v3/EditorPageV3";
 import type { ResumeDoc } from "@/components/resume/v2/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
@@ -24,5 +24,5 @@ export default async function ResumeEditorPage({ params }: PageProps) {
     );
   }
   const resume = (await resp.json()) as ResumeDoc;
-  return <EditorPage initialResume={resume} />;
+  return <EditorPageV3 initialResume={resume} />;
 }
