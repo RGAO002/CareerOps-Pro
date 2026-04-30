@@ -2,12 +2,13 @@
 import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { PocDoc, HeadingRow, PlainRow, BulletRow, PaginationExt, buildPocContent } from './PocEditor';
+import { Text } from '@tiptap/extension-text';
 import { PageChromeLayerMin } from './PageChromeLayerMin';
 import { paginationPluginKey } from './PaginationPluginMin';
 
 export function PocPrintCanvas() {
   const editor = useEditor({
-    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow, PaginationExt],
+    extensions: [PocDoc, Text, HeadingRow, PlainRow, BulletRow, PaginationExt],
     editable: false,
     content: buildPocContent(),
     immediatelyRender: false,

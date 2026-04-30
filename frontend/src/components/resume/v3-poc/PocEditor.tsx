@@ -1,6 +1,7 @@
 'use client';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { Document } from '@tiptap/extension-document';
+import { Text } from '@tiptap/extension-text';
 import { Node, Extension } from '@tiptap/core';
 import { createPaginationPluginMin } from './PaginationPluginMin';
 import { PageChromeLayerMin } from './PageChromeLayerMin';
@@ -93,7 +94,7 @@ interface PocEditorProps {
 
 export function PocEditor({ readOnly = false }: PocEditorProps) {
   const editor = useEditor({
-    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow, PaginationExt],
+    extensions: [PocDoc, Text, HeadingRow, PlainRow, BulletRow, PaginationExt],
     editable: !readOnly,
     content: buildPocContent(),
     immediatelyRender: false,
