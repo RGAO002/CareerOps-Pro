@@ -1,7 +1,8 @@
 'use client';
 import { useEditor, EditorContent, NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { Document } from '@tiptap/extension-document';
-import { Node } from '@tiptap/core';
+import { Node, Extension } from '@tiptap/core';
+import { createPaginationPluginMin } from './PaginationPluginMin';
 import './poc.css';
 
 export const PocDoc = Document.extend({ content: 'row+' });
@@ -77,6 +78,13 @@ export const BulletRow = Node.create({
   },
 });
 
+export const PaginationExt = Extension.create({
+  name: 'paginationMin',
+  addProseMirrorPlugins() {
+    return [createPaginationPluginMin()];
+  },
+});
+
 interface PocEditorProps {
   /** When true, mount in read-only mode (used by /print route). */
   readOnly?: boolean;
@@ -84,7 +92,7 @@ interface PocEditorProps {
 
 export function PocEditor({ readOnly = false }: PocEditorProps) {
   const editor = useEditor({
-    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow],
+    extensions: [PocDoc, HeadingRow, PlainRow, BulletRow, PaginationExt],
     editable: !readOnly,
     content: buildPocContent(),
     immediatelyRender: false,
