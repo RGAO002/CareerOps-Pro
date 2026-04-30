@@ -169,6 +169,45 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       clearHoverScope();
     });
 
+    // Block-selected state: 6-dot click commits a selection of section /
+    // entry / row scope. CSS .is-block-selected paints the deeper warm bg
+    // (oklch(.96 .03 45)) and the first row of the scope gets a terracotta
+    // strip on its left edge.
+    let lastSelectedScope: HTMLElement[] | null = null;
+    const clearSelectedScope = () => {
+      if (!lastSelectedScope) return;
+      for (const r of lastSelectedScope) {
+        r.classList.remove('is-block-selected');
+        r.classList.remove('is-block-selected-first');
+      }
+      lastSelectedScope = null;
+    };
+    const setSelectedScope = (scope: HTMLElement[]) => {
+      clearSelectedScope();
+      if (scope.length === 0) return;
+      for (const r of scope) r.classList.add('is-block-selected');
+      // Mark the topmost row in document order as the first-of-scope so
+      // it carries the terracotta strip pseudo-element.
+      const sorted = [...scope].sort((a, b) => {
+        const pos = a.compareDocumentPosition(b);
+        return (pos & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+      });
+      sorted[0]?.classList.add('is-block-selected-first');
+      lastSelectedScope = scope;
+    };
+    // Click outside any row clears the selection.
+    const onCanvasClick = (ev: MouseEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (target?.closest('.row-handle')) return; // handled below
+      if (target?.closest('.row.is-block-selected')) return; // clicking inside a selected row keeps selection
+      clearSelectedScope();
+    };
+    view.dom.addEventListener('click', onCanvasClick);
+    sessionCleanups.push(() => {
+      view.dom.removeEventListener('click', onCanvasClick);
+      clearSelectedScope();
+    });
+
     const bindRowHandles = () => {
       clearHandleBindings();
       const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
@@ -177,12 +216,13 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         const rowId = row.getAttribute('data-row-id') as RowId | null;
         if (!handle || !rowId) continue;
         const onPointerDown = (ev: PointerEvent) => ctl.onPointerDown(ev, rowId, handle);
-        // Click on .row-handle (without dragging) → open AI sidebar with the
-        // group-aware scope. Block-select UX: the handle is the affordance to
-        // pick a section / entry / row as the AI assistant target.
+        // Click on .row-handle (without dragging) → block-select scope +
+        // open AI sidebar.
         const onClick = (ev: MouseEvent) => {
           ev.preventDefault();
           ev.stopPropagation();
+          const scope = resolveHoverGroup(view, row);
+          setSelectedScope(scope);
           const labelInfo = rowLabel(view, row);
           if (labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
         };

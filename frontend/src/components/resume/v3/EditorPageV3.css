@@ -237,22 +237,46 @@
   gap: 8px;
   position: relative;
   min-height: 16px;
-  margin: 0 0 6px;
-  border-radius: 4px;
+  /* Use padding-bottom (not margin-bottom) so when a group is hovered the
+   * highlight bg fills the inter-row gap continuously. Margin would leave
+   * 6px of unhighlighted strips between rows. */
+  padding-bottom: 6px;
+  margin: 0;
+  border-radius: 0;
   transition: background-color 120ms ease;
   transform-origin: top left;
   will-change: transform;
 }
-/* Group-aware hover: highlight all rows in the same section / entry scope.
- * Class is added by ResumeCanvasV3 pointerover handler (v2 parity for the
- * "hover-on-section-heading lights up the whole section" UX). v2's
- * SectionHighlightLayer used oklch(0.97 0.01 60) — match it exactly. */
+/* Group-aware hover. Mirrors design_handoff_ai_sidebar/ai-sidebar.html:
+ *   .r-section:hover { background: oklch(.97 .01 60) }
+ * The .is-group-hovered class is toggled by ResumeCanvasV3 pointerover. */
 .v3-editor-canvas-root .row.is-group-hovered {
   background: oklch(0.97 0.01 60);
 }
-/* Drop bg on print canvas — no hover state in PDF. */
+/* Block-selected state. Mirrors design_handoff_ai_sidebar:
+ *   .r-section.active { background: oklch(.96 .03 45) }
+ *   .r-section.active::after { left:0; width:2px; background: terracotta }
+ * Selected outranks hovered; the first row in the selected scope gets the
+ * terracotta strip on its left edge. */
+.v3-editor-canvas-root .row.is-block-selected {
+  background: oklch(0.96 0.03 45);
+}
+.v3-editor-canvas-root .row.is-block-selected.is-block-selected-first::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: oklch(0.62 0.13 38); /* terracotta */
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+}
+/* Drop bg + selection chrome on print canvas. */
 .v3-print-canvas-root .row,
-.v3-print-canvas-root .row.is-group-hovered { background: transparent; }
+.v3-print-canvas-root .row.is-group-hovered,
+.v3-print-canvas-root .row.is-block-selected { background: transparent; }
+.v3-print-canvas-root .row.is-block-selected::before { content: none; }
 
 .v3-editor-canvas-root .row-handle {
   width: 14px;
