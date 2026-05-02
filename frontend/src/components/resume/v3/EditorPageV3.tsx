@@ -45,7 +45,13 @@ import { createPaginationPlugin, getPaginationState, requestPaginationLayout } f
 import { v3RowExtensions } from './schema/pmSchema';
 import { hydrateInitialState } from './schema/hydrate';
 import { serializeEditorState } from './schema/serialize';
-import { v2ToV3, v3ToV2 } from './schema/v2Adapter';
+import {
+  type ResumeFileV3,
+  v3FileToEditorBody,
+  editorBodyToV3File,
+  v3ApiToV2,
+} from './schema/v3Envelope';
+import { v3ToV2 } from './schema/v2Adapter';
 import { handleEnter } from './interaction/keymap/enter';
 import { handleBackspace } from './interaction/keymap/backspace';
 import { handleCmdA, notePressBreak } from './interaction/keymap/cmdA';
@@ -126,7 +132,8 @@ const KeymapExt = Extension.create({
 });
 
 interface Props {
-  initialResume: ResumeDocV2;
+  /** v3 API envelope as returned by GET /api/resume/{id}. */
+  initialResume: ResumeFileV3;
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -148,7 +155,11 @@ function EditorAssistant() {
 }
 
 export function EditorPageV3({ initialResume }: Props) {
-  const previousResumeRef = React.useRef(initialResume);
+  // Track the latest v3 envelope (id/title/metadata + last-saved body) so
+  // PUT can reconstruct an envelope without re-fetching, and so we have a
+  // stable baseline for v3ApiToV2 when feeding the legacy v2 useResumeStore.
+  const previousFileRef = React.useRef<ResumeFileV3>(initialResume);
+  const previousResumeRef = React.useRef<ResumeDocV2>(v3ApiToV2(initialResume));
   const hydratedRef = React.useRef(false);
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightSaveRef = React.useRef<Promise<void> | null>(null);
@@ -186,15 +197,17 @@ export function EditorPageV3({ initialResume }: Props) {
     if (!editor) return;
     let cancelled = false;
     hydratedRef.current = false;
-    const v3 = v2ToV3(initialResume);
+    // initialResume is now a v3 API envelope. Strip to editor body and
+    // hydrate. Feed a v3-derived v2 doc to useResumeStore so AI features
+    // (SidebarPose / BarPose) that still read v2 keep working.
+    const v3 = v3FileToEditorBody(initialResume);
+    const v2Equivalent = v3ApiToV2(initialResume);
+    previousFileRef.current = initialResume;
+    previousResumeRef.current = v2Equivalent;
     const schema = editor.schema as Schema;
     const { docJSON, groups } = hydrateInitialState(v3, schema);
 
-    // Hydrate v2 useResumeStore so AI features (SidebarPose / BarPose) that
-    // read useResumeStore.getState().resume can find the current doc. v3 is
-    // the editor of record but v2 store stays the source of truth for AI
-    // calls (and for the v2 atom renderers used in PrintCanvasClient).
-    useResumeStore.getState().hydrate(initialResume);
+    useResumeStore.getState().hydrate(v2Equivalent);
 
     queueMicrotask(() => {
       if (cancelled) return;
@@ -213,7 +226,6 @@ export function EditorPageV3({ initialResume }: Props) {
       editor.commands.setContent(docJSON as Parameters<typeof editor.commands.setContent>[0], { emitUpdate: false });
       requestPaginationLayout(editor.view);
       latestSnapshotRef.current = JSON.stringify(initialResume);
-      previousResumeRef.current = initialResume;
       hydratedRef.current = true;
       setSaveStatus('saved');
     });
@@ -235,32 +247,40 @@ export function EditorPageV3({ initialResume }: Props) {
     };
   }, [editor]);
 
-  const buildV2Snapshot = React.useCallback((): ResumeDocV2 | null => {
+  /**
+   * Build the next v3 API envelope from current editor state, plus the
+   * derived v2 doc for legacy consumers (useResumeStore / AI). Returns null
+   * if the editor isn't hydrated yet.
+   */
+  const buildNextSnapshot = React.useCallback((): { file: ResumeFileV3; v2: ResumeDocV2 } | null => {
     if (!editor || !hydratedRef.current) return null;
-    const v3 = serializeEditorState(editor.state);
-    return v3ToV2(v3, previousResumeRef.current);
+    const body = serializeEditorState(editor.state);
+    const file = editorBodyToV3File(body, previousFileRef.current);
+    const v2 = v3ToV2(body, previousResumeRef.current);
+    return { file, v2 };
   }, [editor]);
 
   const saveNow = React.useCallback(async () => {
-    const next = buildV2Snapshot();
+    const next = buildNextSnapshot();
     if (!next) return;
-    const snapshot = JSON.stringify(next);
+    const snapshot = JSON.stringify(next.file);
     if (snapshot === latestSnapshotRef.current) return;
 
     setSaveStatus('saving');
-    const promise = fetch(`${API_BASE}/api/resume/${encodeURIComponent(next.id)}`, {
+    const promise = fetch(`${API_BASE}/api/resume/${encodeURIComponent(next.file.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: snapshot,
-    }).then((resp) => {
+    }).then(async (resp) => {
       if (!resp.ok) throw new Error(`Save failed: ${resp.status}`);
-      latestSnapshotRef.current = snapshot;
-      previousResumeRef.current = next;
+      // Server refreshes updated_at; pull the canonical envelope back.
+      const saved = (await resp.json()) as ResumeFileV3;
+      latestSnapshotRef.current = JSON.stringify(saved);
+      previousFileRef.current = saved;
+      previousResumeRef.current = next.v2;
       setSaveStatus('saved');
-      // Keep v2 useResumeStore in sync so AI features always see the
-      // freshest content (not the stale initialResume from page mount).
-      useResumeStore.getState().hydrate(next);
-      useSuggestionStore.getState().hydrate(next.id);
+      useResumeStore.getState().hydrate(next.v2);
+      useSuggestionStore.getState().hydrate(saved.id);
     }).catch((err) => {
       setSaveStatus('error');
       throw err;
@@ -271,7 +291,7 @@ export function EditorPageV3({ initialResume }: Props) {
     } finally {
       if (inflightSaveRef.current === promise) inflightSaveRef.current = null;
     }
-  }, [buildV2Snapshot]);
+  }, [buildNextSnapshot]);
 
   React.useEffect(() => {
     if (!editor) return;

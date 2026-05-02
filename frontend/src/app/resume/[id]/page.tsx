@@ -3,7 +3,7 @@
 // Resume Editor v3 entry point. Server-fetches the current API doc and hands
 // it to the client v3 editor bridge so the editor mounts with data immediately.
 import { EditorPageV3 } from "@/components/resume/v3/EditorPageV3";
-import type { ResumeDoc } from "@/components/resume/v2/types";
+import type { ResumeFileV3 } from "@/components/resume/v3/schema/v3Envelope";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -23,6 +23,6 @@ export default async function ResumeEditorPage({ params }: PageProps) {
       </div>
     );
   }
-  const resume = (await resp.json()) as ResumeDoc;
+  const resume = (await resp.json()) as ResumeFileV3;
   return <EditorPageV3 initialResume={resume} />;
 }

@@ -4,7 +4,7 @@
 // server so the client component receives v2 data immediately — no client
 // loading flicker, faster ready-flag for Playwright.
 import { PrintCanvasClientV3 } from "@/components/resume/v3/PrintCanvasClientV3";
-import type { ResumeDoc } from "@/components/resume/v2/types";
+import type { ResumeFileV3 } from "@/components/resume/v3/schema/v3Envelope";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -27,6 +27,6 @@ export default async function PrintPage({ params }: PageProps) {
     );
   }
 
-  const resume = (await resp.json()) as ResumeDoc;
+  const resume = (await resp.json()) as ResumeFileV3;
   return <PrintCanvasClientV3 resume={resume} />;
 }

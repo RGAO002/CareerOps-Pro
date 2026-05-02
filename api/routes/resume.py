@@ -179,8 +179,9 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
 async def parse_pdf(file: UploadFile = File(...)) -> dict:
     """Upload a PDF, parse it, persist as a new v3 Resume.
 
-    ⚠ Known technical debt: parse path keeps a v2-shape intermediate
-    (parser output → _python_v2_to_v3 → v3). Documented as follow-up.
+    Conversion chain (parser raw → v1 PM doc → v2 → v3) reuses the
+    legacy migration helpers. Tracked as cleanup to collapse into a
+    single parser-raw → v3 pass once v2 is removed.
     """
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -216,19 +217,35 @@ async def parse_pdf(file: UploadFile = File(...)) -> dict:
         err = (result or {}).get("error", "unknown") if isinstance(result, dict) else "invalid shape"
         raise HTTPException(status_code=500, detail=f"Parse failed: {err}")
 
-    v2_dict = result.get("data") or {}
-    if not isinstance(v2_dict, dict) or not v2_dict:
+    parsed_raw = result.get("data") or {}
+    if not isinstance(parsed_raw, dict) or not parsed_raw:
         raise HTTPException(status_code=500, detail="Parser returned no data")
 
     # Derive title from parser output / filename before conversion.
-    raw_title = (v2_dict.get("name") or v2_dict.get("title") or file.filename or "Imported resume").strip()
+    raw_title = (parsed_raw.get("name") or parsed_raw.get("title") or file.filename or "Imported resume").strip()
     if raw_title.lower().endswith(".pdf"):
         raw_title = raw_title[:-4]
-    v2_dict.setdefault("title", raw_title or "Imported resume")
 
     rid = str(uuid.uuid4())
+
+    # Conversion chain: parser raw → v1 PM doc → v2 → v3.
+    # parse_resume returns the legacy parser shape (name/contact/experience/...),
+    # NOT canonical v2 (header/sections). Reuse the same legacy → v1 → v2
+    # path the editor used pre-Task-2.4, then run our v2 → v3 adapter.
+    from datetime import datetime, timezone
+    from api.services.migration_v1_to_v2 import migrate_one_dict
     from api.services.parse_v2_to_v3 import _python_v2_to_v3
     from api.models.resume_v3 import ResumeV3
+
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    v1_pm_doc = legacy_json_to_tiptap_doc(parsed_raw)
+    v1_envelope = {
+        "id": rid,
+        "title": raw_title or "Imported resume",
+        "doc": v1_pm_doc,
+        "created_at": now_iso,
+    }
+    v2_dict = migrate_one_dict(v1_envelope)
     v3_dict = _python_v2_to_v3(v2_dict, resume_id=rid)
     # Override title with the cleaned-up name.
     v3_dict["title"] = raw_title or "Imported resume"
