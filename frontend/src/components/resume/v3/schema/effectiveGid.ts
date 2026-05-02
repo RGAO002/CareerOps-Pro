@@ -1,108 +1,125 @@
 import type { EditorState } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import type { ResumeDocV3, GroupId } from './types';
+import type { ResumeDocV3, GroupId, ResumeRow } from './types';
 
 /**
  * Compute the effective semanticGroupId for a row at the given index.
  *
- * Rules (spec § 2.2, revised 2026-05-02 — containment model):
+ * Rules (spec § 2.2, revised 2026-05-02 — "block + adjacency"):
  *
- *  - Non-plain rows: return their stored semanticGroupId (or null).
+ * Definitions:
+ *   • entry-content row = entry.title, entry.meta, bullet (rows whose
+ *     stored gid points at an entry group).
+ *   • An entry's BLOCK = the contiguous span from its first entry-content
+ *     row to its LAST entry-content row, inclusive. Plain rows that
+ *     happen to fall inside that span (whether empty or typed) are part
+ *     of the entry's block by position.
+ *   • A section.heading row is its own kind of anchor (section-content).
  *
- *  - Plain rows (BOTH empty and typed) — Rule 1 (containment):
- *    Use entry.title and section.heading rows as block boundaries.
- *      • Entry block: from an entry.title row up to (but not including) the
- *        next entry.title or section.heading or doc end. Section.heading
- *        does NOT participate as an entry boundary's start (entries live
- *        inside sections), but it DOES terminate the search going up
- *        (no entry.title found above the current section's heading).
- *      • Section block: from a section.heading row up to the next
- *        section.heading or doc end.
- *    If the row sits inside an entry block → return that entry's gid.
- *    Else if it sits inside a section block (after the heading, before
- *    any entry.title) → return that section's gid.
+ * For a plain row at index i, with P = nearest non-plain above and
+ * Q = nearest non-plain below:
  *
- *  - Plain rows that fail Rule 1 (typically only the header area, before
- *    any section.heading) — Rule 2 (adjacency fallback):
- *      • Empty plain → null (independent).
- *      • Typed plain → look at i-1.
- *          - If i-1 is a non-plain row → take its stored semanticGroupId
- *            (or null if it has none, e.g. header.contact).
- *          - If i-1 is an empty plain → null (intervening blank breaks
- *            attribution).
- *          - If i-1 is a typed plain → recurse on i-1.
+ *   Rule 1 — Block containment:
+ *     If P and Q are both entry-content rows of the SAME entry → return
+ *     that entry's gid. (User: "row 27 between row 20 title and row 32
+ *     last bullet — row 27 is in the entry no matter what.")
  *
- *  Why containment (Rule 1) before adjacency: a plain row visually wedged
- *  inside an entry's block "feels" like part of the entry regardless of
- *  how many blank lines are above or below it within that block. The
- *  earlier "look up N rows" rule produced surprises where a typed plain
- *  one or two blanks below the last bullet flipped from "in" to "out"
- *  depending on how many blanks the user happened to type.
+ *   Rule 2 — Trailing entry adjacency (P is entry-content):
+ *     If this row is empty → null. (User: "row 33 right after the last
+ *     bullet, still empty — doesn't belong.")
+ *     If this row is typed AND no empty plain sits between P and i →
+ *     return P's entry gid. (User: "row 33 was empty but the user typed
+ *     into it — now it belongs.")
+ *     If this row is typed but some empty plain sits between P and i →
+ *     null. (User: "row 33 empty, row 34 typed — row 34 is independent
+ *     because of the empty in between.")
+ *
+ *   Rule 3 — Trailing section adjacency (P is section.heading):
+ *     Same shape as Rule 2 but using P's section gid. Covers plains
+ *     between a section heading and its first entry.title.
+ *
+ *   Otherwise → null. (Header area, doc start, doc tail past the last
+ *   entry-content with no surrounding anchors, etc.)
  */
+
 export function effectiveGid(doc: ResumeDocV3, i: number): GroupId | null {
   if (i < 0 || i >= doc.rows.length) return null;
   const row = doc.rows[i];
   if (row.kind !== 'plain') {
     return ('semanticGroupId' in row && row.semanticGroupId) || null;
   }
-
-  // Rule 1: containment.
-  const entryGid = enclosingEntryGid(doc, i);
-  if (entryGid) return entryGid;
-  const sectionGid = enclosingSectionGid(doc, i);
-  if (sectionGid) return sectionGid;
-
-  // Rule 2: adjacency fallback (only relevant for header-area plains).
-  if (isPlainRowEmpty(row)) return null;
-  if (i === 0) return null;
-  const prev = doc.rows[i - 1];
-  if (prev.kind === 'plain') {
-    if (isPlainRowEmpty(prev)) return null;
-    return effectiveGid(doc, i - 1);
-  }
-  return ('semanticGroupId' in prev && prev.semanticGroupId) || null;
+  return computeForPlain(doc.rows, i, row);
 }
 
-function enclosingEntryGid(doc: ResumeDocV3, i: number): GroupId | null {
-  // Walk back: find nearest entry.title; bail if we hit a section.heading first
-  // (no entry above us within this section).
-  let entryGid: GroupId | null = null;
-  for (let j = i - 1; j >= 0; j--) {
-    const r = doc.rows[j];
-    if (r.kind === 'section.heading') return null;
-    if (r.kind === 'entry.title') {
-      entryGid = ('semanticGroupId' in r && r.semanticGroupId) || null;
-      break;
-    }
+function computeForPlain(
+  rows: ResumeRow[],
+  i: number,
+  row: ResumeRow,
+): GroupId | null {
+  const pIdx = nearestNonPlainAbove(rows, i);
+  const qIdx = nearestNonPlainBelow(rows, i);
+  const pEntryGid = entryGidOf(rows, pIdx);
+  const qEntryGid = entryGidOf(rows, qIdx);
+
+  // Rule 1 — block containment (any plain inside same entry's content span).
+  if (pEntryGid && pEntryGid === qEntryGid) return pEntryGid;
+
+  // Rule 2 — trailing entry adjacency.
+  if (pEntryGid) {
+    if (isPlainRowEmpty(row)) return null;
+    if (anyEmptyPlainBetween(rows, pIdx, i)) return null;
+    return pEntryGid;
   }
-  if (!entryGid) return null;
-  // Walk forward: the entry block extends until the next entry.title or
-  // section.heading (or doc end). If i is before that boundary it's in.
-  for (let j = i + 1; j < doc.rows.length; j++) {
-    const r = doc.rows[j];
-    if (r.kind === 'entry.title' || r.kind === 'section.heading') {
-      return entryGid; // i < j (true since j > i) → still in the entry
-    }
+
+  // Rule 3 — trailing section adjacency.
+  const pSectionGid = sectionGidOf(rows, pIdx);
+  if (pSectionGid) {
+    if (isPlainRowEmpty(row)) return null;
+    if (anyEmptyPlainBetween(rows, pIdx, i)) return null;
+    return pSectionGid;
   }
-  // No closing boundary → entry runs to doc end → still in.
-  return entryGid;
+
+  return null;
 }
 
-function enclosingSectionGid(doc: ResumeDocV3, i: number): GroupId | null {
-  let sectionGid: GroupId | null = null;
+function nearestNonPlainAbove(rows: ResumeRow[], i: number): number {
   for (let j = i - 1; j >= 0; j--) {
-    const r = doc.rows[j];
-    if (r.kind === 'section.heading') {
-      sectionGid = ('semanticGroupId' in r && r.semanticGroupId) || null;
-      break;
-    }
+    if (rows[j].kind !== 'plain') return j;
   }
-  if (!sectionGid) return null;
-  for (let j = i + 1; j < doc.rows.length; j++) {
-    const r = doc.rows[j];
-    if (r.kind === 'section.heading') return sectionGid;
+  return -1;
+}
+
+function nearestNonPlainBelow(rows: ResumeRow[], i: number): number {
+  for (let j = i + 1; j < rows.length; j++) {
+    if (rows[j].kind !== 'plain') return j;
   }
-  return sectionGid;
+  return -1;
+}
+
+function entryGidOf(rows: ResumeRow[], j: number): GroupId | null {
+  if (j < 0 || j >= rows.length) return null;
+  const r = rows[j];
+  if (r.kind === 'entry.title' || r.kind === 'entry.meta' || r.kind === 'bullet') {
+    return ('semanticGroupId' in r && r.semanticGroupId) || null;
+  }
+  return null;
+}
+
+function sectionGidOf(rows: ResumeRow[], j: number): GroupId | null {
+  if (j < 0 || j >= rows.length) return null;
+  const r = rows[j];
+  if (r.kind === 'section.heading') {
+    return ('semanticGroupId' in r && r.semanticGroupId) || null;
+  }
+  return null;
+}
+
+function anyEmptyPlainBetween(rows: ResumeRow[], a: number, b: number): boolean {
+  for (let k = a + 1; k < b; k++) {
+    const r = rows[k];
+    if (r.kind === 'plain' && isPlainRowEmpty(r)) return true;
+  }
+  return false;
 }
 
 function isPlainRowEmpty(row: { content: { content?: unknown[] } }): boolean {
@@ -115,17 +132,23 @@ function isPlainRowEmpty(row: { content: { content?: unknown[] } }): boolean {
   return true;
 }
 
+// ─── PM-state mirror ──────────────────────────────────────────────────────
+
 /**
- * PM-doc variant of `effectiveGid` — same containment-then-adjacency rule,
- * reading from a live ProseMirror EditorState instead of a serialized
- * v3 doc. Returns one entry per top-level row in document order.
+ * PM-doc variant — same block + adjacency rule, reading from a live
+ * ProseMirror EditorState. Returns one entry per top-level row.
  */
 export function effectiveGidsFromState(state: EditorState): (string | null)[] {
   const rows: PMNode[] = [];
   state.doc.forEach((node) => rows.push(node));
   const result: (string | null)[] = new Array(rows.length).fill(null);
   for (let i = 0; i < rows.length; i++) {
-    result[i] = effectiveGidForNode(rows, i, result);
+    const node = rows[i];
+    if (node.type.name !== 'plain') {
+      result[i] = nodeStoredGid(node);
+      continue;
+    }
+    result[i] = computeForPlainPM(rows, i, node);
   }
   return result;
 }
@@ -139,64 +162,64 @@ function isPMPlainEmpty(node: PMNode): boolean {
   return node.type.name === 'plain' && node.content.size === 0;
 }
 
-function enclosingEntryGidPM(rows: PMNode[], i: number): string | null {
-  let entryGid: string | null = null;
+function nearestNonPlainAbovePM(rows: PMNode[], i: number): number {
   for (let j = i - 1; j >= 0; j--) {
-    const r = rows[j];
-    if (r.type.name === 'section_heading') return null;
-    if (r.type.name === 'entry_title') {
-      entryGid = nodeStoredGid(r);
-      break;
-    }
+    if (rows[j].type.name !== 'plain') return j;
   }
-  if (!entryGid) return null;
-  for (let j = i + 1; j < rows.length; j++) {
-    const r = rows[j];
-    if (r.type.name === 'entry_title' || r.type.name === 'section_heading') {
-      return entryGid;
-    }
-  }
-  return entryGid;
+  return -1;
 }
 
-function enclosingSectionGidPM(rows: PMNode[], i: number): string | null {
-  let sectionGid: string | null = null;
-  for (let j = i - 1; j >= 0; j--) {
-    const r = rows[j];
-    if (r.type.name === 'section_heading') {
-      sectionGid = nodeStoredGid(r);
-      break;
-    }
-  }
-  if (!sectionGid) return null;
+function nearestNonPlainBelowPM(rows: PMNode[], i: number): number {
   for (let j = i + 1; j < rows.length; j++) {
-    if (rows[j].type.name === 'section_heading') return sectionGid;
+    if (rows[j].type.name !== 'plain') return j;
   }
-  return sectionGid;
+  return -1;
 }
 
-function effectiveGidForNode(
-  rows: PMNode[],
-  i: number,
-  memo: (string | null)[],
-): string | null {
-  if (i < 0 || i >= rows.length) return null;
-  const node = rows[i];
-  if (node.type.name !== 'plain') {
-    return nodeStoredGid(node);
+function entryGidOfPM(rows: PMNode[], j: number): string | null {
+  if (j < 0 || j >= rows.length) return null;
+  const n = rows[j];
+  const k = n.type.name;
+  if (k === 'entry_title' || k === 'entry_meta' || k === 'bullet') {
+    return nodeStoredGid(n);
   }
-  // Rule 1: containment.
-  const entryGid = enclosingEntryGidPM(rows, i);
-  if (entryGid) return entryGid;
-  const sectionGid = enclosingSectionGidPM(rows, i);
-  if (sectionGid) return sectionGid;
-  // Rule 2: adjacency fallback (header-area plains).
-  if (isPMPlainEmpty(node)) return null;
-  if (i === 0) return null;
-  const prev = rows[i - 1];
-  if (prev.type.name === 'plain') {
-    if (isPMPlainEmpty(prev)) return null;
-    return memo[i - 1]; // already resolved by left-to-right fill
+  return null;
+}
+
+function sectionGidOfPM(rows: PMNode[], j: number): string | null {
+  if (j < 0 || j >= rows.length) return null;
+  const n = rows[j];
+  if (n.type.name === 'section_heading') return nodeStoredGid(n);
+  return null;
+}
+
+function anyEmptyPlainBetweenPM(rows: PMNode[], a: number, b: number): boolean {
+  for (let k = a + 1; k < b; k++) {
+    if (isPMPlainEmpty(rows[k])) return true;
   }
-  return nodeStoredGid(prev);
+  return false;
+}
+
+function computeForPlainPM(rows: PMNode[], i: number, node: PMNode): string | null {
+  const pIdx = nearestNonPlainAbovePM(rows, i);
+  const qIdx = nearestNonPlainBelowPM(rows, i);
+  const pEntryGid = entryGidOfPM(rows, pIdx);
+  const qEntryGid = entryGidOfPM(rows, qIdx);
+
+  if (pEntryGid && pEntryGid === qEntryGid) return pEntryGid;
+
+  if (pEntryGid) {
+    if (isPMPlainEmpty(node)) return null;
+    if (anyEmptyPlainBetweenPM(rows, pIdx, i)) return null;
+    return pEntryGid;
+  }
+
+  const pSectionGid = sectionGidOfPM(rows, pIdx);
+  if (pSectionGid) {
+    if (isPMPlainEmpty(node)) return null;
+    if (anyEmptyPlainBetweenPM(rows, pIdx, i)) return null;
+    return pSectionGid;
+  }
+
+  return null;
 }

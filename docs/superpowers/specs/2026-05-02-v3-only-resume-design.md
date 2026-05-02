@@ -40,8 +40,9 @@ This works for plain rows that sit BETWEEN entries (independent paragraphs). It 
 
 **Revision history:**
 - v1 ("recursive lookback"): typed plain inherits previous row's effectiveGid; empty plain breaks the chain. **Rejected** — a typed plain one blank below an entry's last bullet appeared outside the entry's scope.
-- v2 ("bounded 2-row lookback"): scan up to 2 rows; first non-null wins. **Rejected** — N>2 blanks still broke attribution; the rule was sensitive to how many blanks the user happened to type.
-- **v3 (current — containment model)**: a plain row is part of an entry/section if it sits **inside that block**, regardless of how many blank lines precede or follow it within the block. Both empty and typed plains use this rule.
+- v2 ("bounded 2-row lookback"): scan up to 2 rows; first non-null wins. **Rejected** — N>2 blanks still broke attribution; rule sensitive to how many blanks user happens to type.
+- v3 ("title-to-title containment"): block extends from `entry.title` to next `entry.title`/`section.heading`. **Rejected** — sucks in trailing rows that have no actual entry-content nearby (empties + typed plains far past the entry's last bullet still attributed to the entry).
+- **v4 (current — block + adjacency)**: an entry's block is the span from its first entry-content row to its **last entry-content row** (entry-content = `entry.title`/`entry.meta`/`bullet` with stored gid). Plains strictly inside that span belong by position. Plains beyond it use a strict adjacency rule: typed AND immediately adjacent (no empty plain between) → attribute; empty OR separated by an empty → null.
 
 ```
 effectiveGid(doc, i):
@@ -49,29 +50,42 @@ effectiveGid(doc, i):
   if row.kind != 'plain':
     return row.semanticGroupId   (stored attribute, may be null)
 
-  // Rule 1: containment (applies to EMPTY and TYPED plains alike).
-  // An entry block extends from its entry.title row up to (but not
-  // including) the next entry.title or section.heading or doc end.
-  // A section block extends from its section.heading row up to the
-  // next section.heading or doc end.
-  if i lies inside some entry block:    return that entry's gid
-  if i lies inside some section block:  return that section's gid
+  P_idx = nearest non-plain row above i        (skip plains)
+  Q_idx = nearest non-plain row below i        (skip plains)
+  P_entryGid = entryGidOf(P_idx)               (entry.title/meta/bullet → its gid; else null)
+  Q_entryGid = entryGidOf(Q_idx)
+  P_sectionGid = sectionGidOf(P_idx)           (section.heading → its gid; else null)
 
-  // Rule 2: adjacency fallback — only reached for plains in the
-  // header area (no preceding section.heading). Mirrors the old v1
-  // rule, but its blast radius is now tiny.
-  if row is empty plain:                return null
-  prev = doc.row[i - 1]
-  if prev is non-plain:                 return prev.semanticGroupId or null
-  if prev is empty plain:               return null   (intervening blank breaks contact)
-  if prev is typed plain:               return effectiveGid(doc, i - 1)
+  // Rule 1: block containment.
+  if P_entryGid && P_entryGid === Q_entryGid:
+    return P_entryGid
+
+  // Rule 2: trailing entry adjacency.
+  if P_entryGid:
+    if row is empty:                                return null
+    if any empty plain between P_idx and i:         return null
+    return P_entryGid
+
+  // Rule 3: trailing section adjacency.
+  if P_sectionGid:
+    if row is empty:                                return null
+    if any empty plain between P_idx and i:         return null
+    return P_sectionGid
+
+  return null
 ```
 
+User-stated examples (CareerOps Pro entry spans rows 20–32 where 20 = title, 32 = last bullet):
+- **Row 27** (any plain inside 20..32): in entry. (Rule 1.)
+- **Row 33 empty** (right after last bullet): null. (Rule 2.)
+- **Row 33 typed** (user types into the previously-empty row 33): in entry — adjacent to row 32. (Rule 2.)
+- **Row 33 empty + Row 34 typed**: row 34 null — row 33 (empty) sits between row 32 and row 34, breaks adjacency. (Rule 2.)
+- Plain wedged between bullets of the SAME entry, even if itself empty: in entry. (Rule 1.)
+- Trailing empties at doc tail past last bullet (no entry-content below): null.
+
 Properties:
-- Plain rows inside an entry block (between an `entry.title` and the next `entry.title`/`section.heading`/EOF) — empty OR typed — get that entry's gid.
-- Plain rows inside a section but before its first entry get the section's gid.
-- Plain rows in the header area (no section yet) follow the old adjacency rule: typed inherits if the immediately previous row is non-empty content; empties and gaps stay null.
-- Boundary anchors are `entry.title` and `section.heading` only. Bullets and other rows do NOT define new boundaries (they're consumed by whichever entry/section block they fall in). Orphan bullets — bullets with a stored gid pointing to an entry group that has no `entry.title` row — are not visible to Rule 1; plain rows around them attribute to the surrounding entry block by position. Acceptable degenerate case.
+- Boundary anchors for entry blocks are entry-content rows (`entry.title`, `entry.meta`, `bullet`). Orphan bullets (bullets with a stored gid that has no `entry.title`) participate naturally — they ARE entry-content for their orphan group, so plains around them get the orphan gid via the same rules.
+- Plains between two different entries attribute to the FIRST entry via the trailing rule (row above wins), not by leading attribution from the next entry's title.
 - No PM transaction overhead (computed on read, not stored).
 
 ## 3. Out of Scope (explicit non-changes)
