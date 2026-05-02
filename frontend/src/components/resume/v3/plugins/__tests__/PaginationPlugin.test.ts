@@ -66,6 +66,31 @@ function makeDoc(rowCount: number) {
   return schema.node('doc', null, rows);
 }
 
+const plainAwareSchema = new Schema({
+  nodes: {
+    doc: { content: '(plain | bullet)+' },
+    text: {},
+    plain: {
+      attrs: { id: { default: '' }, semanticGroupId: { default: null } },
+      content: 'text*',
+      toDOM: () => ['div', { class: 'row row-plain' }, 0],
+    },
+    bullet: {
+      attrs: { id: { default: '' }, semanticGroupId: { default: null } },
+      content: 'text*',
+      toDOM: () => ['div', { class: 'row row-bullet' }, 0],
+    },
+  },
+});
+
+function makePlainAwareDoc() {
+  return plainAwareSchema.node('doc', null, [
+    plainAwareSchema.nodes.bullet.create({ id: 'r0', semanticGroupId: 'g1' }, plainAwareSchema.text('first')),
+    plainAwareSchema.nodes.plain.create({ id: 'r1', semanticGroupId: 'g1' }),
+    plainAwareSchema.nodes.bullet.create({ id: 'r2', semanticGroupId: 'g1' }, plainAwareSchema.text('second')),
+  ]);
+}
+
 interface TestEditor {
   view: EditorView;
   layoutCalls: Array<{ ranLayout: boolean; layoutMs: number; pageBreaksLen: number }>;
@@ -86,6 +111,48 @@ function bootEditor(opts: {
   const state = EditorState.create({
     schema,
     doc: makeDoc(opts.rowCount),
+    plugins: [
+      createPaginationPlugin({
+        pageHeightPx: opts.pageHeightPx ?? 1000,
+        __syncSchedule: opts.syncSchedule ?? true,
+        __testRowHeights: opts.rowHeights,
+        __testMargins: { marginTopPx: 100, marginBottomPx: 100, screenGapPx: 32 },
+        __onLayout: (out, info) => {
+          layoutCalls.push({
+            ranLayout: info.ranLayout,
+            layoutMs: info.layoutMs,
+            pageBreaksLen: out.pageBreaks.length,
+          });
+        },
+      }),
+    ],
+  });
+
+  const view = new EditorView(place, { state });
+
+  return {
+    view,
+    layoutCalls,
+    destroy: () => {
+      view.destroy();
+      place.remove();
+    },
+  };
+}
+
+function bootPlainAwareEditor(opts: {
+  rowHeights: Map<string, number>;
+  pageHeightPx?: number;
+  syncSchedule?: boolean;
+}): TestEditor {
+  const place = document.createElement('div');
+  document.body.appendChild(place);
+
+  const layoutCalls: TestEditor['layoutCalls'] = [];
+
+  const state = EditorState.create({
+    schema: plainAwareSchema,
+    doc: makePlainAwareDoc(),
     plugins: [
       createPaginationPlugin({
         pageHeightPx: opts.pageHeightPx ?? 1000,
@@ -223,6 +290,19 @@ describe('PaginationPlugin', () => {
     const last = editor.layoutCalls[editor.layoutCalls.length - 1];
     expect(last.ranLayout).toBe(true);
     expect(last.pageBreaksLen).toBe(1);
+  });
+
+  it('counts empty plain rows in pagination because blank lines are user-authored spacing', async () => {
+    // r2 lands at top=421 and bottom=811, overflowing the 800px content
+    // budget. The empty plain row must keep its real 21px flow height so the
+    // overflow creates a page break.
+    const heights = new Map([['r0', 400], ['r1', 21], ['r2', 390]]);
+    editor = bootPlainAwareEditor({ rowHeights: heights });
+    await flush();
+
+    const s = paginationPluginKey.getState(editor.view.state)!;
+    expect(s.pageGeometries).toHaveLength(2);
+    expect(editor.layoutCalls.at(-1)?.pageBreaksLen).toBe(1);
   });
 
   it("subscribes to tr.getMeta('forceLayout'): forces a layout pass even with no doc change", async () => {

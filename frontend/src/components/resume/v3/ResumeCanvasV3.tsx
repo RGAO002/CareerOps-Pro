@@ -183,6 +183,30 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       for (const scope of selectedScopes) for (const r of scope) s.add(r);
       return s;
     };
+    // Build an AssistantScope from the current `selectedScopes`.
+    //   1 scope:  re-use rowLabel on the first (doc-order) row of that scope.
+    //   N scopes: anchor on the FIRST scope (in click-order), append "+N more"
+    //             so the user sees both what's primary and how many extras.
+    const buildScopeFromSelection = (): { blockId: string; label: string } | null => {
+      if (selectedScopes.length === 0 || selectedScopes[0].length === 0) return null;
+      const primary = rowLabel(view, selectedScopes[0][0]);
+      if (!primary) return null;
+      if (selectedScopes.length === 1) return primary;
+      const extra = selectedScopes.length - 1;
+      return { blockId: primary.blockId, label: `${primary.label} +${extra} more` };
+    };
+    // If the AI sidebar is already open, mirror the current selection into
+    // its scope. Sidebar closed → no auto-open (single-clicking handles
+    // shouldn't summon the sidebar; double-click is the explicit summon).
+    const syncAssistantScope = () => {
+      if (useAssistantStore.getState().pose !== 'sidebar') return;
+      const next = buildScopeFromSelection();
+      if (next) {
+        useAssistantStore.getState().openSidebarWithScope(next);
+      } else {
+        useAssistantStore.getState().clearScope();
+      }
+    };
     const clearSelectedScope = () => {
       const all = allSelectedRows();
       for (const r of all) {
@@ -191,6 +215,7 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         r.classList.remove('is-block-selected-last');
       }
       selectedScopes = [];
+      syncAssistantScope();
     };
     // Re-paint every selected row's classes based on current selectedScopes.
     // The .is-block-selected-first / -last classes mark each contiguous run's
@@ -246,6 +271,7 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         }
       }
       repaintSelectedClasses();
+      syncAssistantScope();
     };
     // Click outside any row clears the selection.
     const onCanvasClick = (ev: MouseEvent) => {
@@ -268,24 +294,30 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
         const rowId = row.getAttribute('data-row-id') as RowId | null;
         if (!handle || !rowId) continue;
         const onPointerDown = (ev: PointerEvent) => ctl.onPointerDown(ev, rowId, handle);
-        // Click on .row-handle (without dragging) → block-select scope +
-        // open AI sidebar. Cmd/Ctrl+click extends the existing selection
-        // (toggle: if scope is already selected, remove it; otherwise add).
+        // Single-click on .row-handle → block-select scope ONLY (no
+        // sidebar). Cmd/Ctrl+click toggles into multi-selection.
         const onClick = (ev: MouseEvent) => {
           ev.preventDefault();
           ev.stopPropagation();
           const scope = resolveHoverGroup(view, row);
           const extend = ev.metaKey || ev.ctrlKey;
           setSelectedScope(scope, extend);
+        };
+        // Double-click on .row-handle → open AI sidebar focused on this
+        // scope. Decoupled from single-click so casual handle-clicks
+        // (just for block-select) don't constantly summon the sidebar.
+        const onDblClick = (ev: MouseEvent) => {
+          ev.preventDefault();
+          ev.stopPropagation();
           const labelInfo = rowLabel(view, row);
-          // Only open / refocus the sidebar on the primary (non-extending)
-          // click so multi-select doesn't keep stealing the scope pill.
-          if (!extend && labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
+          if (labelInfo) useAssistantStore.getState().openSidebarWithScope(labelInfo);
         };
         handle.addEventListener('pointerdown', onPointerDown);
         handle.addEventListener('click', onClick);
+        handle.addEventListener('dblclick', onDblClick);
         handleCleanups.push(() => handle.removeEventListener('pointerdown', onPointerDown));
         handleCleanups.push(() => handle.removeEventListener('click', onClick));
+        handleCleanups.push(() => handle.removeEventListener('dblclick', onDblClick));
       }
     };
 
@@ -303,19 +335,31 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
     };
   }, [view]);
 
+  // Drag-time state extracted from the dropIndicator object so each effect
+  // can depend on only the bits it actually cares about.
+  const dropTargetRowId = dropIndicator?.targetRowId ?? null;
+  const dropActive = dropIndicator !== null;
+  // Captured at drag start so the dragged ghost's translateY = (current Y −
+  // initial Y), letting it visually follow the cursor without jumping.
+  const initialCursorYRef = React.useRef<number | null>(null);
+
+  // Effect A — neighbor shifts. NO cleanup return: the previous version's
+  // cleanup ran on every dep change and reset transitions, causing rows to
+  // visually snap back to origin between target switches → up/down jitter.
+  // Reset is only needed when the drag ENDS — handled by the inactive
+  // branch below, which fires once when dropActive flips to false.
   React.useEffect(() => {
     if (!view) return;
     const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
-    const reset = () => {
+
+    if (!dropActive || draggedRowIds.length === 0) {
+      // Drag ended (or never started) — clear all transforms.
       for (const row of rows) {
         row.style.transform = '';
         row.style.transition = '';
         row.style.opacity = '';
       }
-    };
-
-    if (!dropIndicator || draggedRowIds.length === 0) {
-      reset();
+      initialCursorYRef.current = null;
       return;
     }
 
@@ -324,20 +368,14 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       .map((id) => rows.findIndex((row) => row.getAttribute('data-row-id') === id))
       .filter((index) => index >= 0)
       .sort((a, b) => a - b);
-    if (indices.length === 0) {
-      reset();
-      return;
-    }
+    if (indices.length === 0) return;
 
     const srcStart = indices[0];
     const srcEnd = indices[indices.length - 1] + 1;
-    const targetIndex = dropIndicator.targetRowId
-      ? rows.findIndex((row) => row.getAttribute('data-row-id') === dropIndicator.targetRowId)
+    const targetIndex = dropTargetRowId
+      ? rows.findIndex((row) => row.getAttribute('data-row-id') === dropTargetRowId)
       : rows.length;
-    if (targetIndex < 0) {
-      reset();
-      return;
-    }
+    if (targetIndex < 0) return;
 
     const firstRect = rows[srcStart].getBoundingClientRect();
     const lastRect = rows[srcEnd - 1].getBoundingClientRect();
@@ -347,13 +385,16 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       const row = rows[i];
       const rowId = row.getAttribute('data-row-id') as RowId | null;
       const isDragged = !!rowId && dragged.has(rowId);
-      row.style.transition = 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 120ms ease';
-
+      // Only set transition once if not already set — avoids any potential
+      // re-trigger when the same value is re-assigned.
+      const wantTrans = 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 120ms ease';
       if (isDragged) {
-        row.style.transform = '';
-        row.style.opacity = '0.42';
+        // Effect B owns the dragged transform (cursor-follow). Here we
+        // only set opacity so the ghost reads as a faint backdrop.
+        if (row.style.opacity !== '0.35') row.style.opacity = '0.35';
         continue;
       }
+      if (row.style.transition !== wantTrans) row.style.transition = wantTrans;
 
       let shift = 0;
       if (targetIndex > srcStart && i >= srcEnd && i < targetIndex) {
@@ -361,11 +402,34 @@ export function ResumeCanvasV3({ view, children }: ResumeCanvasV3Props) {
       } else if (targetIndex < srcStart && i >= targetIndex && i < srcStart) {
         shift = draggedHeight;
       }
-      row.style.transform = shift ? `translateY(${shift}px)` : '';
-      row.style.opacity = '';
+      const next = shift ? `translateY(${shift}px)` : '';
+      if (row.style.transform !== next) row.style.transform = next;
+      if (row.style.opacity !== '') row.style.opacity = '';
     }
+  }, [view, dropTargetRowId, dropActive, draggedRowIds]);
 
-    return reset;
+  // Effect B — cursor-follow for the DRAGGED row(s). Re-runs on every
+  // cursor tick (dropIndicator dep) but only writes transform on the 1-3
+  // dragged rows, so it's cheap and never touches neighbour rows that
+  // could jitter.
+  React.useEffect(() => {
+    if (!view || !dropIndicator || draggedRowIds.length === 0) return;
+    if (initialCursorYRef.current === null) {
+      initialCursorYRef.current = dropIndicator.cursorY;
+    }
+    const delta = dropIndicator.cursorY - initialCursorYRef.current;
+    const rows = view.dom.querySelectorAll<HTMLElement>(':scope > div > .row');
+    const draggedSet = new Set(draggedRowIds);
+    rows.forEach((row) => {
+      const rowId = row.getAttribute('data-row-id') as RowId | null;
+      if (rowId && draggedSet.has(rowId)) {
+        // No transition on the dragged row's transform — it should track
+        // the cursor 1:1 with no easing lag. Other rows still get the
+        // 180ms transition from Effect A.
+        row.style.transition = 'opacity 120ms ease';
+        row.style.transform = `translateY(${delta}px)`;
+      }
+    });
   }, [view, dropIndicator, draggedRowIds]);
 
   return (

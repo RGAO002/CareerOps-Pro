@@ -172,6 +172,33 @@ export function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
 
     for (const entry of section.entries) {
       const entryGroupId = asGroupId(dedupeId(seenIds, entry.id));
+      // Round-trip collapse for INDEPENDENT PLAIN rows: v3ToV2 emits a
+      // single null-gid plain row as a synthetic entry with empty
+      // title/meta and one plain bullet (entry.id === bullet.id === the
+      // original v3 row id). Detect that exact shape on read and emit it
+      // back as a single section-level plain row with gid=null instead of
+      // a 3-row "empty entry". Without this collapse, every save+reload
+      // would multiply each independent plain row into title+meta+bullet.
+      const isIndependentPlainSynthetic =
+        !entry.title &&
+        !entry.meta &&
+        entry.bullets.length === 1 &&
+        entry.bullets[0].kind === 'plain' &&
+        asRowId(entry.bullets[0].id) === asRowId(entry.id);
+      if (isIndependentPlainSynthetic) {
+        const bullet = entry.bullets[0];
+        const bulletId = asRowId(bullet.id);
+        const bulletAlign = readAlign(v2, v2AlignKey('bullet', bulletId));
+        rows.push({
+          id: bulletId,
+          kind: 'plain',
+          // gid intentionally OMITTED — null/absent marks this as independent.
+          content: toRichText(bullet.content),
+          ...(bulletAlign ? { align: bulletAlign } : {}),
+        });
+        continue; // skip normal entry emission for this synthetic
+      }
+
       groups.push({
         id: entryGroupId,
         kind: 'entry',
@@ -336,7 +363,17 @@ function collectEntriesForSection(v3: ResumeDocV3, sectionGroupId: GroupId): Ent
     .filter((group) => group.kind === 'entry' && group.parentSectionGroupId === sectionGroupId)
     .map((group) => group.id);
 
-  const entries: EntryBlock[] = [];
+  // Index of every row in v3.rows for fast doc-order lookup. Used below to
+  // tag each emitted entry with `_idx` (lowest member-row index) so we can
+  // sort registered entries + orphan entries together by doc position.
+  // Without this, the two-pass build (registered first, orphans appended)
+  // would always place orphans AFTER all registered entries even when the
+  // orphan rows physically sit between them in the doc — producing the
+  // "orphan row jumps to the bottom" bug observed in the PDF export.
+  const rowIndex = new Map<string, number>();
+  v3.rows.forEach((row, idx) => rowIndex.set(row.id, idx));
+
+  const entries: Array<EntryBlock & { _idx: number }> = [];
   for (const entryGroupId of entryGroupIds) {
     const memberRows = v3.rows.filter((row) => 'semanticGroupId' in row && row.semanticGroupId === entryGroupId);
     if (memberRows.length === 0) continue;
@@ -351,35 +388,56 @@ function collectEntriesForSection(v3: ResumeDocV3, sectionGroupId: GroupId): Ent
         content: richTextToV2BulletDoc(row.content),
       }));
 
+    // First member row's doc index — defines this entry's position relative
+    // to orphans / other entries. memberRows preserves v3.rows order so [0]
+    // is already the doc-order-first row of the group.
+    const firstIdx = rowIndex.get(memberRows[0].id) ?? Number.MAX_SAFE_INTEGER;
     entries.push({
       id: entryGroupId,
       title: textOf(titleRow),
       meta: textOf(metaRow),
       bullets,
+      _idx: firstIdx,
     });
   }
 
-  // Orphan-row fallback: a bullet/plain row whose semanticGroupId points at
-  // a missing entry group (parser bug, broken edit, etc.) gets attached to
-  // whichever section it physically sits inside in doc order — i.e. the
-  // section.heading that immediately precedes it. Critical: do NOT add the
-  // orphan to every section's entries (the original loop did, which is why
-  // a single stray summary bullet duplicated to all 5 sections, then each
-  // round-trip suffix-renamed and grew by one). Walk the doc once to find
-  // each row's enclosing section gid, then only emit the orphan for the
-  // matching section.
+  // Section-level / orphan row fallback. Two distinct cases collapse here:
+  //
+  //   (a) ORPHAN: bullet/plain whose `semanticGroupId` points at a missing
+  //       entry group (parser bug, broken edit). Each gets its own synthetic
+  //       entry in v2 keyed by the dangling gid (preserves identity across
+  //       reloads).
+  //
+  //   (b) INDEPENDENT PLAIN: plain row with `semanticGroupId === null`. By
+  //       design (Enter creates plain rows with null gid — see enter.ts
+  //       `gidForNewRow`), these are section-level paragraphs that don't
+  //       belong to any entry. We synthesize a per-row entry keyed by the
+  //       row's id; v2ToV3 detects the "empty title + empty meta + 1 plain
+  //       bullet" pattern and collapses it back to a single independent
+  //       plain row on reload, so the round-trip is stable.
+  //
+  // Critical: do NOT add to every section's entries (the original loop did,
+  // which is why a single stray summary bullet duplicated to all 5 sections
+  // and grew by one each round-trip). Walk the doc once to find each row's
+  // enclosing section gid, then only emit for the matching section.
   let cursor: GroupId | null = null;
-  for (const row of v3.rows) {
+  for (let i = 0; i < v3.rows.length; i++) {
+    const row = v3.rows[i];
     if (row.kind === 'section.heading') {
       cursor = (row.semanticGroupId ?? null) as GroupId | null;
       continue;
     }
     if (cursor !== sectionGroupId) continue;
-    if (!('semanticGroupId' in row) || !row.semanticGroupId) continue;
-    if (groupsById.has(row.semanticGroupId)) continue;
     if (row.kind !== 'bullet' && row.kind !== 'plain') continue;
+    const rowGid = ('semanticGroupId' in row) ? row.semanticGroupId : null;
+    // Skip rows that already belong to a known entry — those are emitted by
+    // the registered-entry loop above.
+    if (rowGid && groupsById.has(rowGid)) continue;
+    // Synthesize entry id: dangling gid for case (a), row.id for case (b).
+    // Stable across round-trips so editor identity / undo don't reset.
+    const synthEntryId = rowGid ?? row.id;
     entries.push({
-      id: row.semanticGroupId,
+      id: synthEntryId,
       title: '',
       meta: '',
       bullets: [{
@@ -387,8 +445,12 @@ function collectEntriesForSection(v3: ResumeDocV3, sectionGroupId: GroupId): Ent
         kind: row.kind === 'plain' ? 'plain' : 'bullet',
         content: richTextToV2BulletDoc(row.content),
       }],
+      _idx: i,
     });
   }
 
-  return entries;
+  // Sort by doc-order so orphans interleave correctly with registered
+  // entries (fixes "orphan row jumps to bottom of section" PDF bug).
+  entries.sort((a, b) => a._idx - b._idx);
+  return entries.map(({ _idx, ...entry }) => entry);
 }

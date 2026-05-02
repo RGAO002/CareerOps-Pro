@@ -23,6 +23,7 @@ const fixtureContent = {
     { type: 'header_name', attrs: { id: 'r1' }, content: [{ type: 'text', text: 'Alice' }] },
     { type: 'plain', attrs: { id: 'r2' }, content: [{ type: 'text', text: 'one' }] },
     { type: 'bullet', attrs: { id: 'r3' }, content: [{ type: 'text', text: 'two' }] },
+    { type: 'plain', attrs: { id: 'r4', semanticGroupId: 'gE' } },
   ],
 };
 
@@ -69,8 +70,20 @@ describe('F1 wrapper-selector contract', () => {
     expect(editorRef).toBeTruthy();
     const view = editorRef!.view;
 
-    // POSITIVE: :scope > div > .row matches 3 (one per fixture row)
+    // POSITIVE: :scope > div > .row matches 4 (one per fixture row)
     const wrapped = view.dom.querySelectorAll(':scope > div > .row');
-    expect(wrapped.length).toBe(3);
+    expect(wrapped.length).toBe(4);
+  });
+
+  it('empty plain rows expose group id like other authored rows', async () => {
+    let editorRef: Editor | null = null;
+    render(<MountFixture onReady={(e) => (editorRef = e)} />);
+    await flushFrames();
+    expect(editorRef).toBeTruthy();
+    const view = editorRef!.view;
+
+    const emptyPlain = view.dom.querySelector<HTMLElement>(':scope > div > .row[data-row-id="r4"]');
+    expect(emptyPlain).toBeTruthy();
+    expect(emptyPlain?.getAttribute('data-group-id')).toBe('gE');
   });
 });

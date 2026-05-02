@@ -22,8 +22,9 @@ function FluidBackdrop({ compact = false }: { compact?: boolean }) {
   const agentMask = useAssistantStore((s) => s.agentMask);
   const orbW = (() => {
     const count = (agentMask.recruit ? 1 : 0) + (agentMask.hm ? 1 : 0) + (agentMask.coach ? 1 : 0);
-    const scale = count === 1 ? 1.7 : count === 2 ? 1.35 : 1.0;
+    const scale = count === 1 ? 1.05 : count === 2 ? 1.35 : 1.0;
     return {
+      count,
       recruit: agentMask.recruit ? scale : 0,
       hm: agentMask.hm ? scale : 0,
       coach: agentMask.coach ? scale : 0,
@@ -43,7 +44,7 @@ function FluidBackdrop({ compact = false }: { compact?: boolean }) {
         }}>
           <FluidCanvas
             className="absolute inset-0"
-            forceAnimate speed={3} brightness={2.4}
+            forceAnimate speed={3} brightness={orbW.count === 1 ? 1.85 : 2.4}
             recruitWeight={orbW.recruit} hmWeight={orbW.hm} coachWeight={orbW.coach}
           />
         </div>
@@ -71,7 +72,7 @@ function FluidBackdrop({ compact = false }: { compact?: boolean }) {
       }}>
         <FluidCanvas
           className="absolute inset-0"
-          forceAnimate speed={3.4} brightness={2.2}
+          forceAnimate speed={3.4} brightness={orbW.count === 1 ? 1.7 : 2.2}
           recruitWeight={orbW.recruit} hmWeight={orbW.hm} coachWeight={orbW.coach}
         />
       </div>

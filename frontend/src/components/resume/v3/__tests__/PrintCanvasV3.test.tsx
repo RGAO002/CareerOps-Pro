@@ -101,6 +101,18 @@ describe('PrintCanvasV3', () => {
     expect(css.includes('var(')).toBe(false);
   });
 
+  it('print CSS hides placeholder text but preserves empty row flow height', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const cssSource = await fs.readFile(path.resolve(here, '..', 'EditorPageV3.css'), 'utf-8');
+
+    expect(cssSource).toContain('.v3-print-canvas-root .row.is-empty::after { content: none; }');
+    expect(cssSource).toContain('.v3-print-canvas-root .row.is-empty .row-content::before');
+    expect(cssSource).toContain('content: "\\00a0"');
+    expect(cssSource).not.toMatch(/\.v3-print-canvas-root \.row-[\w-]+\.is-empty[^{]*\{\s*display:\s*none !important/s);
+  });
+
   it('data-paginated="false" initially, flips to "true" after layout + fonts.ready', async () => {
     // Provide a deterministic fonts.ready promise.
     Object.defineProperty(document, 'fonts', {

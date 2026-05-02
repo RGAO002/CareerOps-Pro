@@ -331,6 +331,18 @@
 .v3-editor-canvas-root .row:hover .row-handle {
   opacity: 0.85;
 }
+
+/* Bullet rows: shift the entire handle down (margin-top) so the MIDDLE
+ * dot row vertically aligns with the bullet marker. Margin-top moves the
+ * handle's full box (visible + hit area) AND doesn't touch row height
+ * because the bullet text is taller than the handle even after shift, so
+ * row's bounding rect — what DragController reads — is unchanged.
+ *
+ * `.row-marker` at top:9, height:4 → bullet center y≈11.
+ * Original: handle 0..18, middle dot center y≈9.5. Diff 1.5 → margin-top: 2. */
+.v3-editor-canvas-root .row-bullet .row-handle {
+  margin-top: 2px;
+}
 .v3-editor-canvas-root .row-handle:hover {
   opacity: 1 !important;
   background: oklch(0.95 0.008 60);
@@ -541,8 +553,18 @@
   color: #9ca3af;
 }
 
-/* Print canvas: hide all placeholders. */
+/* Print canvas: placeholders are editing affordances, not resume content.
+ * Empty rows themselves are authored spacing, so keep one line of flow height
+ * while hiding the placeholder text. */
 .v3-print-canvas-root .row.is-empty::after { content: none; }
+
+.v3-print-canvas-root .row.is-empty .row-content::before {
+  content: "\00a0";
+  visibility: hidden;
+  white-space: pre;
+}
+
+.v3-print-canvas-root .row-bullet.is-empty .row-marker { display: none; }
 
 .v3-editor-canvas-root .row-dragging {
   opacity: 0.45;

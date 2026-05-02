@@ -10,6 +10,21 @@ function makeId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Centralized rule for any newly-created row's semanticGroupId.
+//   - `plain` rows are SECTION-LEVEL INDEPENDENT paragraphs by design — they
+//     never inherit any entry's gid. This fixes the "empty plain ends up
+//     attached to wrong entry on save" bug class. Plain rows render in their
+//     doc-order position regardless of gid (so a plain visually between two
+//     bullets still appears between them); the gid was only ever used by
+//     v3ToV2 to bucket bullets into entries, and that bucketing is what
+//     made plains drift on save.
+//   - All other row kinds (bullet, entry.title/meta, section.heading)
+//     inherit gid from the calling context as before.
+function gidForNewRow(newKind: string, inheritedGid: string | null): string | null {
+  if (newKind === 'plain') return null;
+  return inheritedGid;
+}
+
 interface RowCtx {
   index: number;
   pos: number; // pos before row
@@ -56,11 +71,12 @@ export function handleEnter(view: EditorView): boolean {
   const ctx = rowContext(view);
   if (!ctx) return false;
 
-  // Empty bullet -> downgrade to plain (no group change).
+  // Empty bullet -> downgrade to plain. New plain is independent (gid=null)
+  // even though the bullet had an entry's gid — see gidForNewRow doc.
   if (ctx.kind === 'bullet' && ctx.isEmpty) {
     const plain = state.schema.nodes.plain;
     const newNode = plain.create(
-      { id: ctx.node.attrs.id || makeId('r'), semanticGroupId: ctx.node.attrs.semanticGroupId ?? null },
+      { id: ctx.node.attrs.id || makeId('r'), semanticGroupId: gidForNewRow('plain', ctx.node.attrs.semanticGroupId ?? null) },
       null,
     );
     const tr = state.tr.replaceWith(ctx.pos, ctx.pos + ctx.node.nodeSize, newNode);
@@ -86,7 +102,8 @@ export function handleEnter(view: EditorView): boolean {
     const beforeText = ctx.node.textBetween(0, offsetInRow);
     const afterText = ctx.node.textBetween(offsetInRow, ctx.node.content.size);
     const before = beforeNodeType.create(ctx.node.attrs, beforeText ? state.schema.text(beforeText) : null);
-    const afterGroupId = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const inheritedAfterGid = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const afterGroupId = gidForNewRow(continuationKind, inheritedAfterGid);
     const after = afterNodeType.create(
       insertedAttrs(continuationKind, makeId('r'), afterGroupId),
       afterText ? state.schema.text(afterText) : null,
@@ -105,7 +122,8 @@ export function handleEnter(view: EditorView): boolean {
   if (ctx.atStart && !ctx.isEmpty) {
     const newKind = STRUCTURAL_ANCHOR_KINDS.has(ctx.kind) ? continuationKindFor(ctx) : ctx.kind;
     const newType = state.schema.nodes[newKind];
-    const newGroupId = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const inheritedGid = ctx.kind === 'section_heading' ? null : ctx.node.attrs.semanticGroupId ?? null;
+    const newGroupId = gidForNewRow(newKind, inheritedGid);
     const newNode = newType.create(insertedAttrs(newKind, makeId('r'), newGroupId), null);
     const tr = state.tr.insert(ctx.pos, newNode);
     tr.setSelection(TextSelection.create(tr.doc, ctx.pos + 1));
@@ -173,6 +191,10 @@ function insertBelow(view: EditorView, ctx: RowCtx, newKind: string): boolean {
   } else if (ctx.kind === 'plain') {
     semanticGroupId = (ctx.node.attrs.semanticGroupId as string | null) ?? null;
   }
+  // Final filter: regardless of how we computed semanticGroupId above, if the
+  // NEW row is a plain row, we strip its gid. plain rows are always
+  // independent — see gidForNewRow doc.
+  semanticGroupId = gidForNewRow(newKind, semanticGroupId);
 
   const newNode = newType.create({ id: makeId('r'), semanticGroupId }, null);
   const insertPos = ctx.pos + ctx.node.nodeSize;

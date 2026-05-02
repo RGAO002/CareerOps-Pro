@@ -125,12 +125,14 @@ export function SidebarPose() {
 
   // Translate the agent mask into per-orb weights for FluidCanvas.
   // count===3 → all on at baseline (1.0). count===2 → those two slightly
-  // emphasised (1.35). count===1 → that one prominently larger (1.7).
+  // emphasised (1.35). count===1 → keep it restrained; a single full-strength
+  // color wash makes the whole glass panel too red/green/blue.
   // count===0 is prevented by the store (auto-promotes to 'all').
   const orbWeights = (() => {
     const count = (agentMask.recruit ? 1 : 0) + (agentMask.hm ? 1 : 0) + (agentMask.coach ? 1 : 0);
-    const scale = count === 1 ? 1.7 : count === 2 ? 1.35 : 1.0;
+    const scale = count === 1 ? 1.05 : count === 2 ? 1.35 : 1.0;
     return {
+      count,
       recruit: agentMask.recruit ? scale : 0,
       hm: agentMask.hm ? scale : 0,
       coach: agentMask.coach ? scale : 0,
@@ -206,7 +208,7 @@ export function SidebarPose() {
       }}>
         <FluidCanvas
           className="absolute inset-0"
-          forceAnimate speed={3} brightness={2.4}
+          forceAnimate speed={3} brightness={orbWeights.count === 1 ? 1.85 : 2.4}
           recruitWeight={orbWeights.recruit}
           hmWeight={orbWeights.hm}
           coachWeight={orbWeights.coach}

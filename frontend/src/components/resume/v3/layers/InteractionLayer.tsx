@@ -112,32 +112,10 @@ export function InteractionLayer({
       data-edit-only
       style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}
     >
-      <AnimatePresence>
-        {dropIndicator && (
-          <motion.div
-            key="drop-indicator"
-            data-v3-drop-indicator
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            style={{
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              top: dropIndicator.cursorY,
-              height: 2,
-              // Terracotta accent (matches SectionHighlightLayer "operation
-              // focus" stripe). CSS var with fallback so non-themed contexts
-              // (tests / Storybook) still render visibly.
-              background: 'var(--resume-accent-terracotta, #c45a3f)',
-              boxShadow: '0 0 0 1px rgba(196, 90, 63, 0.25)',
-              pointerEvents: 'none',
-              zIndex: 9998,
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {/* Drop-position red line removed. Visual feedback for drop target
+          is now driven entirely by the row-translation animation in
+          ResumeCanvasV3 — siblings shift to make room and the dragged row
+          fades out at its source slot. */}
 
       <AnimatePresence>
         {isDragging && (

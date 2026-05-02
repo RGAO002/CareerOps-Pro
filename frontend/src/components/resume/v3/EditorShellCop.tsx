@@ -14,6 +14,8 @@
  * content is injected there separately, not by this shell.
  */
 import * as React from 'react';
+import { getBrandTier, isHighMatch } from '@/lib/brands/marquee';
+import { useAssistantStore } from '@/stores/assistant';
 
 /* ──────── tokens ──────── */
 const T = {
@@ -38,7 +40,7 @@ const T = {
 const BRAND = {
   name: 'Apple',
   role: 'Product Designer, Human Interface',
-  team: 'HI Design · Cupertino',
+  team: 'HI Design',
   location: 'Cupertino, CA · On-site',
   deadline: 'May 9',
   daysLeft: 9,
@@ -91,9 +93,39 @@ function AppleGlyph({ size = 22, color = '#fff' }: any) {
     </svg>
   );
 }
-function MatchDial({ score, size = 68 }: any) {
+function MatchDial({ score, size = 68, startDelay = 0, animate = true }: { score: number; size?: number; startDelay?: number; animate?: boolean }) {
+  // Animate from 0 → score with the SVG ring filling proportionally.
+  // Triggered after `startDelay` ms so it lines up with banner-drop-1
+  // appearing on screen.
+  //
+  // `animate=false` (low-match path): render the final score statically.
+  // Per spec — generic <80 stays fully static; marquee <80 also skips
+  // dial animation (the celebration is reserved for ≥80).
+  const [shown, setShown] = React.useState(animate ? 0 : score);
+  React.useEffect(() => {
+    if (!animate) {
+      setShown(score);
+      return;
+    }
+    let raf = 0;
+    const startAt = performance.now() + startDelay;
+    const duration = 1100;
+    const tick = (now: number) => {
+      if (now < startAt) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const t = Math.min(1, (now - startAt) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      setShown(Math.round(score * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [score, startDelay, animate]);
+
   const r = (size - 16) / 2, c = 2 * Math.PI * r;
-  const dash = (score / 100) * c;
+  const dash = (shown / 100) * c;
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
@@ -101,7 +133,7 @@ function MatchDial({ score, size = 68 }: any) {
         <circle cx={size / 2} cy={size / 2} r={r} stroke="#fff" strokeWidth="3" fill="none" strokeDasharray={`${dash} ${c}`} strokeLinecap="round"/>
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ font: '600 22px/1 "JetBrains Mono", monospace', color: '#fff', letterSpacing: '-0.02em' }}>{score}</span>
+        <span style={{ font: '600 22px/1 "JetBrains Mono", monospace', color: '#fff', letterSpacing: '-0.02em' }}>{shown}</span>
         <span style={{ font: '500 8px/1 "JetBrains Mono", monospace', color: '#fff', opacity: 0.55, letterSpacing: '0.16em', marginTop: 3 }}>MATCH</span>
       </div>
     </div>
@@ -144,7 +176,7 @@ function TacticalRail({ width, animate }: { width: number; animate: boolean }) {
           both the open and close trigger — only the arrow direction
           changes. */}
       <div style={{ height: '100%', overflowY: 'auto', width: 280 }}>
-        <div style={{ padding: '20px 18px 18px', borderBottom: `1px solid ${T.border}` }}>
+        <div className="cop-rail-drop cop-rail-drop-1" style={{ padding: '20px 18px 18px', borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             <div style={{ width: 38, height: 38, borderRadius: 9, background: T.fg, display: 'grid', placeItems: 'center' }}>
               <AppleGlyph size={18} color="#fff"/>
@@ -161,7 +193,7 @@ function TacticalRail({ width, animate }: { width: number; animate: boolean }) {
             </div>
           ))}
         </div>
-        <div style={{ padding: '18px 18px 16px', borderBottom: `1px solid ${T.border}` }}>
+        <div className="cop-rail-drop cop-rail-drop-2" style={{ padding: '18px 18px 16px', borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
             <MonoLabel color={T.fgS}>Scout Report</MonoLabel>
             <span style={{ font: '400 10.5px/1 "JetBrains Mono", monospace', color: T.fgM }}>{ATS.filter(k => k.hit).length}/{ATS.length} matched</span>
@@ -199,7 +231,7 @@ function TacticalRail({ width, animate }: { width: number; animate: boolean }) {
             ))}
           </div>
         </div>
-        <div style={{ padding: '18px 18px 28px' }}>
+        <div className="cop-rail-drop cop-rail-drop-3" style={{ padding: '18px 18px 28px' }}>
           <MonoLabel color={T.fgS} mb={12}>From the brief</MonoLabel>
           <p style={{ font: '400 italic 14px/1.55 "Instrument Serif", Georgia, serif', color: T.fg, margin: 0, paddingLeft: 14, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 0, top: 0, bottom: 4, width: 2, background: T.borderS }}/>
@@ -261,6 +293,9 @@ function AppleChrome() {
         inset 0 -1px 24px rgba(0, 0, 0, 0.55)
       `,
     }}>
+      {/* Reveal cover — sits on top of the banner content; animates
+          off to the right when [data-cop-ready] is set on the host. */}
+      <div className="cop-banner-cover" aria-hidden="true"/>
       {/* Two static ambient color washes — cool blue from upper-left,
           warm peach from upper-right. Establishes baseline glow. */}
       <div style={{ position: 'absolute', left: '4%', top: '-60%', width: 620, height: 620, pointerEvents: 'none',
@@ -321,9 +356,190 @@ function AppleChrome() {
         }
         .cop-banner-drift { animation: copBannerDrift 24s ease-in-out infinite; }
         .cop-banner-sheen { animation: copBannerSheen 22s ease-in-out infinite; animation-delay: 4s; }
-        .cop-glyph-breath { animation: copGlyphBreath 9s ease-in-out infinite; will-change: opacity, transform; }
+        /* Logo breath: marquee only — generic companies stay static. */
+        .cop-glyph-breath { will-change: opacity, transform; }
+        [data-banner-tier="marquee"] .cop-glyph-breath { animation: copGlyphBreath 9s ease-in-out infinite; }
+
+        /* ─── Choreographed entrance ─────────────────────────────
+           Phase A (0 → 900ms):   Hero Apple glyph at viewport center,
+                                    scaling + irregular wobble rotation.
+           Phase B (900 → 1500ms): Hero flies to banner's top-left logo
+                                    slot, scales down to final size.
+                                    Banner cover finishes sliding right
+                                    EXACTLY at 1500ms — banner unfurled.
+           Phase C (1500 → 2200ms): Hero fades out as banner-drop-1
+                                    brings in the real logo + identity
+                                    text. Then drop-2, drop-3 stagger.
+        */
+
+        /* Banner unfurl — cover slides off right via pure GPU transform. */
+        @keyframes copBannerCoverSlide {
+          from { transform: translateX(0); }
+          to   { transform: translateX(100%); }
+        }
+        .cop-banner-cover {
+          position: absolute; inset: 0;
+          background: oklch(0.962 0.004 70);
+          z-index: 20;
+          pointer-events: none;
+          transform: translateX(0);
+          will-change: transform;
+        }
+        /* Scroll unfurl ("画卷展开") — gated by tier:
+             marquee:           always plays
+             generic + high-match: plays (still feels earned)
+             generic + <80:        skipped (cover never animates → stays
+                                    in place blocking; we suppress the
+                                    cover element entirely below). */
+        [data-cop-ready][data-banner-tier="marquee"] .cop-banner-cover,
+        [data-cop-ready][data-banner-tier="generic"][data-high-match] .cop-banner-cover {
+          /* Cover starts moving once hero is mid-flight, finishes when
+             hero lands at logo position. */
+          animation: copBannerCoverSlide 900ms cubic-bezier(0.32, 0.72, 0, 1) 600ms both;
+        }
+        /* Generic + low-match: hide the cover entirely so the banner is
+           visible from frame 0 (only text drops animate). */
+        [data-banner-tier="generic"]:not([data-high-match]) .cop-banner-cover {
+          display: none;
+        }
+
+        /* Hero glyph — anchored inside host (position:absolute, host is
+           position:relative). Center coords use banner geometry:
+             top: 110px = banner half-height (220 / 2)
+             left: 50%  = banner center horizontally (banner spans host)
+           Final coords match where banner-drop-1's logo lands:
+             top: 36px = banner padding-top + flex centering offset
+             left: 28px = banner padding-left  */
+        @keyframes copHeroFlight {
+          0% {
+            top: 110px; left: 50%;
+            transform: translate(-50%, -50%) scale(7) rotate(-12deg);
+            opacity: 0;
+          }
+          8% { opacity: 1; }
+          22% {
+            top: 110px; left: 50%;
+            transform: translate(-50%, -50%) scale(8) rotate(9deg);
+          }
+          40% {
+            top: 110px; left: 50%;
+            transform: translate(-50%, -50%) scale(7.4) rotate(-5deg);
+          }
+          58% {
+            top: 110px; left: 50%;
+            transform: translate(-50%, -50%) scale(7.8) rotate(14deg);
+          }
+          /* Phase B: travel to logo slot. */
+          75% {
+            top: 110px; left: 50%;
+            transform: translate(-50%, -50%) scale(5.5) rotate(8deg);
+            opacity: 1;
+          }
+          93% {
+            top: 36px; left: 28px;
+            transform: translate(0, 0) scale(1.15) rotate(-3deg);
+            opacity: 1;
+          }
+          100% {
+            top: 36px; left: 28px;
+            transform: translate(0, 0) scale(1) rotate(0deg);
+            opacity: 0;
+          }
+        }
+        .cop-hero-glyph {
+          position: absolute;
+          top: 110px; left: 50%;
+          transform: translate(-50%, -50%) scale(7);
+          z-index: 50;
+          pointer-events: none;
+          opacity: 0;
+          filter: drop-shadow(0 12px 32px rgba(0,0,0,0.45));
+          will-change: transform, top, left, opacity;
+        }
+        /* Hero glyph flight — only the marquee + high-match quadrant.
+           Everyone else: hero element stays opacity 0 (its initial value)
+           and never animates; the real banner logo fades in normally. */
+        [data-cop-ready][data-banner-tier="marquee"][data-high-match] .cop-hero-glyph {
+          animation: copHeroFlight 1500ms cubic-bezier(0.65, 0, 0.25, 1) both;
+        }
+        /* Suppress hero entirely when not animating (no orphan element
+           lingering above the banner). */
+        [data-banner-tier="generic"] .cop-hero-glyph,
+        [data-banner-tier="marquee"]:not([data-high-match]) .cop-hero-glyph {
+          display: none;
+        }
+
+        /* Banner logo (real one in drop-1's row) — only fades in,
+           NEVER translates. Times the fade-in to the hero's fade-out so
+           the handoff is invisible: at the moment hero hits 0 opacity,
+           this one is already at 1. The sibling text in the same row
+           still translates (cop-banner-drop-1) — only the logo stays
+           still. */
+        @keyframes copBannerLogoFade {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .cop-banner-logo-fade {
+          opacity: 0;
+        }
+        [data-cop-ready] .cop-banner-logo-fade {
+          animation: copBannerLogoFade 200ms ease 1380ms forwards;
+        }
+
+        /* Rail sections drop in top-down after the banner text settles —
+           same drop keyframe, staggered delays. */
+        .cop-rail-drop {
+          opacity: 1;
+          will-change: transform, opacity;
+        }
+        [data-cop-ready] .cop-rail-drop {
+          animation: copBannerDrop 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        [data-cop-ready] .cop-rail-drop-1 { animation-delay: 1980ms; }
+        [data-cop-ready] .cop-rail-drop-2 { animation-delay: 2160ms; }
+        [data-cop-ready] .cop-rail-drop-3 { animation-delay: 2340ms; }
+
+        /* Content rows drop down onto the unfurled banner, staggered.
+           Dropped the filter:blur — blur during translation forced a
+           per-frame compositing pass that visibly stuttered on slower
+           machines. Pure transform + opacity stays on the GPU layer. */
+        @keyframes copBannerDrop {
+          from { transform: translateY(-20px); opacity: 0; }
+          to   { transform: translateY(0);     opacity: 1; }
+        }
+        /* Default: rows already at final state (no animation). Animation
+           runs only after [data-cop-ready] flips true so we don't compete
+           with first-paint for compositing budget. */
+        .cop-banner-drop {
+          opacity: 1;
+          will-change: transform, opacity;
+        }
+        [data-cop-ready] .cop-banner-drop {
+          animation: copBannerDrop 780ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        /* Drops start when the hero lands (1500ms) — drop-1 brings in
+           the real logo + identity, masking hero's fade-out. */
+        [data-cop-ready] .cop-banner-drop-1 { animation-delay: 1480ms; }
+        [data-cop-ready] .cop-banner-drop-2 { animation-delay: 1640ms; }
+        [data-cop-ready] .cop-banner-drop-3 { animation-delay: 1800ms; }
+
+        /* Generic + low-match: no cover, no hero, no breath, no dial —
+           text drops kick off almost immediately so the screen isn't
+           sitting on an empty banner for 1.5s. Rail also pulls in. */
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-banner-drop-1 { animation-delay: 200ms; }
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-banner-drop-2 { animation-delay: 360ms; }
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-banner-drop-3 { animation-delay: 520ms; }
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-rail-drop-1 { animation-delay: 700ms; }
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-rail-drop-2 { animation-delay: 880ms; }
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-rail-drop-3 { animation-delay: 1060ms; }
+        /* Logo-fade for generic+low: piggyback on drop-1 timing. */
+        [data-cop-ready][data-banner-tier="generic"]:not([data-high-match]) .cop-banner-logo-fade {
+          animation: copBannerLogoFade 200ms ease 100ms forwards;
+        }
+
         @media (prefers-reduced-motion: reduce) {
-          .cop-banner-drift, .cop-banner-sheen, .cop-glyph-breath { animation: none; }
+          .cop-banner-drift, .cop-banner-sheen, .cop-glyph-breath,
+          .cop-banner-reveal, .cop-banner-drop { animation: none; }
         }
       `}</style>
 
@@ -379,24 +595,32 @@ function AppleChrome() {
         position: 'absolute', top: 0, left: 0, right: 0,
         opacity: 'var(--exp-op, 1)' as unknown as number,
       }}>
+          {/* Logo is split out of the drop-1 animation: hero glyph hands off
+              to it via a pure opacity fade (no translateY), so it doesn't
+              flash/jolt with the rest of the row.  All other children of
+              row 1 still get the unified drop animation. */}
           <div style={{ position: 'relative', padding: '20px 28px 12px', display: 'flex', alignItems: 'center', gap: 22 }}>
-            <AppleGlyph size={32}/>
-            <div>
-              <MonoLabel color="rgba(255,255,255,0.45)" mb={8}>Now Applying</MonoLabel>
-              <div style={{ font: '300 26px/1.05 inherit', letterSpacing: '-0.025em', marginBottom: 4 }}>{BRAND.role}</div>
-              <div style={{ font: '400 12.5px/1 inherit', color: 'rgba(255,255,255,0.55)' }}>{BRAND.team} · {BRAND.location}</div>
+            <span className="cop-banner-logo-fade" style={{ display: 'inline-flex' }}>
+              <AppleGlyph size={32}/>
+            </span>
+            <div className="cop-banner-drop cop-banner-drop-1" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 22 }}>
+              <div>
+                <MonoLabel color="rgba(255,255,255,0.45)" mb={8}>Now Applying</MonoLabel>
+                <div style={{ font: '300 26px/1.05 inherit', letterSpacing: '-0.025em', marginBottom: 4 }}>{BRAND.role}</div>
+                <div style={{ font: '400 12.5px/1 inherit', color: 'rgba(255,255,255,0.55)' }}>{BRAND.team} · {BRAND.location}</div>
+              </div>
+              <div style={{ flex: 1 }}/>
+              <ChromeStat label="Deadline" v={BRAND.deadline} sub={`${BRAND.daysLeft}d left`} accent={BRAND.daysLeft <= 7 ? '#ff8c5a' : null}/>
+              <ChromeStat label="Comp" v={BRAND.salary.split(' + ')[0]} sub={`+ ${BRAND.salary.split(' + ')[1] || ''}`}/>
+              <ChromeStat label="Loop" v={BRAND.loop} sub={BRAND.recruiter}/>
+              <MatchDial score={BRAND.matchScore} startDelay={1480} animate={isHighMatch(BRAND.matchScore)}/>
             </div>
-            <div style={{ flex: 1 }}/>
-            <ChromeStat label="Deadline" v={BRAND.deadline} sub={`${BRAND.daysLeft}d left`} accent={BRAND.daysLeft <= 7 ? '#ff8c5a' : null}/>
-            <ChromeStat label="Comp" v={BRAND.salary.split(' + ')[0]} sub={`+ ${BRAND.salary.split(' + ')[1] || ''}`}/>
-            <ChromeStat label="Loop" v={BRAND.loop} sub={BRAND.recruiter}/>
-            <MatchDial score={BRAND.matchScore}/>
           </div>
-          <div style={{ position: 'relative', padding: '0 28px 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <div className="cop-banner-drop cop-banner-drop-2" style={{ position: 'relative', padding: '0 28px 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
             <span style={{ font: '300 italic 13px/1 "Times New Roman", serif', color: 'rgba(255,255,255,0.42)' }}>{BRAND.motto}</span>
             <span style={{ font: '500 10px/1 "JetBrains Mono", monospace', letterSpacing: '0.16em', color: 'rgba(255,255,255,0.30)', textTransform: 'uppercase' }}>Posted {BRAND.posted}</span>
           </div>
-          <div style={{ position: 'relative', padding: '12px 28px 14px', borderTop: '1px solid rgba(255,255,255,0.08)',
+          <div className="cop-banner-drop cop-banner-drop-3" style={{ position: 'relative', padding: '12px 28px 14px', borderTop: '1px solid rgba(255,255,255,0.08)',
                          display: 'flex', alignItems: 'center', gap: 14 }}>
             <span style={{ font: '500 9.5px/1 "JetBrains Mono", monospace', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.18em', textTransform: 'uppercase', flexShrink: 0 }}>Scout</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
@@ -499,8 +723,18 @@ function useShrinkScroll() {
   const scrollRef = React.useRef<HTMLElement>(null);
   const hostRef = React.useRef<HTMLDivElement>(null);
 
-  // Mutable state — refs only, no React state for animation values
-  const virtualRef = React.useRef(0);
+  // Mutable state — refs only, no React state for animation values.
+  //
+  // Smoothing model: wheel writes only to `virtualTargetRef`. A rAF loop
+  // lerps `virtualRef` (the displayed value) toward target with damping,
+  // and ALL CSS var writes are driven by `virtualRef`. This decouples
+  // banner motion from wheel-event rate, so:
+  //   - Mouse wheels (large, sparse deltas) feel eased instead of jumpy
+  //   - Trackpad swipes (small, dense deltas) coalesce per-frame instead
+  //     of writing CSS vars 6× per frame
+  //   - Stopping the wheel doesn't snap the banner — it glides to rest
+  const virtualRef = React.useRef(0);        // currently DISPLAYED value
+  const virtualTargetRef = React.useRef(0);  // value wheel is steering toward
   const pullRef = React.useRef(0);
   const lastWheelRef = React.useRef(0);
   const releasingRef = React.useRef(false);
@@ -528,36 +762,62 @@ function useShrinkScroll() {
       s.setProperty('--glyph-scale', String(1 - progress * 0.52));
     };
 
+    // Damping factor for lerp. 0.22 ≈ ~6-frame settle (60fps) — fast enough
+    // to feel responsive to wheel input, slow enough to mask wheel jitter.
+    const LERP = 0.22;
+    // Below this gap we snap to target so we don't sit forever doing
+    // sub-pixel lerps that don't visibly change anything.
+    const SNAP_EPSILON = 0.25;
+
     const ensureRaf = () => {
       if (rafActive.current) return;
       rafActive.current = true;
       const tick = () => {
         const now = performance.now();
+        let needNext = false;
+
+        // 1) Banner virtual: lerp current → target. This is what makes
+        //    every wheel-driven motion feel buttery instead of stepped.
+        const diff = virtualTargetRef.current - virtualRef.current;
+        if (Math.abs(diff) > SNAP_EPSILON) {
+          virtualRef.current += diff * LERP;
+          needNext = true;
+        } else if (virtualRef.current !== virtualTargetRef.current) {
+          virtualRef.current = virtualTargetRef.current;
+        }
+
+        // 2) Rubber-band release for over-scroll-up bounce (unchanged).
         if (releasingRef.current) {
           const t = (now - releaseStartRef.current) / RELEASE_DURATION;
           if (t >= 1) {
             pullRef.current = 0;
-            writeVars();
             releasingRef.current = false;
-            rafActive.current = false;
-            return;
+          } else {
+            const ease = easeOutCubic(t);
+            pullRef.current = releaseFromRef.current * (1 - ease);
+            needNext = true;
           }
-          const ease = easeOutCubic(t);
-          pullRef.current = releaseFromRef.current * (1 - ease);
-          writeVars();
         } else if (now - lastWheelRef.current > WHEEL_END_DELAY && pullRef.current > 0) {
           releasingRef.current = true;
           releaseStartRef.current = now;
           releaseFromRef.current = pullRef.current;
+          needNext = true;
         }
-        rafRef.current = requestAnimationFrame(tick);
+
+        writeVars();
+        if (needNext) {
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          rafActive.current = false;
+        }
       };
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    const setV = (next: number) => {
-      virtualRef.current = next;
-      writeVars();
+    // Wheel writes to TARGET only. Display follows via rAF lerp above.
+    const setVTarget = (next: number) => {
+      virtualTargetRef.current = next;
+      ensureRaf();
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -565,36 +825,35 @@ function useShrinkScroll() {
       const atTop = el.scrollTop <= 0;
 
       // BOUNCE
-      if (atTop && dy < 0 && virtualRef.current === 0) {
+      if (atTop && dy < 0 && virtualTargetRef.current === 0 && virtualRef.current < 1) {
         e.preventDefault();
         releasingRef.current = false;
         const tension = 1 + (pullRef.current / MAX_STRETCH) * PULL_RESISTANCE;
         const contribution = (Math.abs(dy) * PULL_GAIN) / tension;
         pullRef.current = Math.min(MAX_STRETCH, pullRef.current + contribution);
-        writeVars();
         lastWheelRef.current = performance.now();
         ensureRaf();
         return;
       }
 
       // PHASE 1: scrolling down, banner less than half-collapsed AND resume at top.
-      if (dy > 0 && virtualRef.current < VIRTUAL_LOCK && atTop) {
+      if (dy > 0 && virtualTargetRef.current < VIRTUAL_LOCK && atTop) {
         e.preventDefault();
-        setV(Math.min(SHRINK_RANGE, virtualRef.current + dy));
+        setVTarget(Math.min(SHRINK_RANGE, virtualTargetRef.current + dy));
         return;
       }
 
-      // REVERSE: scrolling up while at scrollTop=0 and virtual > 0 — re-expand banner.
-      if (dy < 0 && atTop && virtualRef.current > 0) {
+      // REVERSE: scrolling up while at scrollTop=0 and target > 0 — re-expand banner.
+      if (dy < 0 && atTop && virtualTargetRef.current > 0) {
         e.preventDefault();
-        setV(Math.max(0, virtualRef.current + dy));
+        setVTarget(Math.max(0, virtualTargetRef.current + dy));
         return;
       }
 
       // PHASE 2: wheel passes through to real scroll. Also continue collapsing
       // banner toward full so the transition feels continuous.
-      if (dy > 0 && virtualRef.current < SHRINK_RANGE) {
-        setV(Math.min(SHRINK_RANGE, virtualRef.current + dy));
+      if (dy > 0 && virtualTargetRef.current < SHRINK_RANGE) {
+        setVTarget(Math.min(SHRINK_RANGE, virtualTargetRef.current + dy));
       }
     };
 
@@ -612,6 +871,26 @@ function useShrinkScroll() {
 
 export function EditorShellCop({ formatToolbar, children, title, saveStatus, pageCount, onExport }: EditorShellCopProps) {
   const [railCollapsed, setRailCollapsed] = React.useState(false);
+  // Delay entrance animations until the page has finished its initial paint
+  // (font load + React hydration + TipTap mount). Without this gate, the
+  // animation runs in parallel with heavy first-paint work and visibly
+  // stutters on hard reloads. bfcache nav (back/forward) doesn't have this
+  // contention so feels smooth — proves the timing is the issue.
+  const [ready, setReady] = React.useState(false);
+  React.useEffect(() => {
+    let raf1 = 0, raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        // Tiny extra wait so font swap (FOUT) lands before motion starts.
+        const t = setTimeout(() => setReady(true), 80);
+        return () => clearTimeout(t);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
   // dragX is the live pill x-offset (in editor coords) while dragging.
   // Allowed range during drag: [-PILL_W, RAIL_MAX - 18] — pill can be
   // dragged ~one pill width past the editor's left edge (visually tucked
@@ -643,6 +922,15 @@ export function EditorShellCop({ formatToolbar, children, title, saveStatus, pag
 
   const { scrollRef, hostRef } = useShrinkScroll();
   const indicatorRef = React.useRef<HTMLDivElement>(null);
+
+  // When AI sidebar is open, the resume page card translates -180px (see
+  // EditorPageV3.tsx ~line 523). The format toolbar lives in the chrome
+  // ABOVE the page card, so it doesn't move automatically — we mirror the
+  // exact same translate on its center column so the formatting buttons
+  // stay visually centered over the resume paper, not over the (now wider
+  // on the right) toolbar row.
+  const aiSidebarOpen = useAssistantStore((s) => s.pose === 'sidebar');
+  const toolbarShift = aiSidebarOpen ? 'translateX(-180px)' : 'translateX(0)';
 
   // Custom scroll indicator — tracks `scrollRef`'s scrollTop, resizes the
   // pill, lets the user drag it. Visibility is now LOCAL to this scroll
@@ -744,12 +1032,22 @@ export function EditorShellCop({ formatToolbar, children, title, saveStatus, pag
   return (
     <>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+Pro:ital,wght@0,400;0,600;1,400&display=swap"/>
-      <div ref={hostRef} style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100%',
+      <div ref={hostRef}
+           data-cop-ready={ready ? '' : undefined}
+           data-banner-tier={getBrandTier(BRAND.name)}
+           data-high-match={isHighMatch(BRAND.matchScore) ? '' : undefined}
+           style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100%',
                      background: T.bg, color: T.fg, fontFamily: 'Inter, system-ui, sans-serif',
-                     // overflow visible (was hidden) so the drag pill can extend
-                     // leftward past EditorShellCop's left edge into the menu
-                     // sidebar's range when fully closing the rail.
-                     overflow: 'visible' }}>
+                     overflow: 'visible', position: 'relative' }}>
+        {/* Hero Apple glyph — appears at viewport center, scales + rotates,
+            then flies into the banner's top-left logo slot just as the
+            unfurl finishes. After landing it fades out and the banner's
+            actual logo (in cop-banner-drop-1) takes over. position: fixed
+            so it ignores host's flex layout but stays under the same
+            data-cop-ready gate. */}
+        <div className="cop-hero-glyph" aria-hidden>
+          <AppleGlyph size={32} color="#fff"/>
+        </div>
         <AppleChrome/>
         <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
           {/* Single sliding pill — unified expand/collapse trigger.
@@ -865,35 +1163,60 @@ export function EditorShellCop({ formatToolbar, children, title, saveStatus, pag
           </button>
           <TacticalRail width={railWidth} animate={!isDragging}/>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            {/* Toolbar row — centered buttons + status pieces moved over from V3TopBar */}
+            {/* Toolbar row — 3-column grid (1fr / auto / 1fr). Center column
+                hugs its content; left/right columns claim equal flex weight,
+                so the format buttons in the middle are TRULY centered in the
+                visible row, regardless of how wide the title or status group
+                are.  (Was a flex layout that put the toolbar in flex:1 between
+                two unequal flex-shrink:0 spans, which biased it leftward.) */}
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '0 18px',
+              display: 'grid',
+              gridTemplateColumns: '1fr auto 1fr',
+              alignItems: 'center',
+              padding: '0 18px',
               height: 44, flexShrink: 0,
               borderBottom: `1px solid ${T.border}`, background: T.paper,
             }}>
-              <span style={{ font: '500 12px/1 Inter', color: T.fgM, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+              {/* Left column — title, left-aligned */}
+              <span style={{
+                font: '500 12px/1 Inter', color: T.fgM,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                justifySelf: 'start', minWidth: 0,
+              }}>
                 {title || 'Untitled Resume'}
               </span>
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 0 }}>
+              {/* Center column — format toolbar, centered. Shifts left in
+                  lockstep with the resume page card when the AI sidebar
+                  opens so the buttons stay over the paper, not over the
+                  blank gutter that opens up to the right of the toolbar. */}
+              <div style={{
+                justifySelf: 'center', display: 'flex', alignItems: 'center',
+                transform: toolbarShift,
+                transition: 'transform 0.95s cubic-bezier(0.5, 0.5, 0.5, 1)',
+                willChange: 'transform',
+              }}>
                 {formatToolbar}
               </div>
-              <span style={{ font: '500 10.5px/1 Inter', color: savedColor, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                <i style={{ width: 5, height: 5, borderRadius: 999, background: 'currentColor' }}/>
-                {savedLabel}
-              </span>
-              <span style={{ font: '500 10.5px/1 "JetBrains Mono", monospace', color: T.fgM, letterSpacing: '0.04em', flexShrink: 0 }}>
-                {pageCount} {pageCount === 1 ? 'PAGE' : 'PAGES'}
-              </span>
-              <button onClick={onExport} style={{
-                height: 28, padding: '0 12px', borderRadius: 6, background: 'rgb(20,20,20)',
-                font: '500 12px/1 Inter', color: '#fff', border: 0, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-              }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                Export PDF
-              </button>
+              {/* Right column — status + export, right-aligned */}
+              <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ font: '500 10.5px/1 Inter', color: savedColor, display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                  <i style={{ width: 5, height: 5, borderRadius: 999, background: 'currentColor' }}/>
+                  {savedLabel}
+                </span>
+                <span style={{ font: '500 10.5px/1 "JetBrains Mono", monospace', color: T.fgM, letterSpacing: '0.04em', flexShrink: 0 }}>
+                  {pageCount} {pageCount === 1 ? 'PAGE' : 'PAGES'}
+                </span>
+                <button onClick={onExport} style={{
+                  height: 28, padding: '0 12px', borderRadius: 6, background: 'rgb(20,20,20)',
+                  font: '500 12px/1 Inter', color: '#fff', border: 0, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                  </svg>
+                  Export PDF
+                </button>
+              </div>
             </div>
             {/* Wrapper for custom scroll indicator overlay — main fills it,
                 indicator div is absolutely positioned over the right edge. */}
