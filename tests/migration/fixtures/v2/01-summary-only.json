@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "id": "fixture-summary-only",
+  "title": "Summary Only",
+  "template_id": "minimal-single-column",
+  "header": {
+    "id": "h1",
+    "name": "Alice Tester",
+    "contact_lines": [
+      {"type": "text", "value": "alice@example.com"}
+    ]
+  },
+  "sections": [
+    {
+      "id": "sec-summary",
+      "role": "summary",
+      "heading": "Summary",
+      "entries": [
+        {
+          "id": "ent-1",
+          "title": "",
+          "meta": "",
+          "bullets": [
+            {
+              "id": "b1",
+              "kind": "bullet",
+              "content": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Software engineer with 5 years."}]}]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  }
+}

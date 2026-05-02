@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "id": "fixture-spacers",
+  "title": "Spacers",
+  "template_id": "minimal-single-column",
+  "header": {"id": "h4", "name": "Dan", "contact_lines": []},
+  "sections": [
+    {
+      "id": "sec-exp",
+      "role": "experience",
+      "heading": "Experience",
+      "entries": [
+        {
+          "id": "ent-1",
+          "title": "Engineer @ X",
+          "meta": "2024",
+          "bullets": [
+            {"id": "b1", "kind": "bullet", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Real bullet"}]}]}},
+            {"id": "b2", "kind": "plain", "content": {"type": "doc", "content": [{"type": "paragraph", "content": []}]}},
+            {"id": "b3", "kind": "plain", "content": {"type": "doc", "content": [{"type": "paragraph", "content": []}]}},
+            {"id": "b4", "kind": "bullet", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Another bullet"}]}]}}
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
+}
