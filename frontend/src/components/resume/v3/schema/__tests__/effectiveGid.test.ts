@@ -60,4 +60,49 @@ describe('effectiveGid', () => {
     };
     expect(effectiveGid(doc, 0)).toBeNull();
   });
+
+  it('typed plain chain: each inherits transitively', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
+        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }] } },
+        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second' }] }] } },
+        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'third' }] }] } },
+      ],
+      groups: [{ id: 'gSum' as GroupId, kind: 'section', role: 'summary' }],
+    };
+    expect(effectiveGid(doc, 1)).toBe('gSum');
+    expect(effectiveGid(doc, 2)).toBe('gSum');
+    expect(effectiveGid(doc, 3)).toBe('gSum');
+  });
+
+  it('cascade: empty plain in middle of chain breaks inheritance for downstream typed plains', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
+        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }] } },
+        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
+        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'after empty' }] }] } },
+      ],
+      groups: [{ id: 'gSum' as GroupId, kind: 'section', role: 'summary' }],
+    };
+    expect(effectiveGid(doc, 1)).toBe('gSum');
+    expect(effectiveGid(doc, 2)).toBeNull();
+    // r4 looks at r3 (empty → null) → r4 inherits null
+    expect(effectiveGid(doc, 3)).toBeNull();
+  });
+
+  it('typed plain after header.contact (which has no gid) → null', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'r1' as RowId, kind: 'header.contact', content: { type: 'text', value: 'a@b.c' } },
+        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'orphan body' }] }] } },
+      ],
+      groups: [],
+    };
+    expect(effectiveGid(doc, 1)).toBeNull();
+  });
 });
