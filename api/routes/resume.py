@@ -91,27 +91,35 @@ async def get_resume(resume_id: str) -> dict:
 
 @router.put("/{resume_id}")
 async def upsert_resume(resume_id: str, payload: dict) -> dict:
-    """Create or replace a resume with a v2-shaped doc. URL id always wins.
+    """Create or replace a resume with a v3-shaped doc. URL id always wins.
 
-    The body must declare ``schema_version: 2`` — the route does not accept
-    legacy v1 payloads. The frontend (post-Task 38) always writes v2.
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 4 + § 7.3.
+
+    The body must declare schema_version: 3. v2 payloads are rejected — the
+    frontend writes v3 directly after Phase 3.
     """
     _ensure_valid_id(resume_id)
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Body must be a JSON object")
-    if payload.get("schema_version") != 2:
+    if payload.get("schema_version") != 3:
         raise HTTPException(
             status_code=400,
-            detail="Only v2 resumes accepted (schema_version must be 2)",
+            detail="Only v3 resumes accepted (schema_version must be 3)",
         )
     payload["id"] = resume_id
     metadata = payload.get("metadata")
     if not isinstance(metadata, dict):
         raise HTTPException(status_code=400, detail="metadata is required")
-    # Refresh updated_at server-side to a current ISO-8601 timestamp.
+    # Pydantic validate the full doc.
+    from api.models.resume_v3 import ResumeV3
+    try:
+        ResumeV3.model_validate(payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"v3 validation failed: {e}")
+    # Refresh updated_at server-side.
     from datetime import datetime, timezone
     metadata["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    resume_store.save_v2_dict(payload)
+    resume_store.save_v3_dict(payload)
     return payload
 
 
