@@ -5,7 +5,7 @@ Mirrors the frontend TypeScript types in
 plus a separate semantic groups list — see spec
 `docs/superpowers/specs/2026-05-02-v3-only-resume-design.md`.
 """
-from typing import Any, List, Literal, Optional, Union
+from typing import Annotated, Any, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,10 @@ class ContactItemLink(BaseModel):
     url: str
 
 
-ContactItem = Union[ContactItemText, ContactItemLink]
+ContactItem = Annotated[
+    Union[ContactItemText, ContactItemLink],
+    Field(discriminator="type"),
+]
 
 
 # RichText is a ProseMirror doc JSON. We keep it loose (`dict[str, Any]`)
@@ -96,14 +99,17 @@ class BulletRow(BaseModel):
     semanticGroupId: Optional[str] = None
 
 
-ResumeRow = Union[
-    HeaderNameRow,
-    HeaderContactRow,
-    SectionHeadingRow,
-    EntryTitleRow,
-    EntryMetaRow,
-    PlainRow,
-    BulletRow,
+ResumeRow = Annotated[
+    Union[
+        HeaderNameRow,
+        HeaderContactRow,
+        SectionHeadingRow,
+        EntryTitleRow,
+        EntryMetaRow,
+        PlainRow,
+        BulletRow,
+    ],
+    Field(discriminator="kind"),
 ]
 
 
@@ -128,7 +134,10 @@ class EntryGroup(BaseModel):
     parentSectionGroupId: Optional[str] = None
 
 
-SemanticGroup = Union[SectionGroup, EntryGroup]
+SemanticGroup = Annotated[
+    Union[SectionGroup, EntryGroup],
+    Field(discriminator="kind"),
+]
 
 
 # ---------- top-level doc ----------
