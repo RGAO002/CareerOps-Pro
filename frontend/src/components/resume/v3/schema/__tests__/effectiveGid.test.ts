@@ -20,189 +20,275 @@ function makeStateFromV3(doc: ResumeDocV3): EditorState {
   return EditorState.create({ schema, doc: pmDoc });
 }
 
-describe('effectiveGid', () => {
-  it('empty plain row returns null', () => {
+// ─── Test fixtures ─────────────────────────────────────────────────────────
+const sec = (id: string, gid: string, label: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'section.heading',
+  semanticGroupId: gid as GroupId,
+  content: { text: label },
+});
+const entryTitle = (id: string, gid: string, label: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'entry.title',
+  semanticGroupId: gid as GroupId,
+  content: { text: label },
+});
+const bullet = (id: string, gid: string, text: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'bullet',
+  semanticGroupId: gid as GroupId,
+  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+});
+const typedPlain = (id: string, text: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'plain',
+  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+});
+const emptyPlain = (id: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'plain',
+  content: { type: 'doc', content: [] },
+});
+const headerName = (id: string, name: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'header.name', content: { text: name },
+});
+const headerContact = (id: string, val: string): ResumeDocV3['rows'][number] => ({
+  id: id as RowId, kind: 'header.contact',
+  content: { type: 'text', value: val },
+});
+
+const sectionGroup = (id: string): ResumeDocV3['groups'][number] => ({
+  id: id as GroupId, kind: 'section', role: 'projects',
+});
+const entryGroup = (id: string, parent?: string): ResumeDocV3['groups'][number] => ({
+  id: id as GroupId, kind: 'entry',
+  ...(parent ? { parentSectionGroupId: parent as GroupId } : {}),
+});
+
+describe('effectiveGid — Rule 1 (containment)', () => {
+  it('typed plain inside an entry block → entry gid (no matter how many blanks above)', () => {
+    // Reproduces user-reported bug: "123" sits one blank line below the
+    // last bullet of an entry. Previously broke attribution; now Rule 1
+    // says "you're inside entry-CareerOps's block, so you belong to it".
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'plain', content: { type: 'doc', content: [] } },
+        sec('rs', 'gS', 'PROJECTS'),
+        entryTitle('rt', 'gE', 'CareerOps Pro'),
+        bullet('rb1', 'gE', 'first'),
+        bullet('rb2', 'gE', 'second'),
+        emptyPlain('re'),
+        typedPlain('rp', '123'),
       ],
-      groups: [],
+      groups: [sectionGroup('gS'), entryGroup('gE', 'gS')],
     };
-    expect(effectiveGid(doc, 0)).toBeNull();
+    expect(effectiveGid(doc, 5)).toBe('gE');
   });
 
-  it('typed plain after section.heading inherits section gid', () => {
+  it('empty plain inside an entry block also gets the entry gid', () => {
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hello' }] }] } },
+        sec('rs', 'gS', 'A'),
+        entryTitle('rt', 'gE', 'T'),
+        bullet('rb', 'gE', 'b'),
+        emptyPlain('re'),
       ],
-      groups: [{ id: 'gSum' as GroupId, kind: 'section', role: 'summary' }],
+      groups: [sectionGroup('gS'), entryGroup('gE', 'gS')],
     };
-    expect(effectiveGid(doc, 1)).toBe('gSum');
+    expect(effectiveGid(doc, 3)).toBe('gE');
   });
 
-  it('typed plain after entry.title inherits entry gid', () => {
+  it('typed plain between two entries inside one section → preceding entry', () => {
+    // Per the simple boundary model: an entry block extends from its
+    // entry.title to the NEXT entry.title (or section.heading). A plain
+    // between the two entries belongs to the FIRST.
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'entry.title', semanticGroupId: 'gE' as GroupId, content: { text: 'Engineer' } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'body' }] }] } },
+        sec('rs', 'gS', 'A'),
+        entryTitle('rt1', 'gE1', 'E1'),
+        bullet('rb1', 'gE1', 'b1'),
+        emptyPlain('re1'),
+        typedPlain('rp', 'between'),
+        emptyPlain('re2'),
+        entryTitle('rt2', 'gE2', 'E2'),
+        bullet('rb2', 'gE2', 'b2'),
       ],
-      groups: [{ id: 'gE' as GroupId, kind: 'entry' }],
+      groups: [sectionGroup('gS'), entryGroup('gE1', 'gS'), entryGroup('gE2', 'gS')],
     };
-    expect(effectiveGid(doc, 1)).toBe('gE');
+    expect(effectiveGid(doc, 4)).toBe('gE1');
   });
 
-  it('typed plain after bullet inherits entry gid (bullet has entry gid)', () => {
+  it('plain in section but BEFORE any entry.title → section gid', () => {
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'shipped X' }] }] } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'detail' }] }] } },
+        sec('rs', 'gS', 'Summary'),
+        typedPlain('rp', 'lead-in'),
+        emptyPlain('re'),
+        typedPlain('rp2', 'still summary'),
       ],
-      groups: [{ id: 'gE' as GroupId, kind: 'entry' }],
+      groups: [sectionGroup('gS')],
     };
-    expect(effectiveGid(doc, 1)).toBe('gE');
+    expect(effectiveGid(doc, 1)).toBe('gS');
+    expect(effectiveGid(doc, 2)).toBe('gS');
+    expect(effectiveGid(doc, 3)).toBe('gS');
   });
 
-  it('typed plain at doc start has no predecessor → null', () => {
+  it('typed plain at tail of section (no closing section.heading) → still in last entry', () => {
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'orphan' }] }] } },
+        sec('rs', 'gS', 'A'),
+        entryTitle('rt', 'gE', 'T'),
+        bullet('rb', 'gE', 'b'),
+        emptyPlain('re1'),
+        emptyPlain('re2'),
+        emptyPlain('re3'),
+        typedPlain('rp', 'tail'),
       ],
-      groups: [],
+      groups: [sectionGroup('gS'), entryGroup('gE', 'gS')],
     };
-    expect(effectiveGid(doc, 0)).toBeNull();
+    expect(effectiveGid(doc, 6)).toBe('gE');
   });
 
-  it('typed plain chain: each inherits transitively', () => {
+  it('typed plain right after one section.heading and before next → section gid', () => {
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }] } },
-        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second' }] }] } },
-        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'third' }] }] } },
+        sec('rs1', 'gS1', 'A'),
+        entryTitle('rt', 'gE', 'T'),
+        bullet('rb', 'gE', 'b'),
+        sec('rs2', 'gS2', 'B'),
+        typedPlain('rp', 'belongs to B'),
       ],
-      groups: [{ id: 'gSum' as GroupId, kind: 'section', role: 'summary' }],
+      groups: [sectionGroup('gS1'), sectionGroup('gS2'), entryGroup('gE', 'gS1')],
     };
-    expect(effectiveGid(doc, 1)).toBe('gSum');
-    expect(effectiveGid(doc, 2)).toBe('gSum');
-    expect(effectiveGid(doc, 3)).toBe('gSum');
+    expect(effectiveGid(doc, 4)).toBe('gS2');
   });
+});
 
-  it('typed plain across ONE empty row still inherits (lookback window covers i-2)', () => {
-    // Revised rule (spec § 2.2): typed plain looks up to 2 rows above for
-    // the first non-null effectiveGid. So a single empty row between an
-    // entry/section anchor and a typed plain does NOT break inheritance.
-    // This addresses the visual surprise where "123" sat right under an
-    // entry but, due to a single intervening blank line, was excluded
-    // from the entry's scope.
+describe('effectiveGid — Rule 2 (adjacency fallback for header area)', () => {
+  it('typed plain right after header.name → null (header.name has no gid)', () => {
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
-        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }] } },
-        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
-        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'after empty' }] }] } },
-      ],
-      groups: [{ id: 'gSum' as GroupId, kind: 'section', role: 'summary' }],
-    };
-    expect(effectiveGid(doc, 1)).toBe('gSum');
-    expect(effectiveGid(doc, 2)).toBeNull();
-    // r4 looks at r3 (empty → null), then r2 (typed → gSum) → r4 inherits gSum.
-    expect(effectiveGid(doc, 3)).toBe('gSum');
-  });
-
-  it('two empty rows above a typed plain → independent (out of lookback window)', () => {
-    // Two consecutive empties are treated as an intentional separator.
-    // The typed plain after them is independent (null effectiveGid),
-    // letting users explicitly start a new free-form paragraph.
-    const doc: ResumeDocV3 = {
-      schemaVersion: 3,
-      rows: [
-        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
-        { id: 'r2' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] } },
-        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
-        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
-        { id: 'r5' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'standalone' }] }] } },
-      ],
-      groups: [
-        { id: 'gSum' as GroupId, kind: 'section', role: 'summary' },
-        { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gSum' as GroupId },
-      ],
-    };
-    // r5 looks at r4 (empty → null) and r3 (empty → null) → window exhausted → null.
-    expect(effectiveGid(doc, 4)).toBeNull();
-  });
-
-  it('PM-state variant: typed plain after entry bullets inherits entry gid (Bug A)', () => {
-    // Reproduces the user-reported bug: an entry with title + 2 bullets,
-    // followed by a typed plain row "123". The typed plain has no stored
-    // semanticGroupId (the schema attribute is always null on plain), but
-    // its EFFECTIVE gid must resolve to the entry's gid via the
-    // empty/typed-plain inheritance rule. The hover/scope consumer in
-    // ResumeCanvasV3 reads effective gids from PM state — this test pins
-    // that the helper returns the entry gid for the typed plain.
-    const doc: ResumeDocV3 = {
-      schemaVersion: 3,
-      rows: [
-        { id: 'rh' as RowId, kind: 'section.heading', semanticGroupId: 'gS' as GroupId, content: { text: 'PROJECTS' } },
-        { id: 'rt' as RowId, kind: 'entry.title', semanticGroupId: 'gE' as GroupId, content: { text: 'CareerOps Pro' } },
-        { id: 'rb1' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'first bullet' }] }] } },
-        { id: 'rb2' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'second bullet' }] }] } },
-        // Typed plain row "123" — no stored gid; should inherit gE via the
-        // chain bullet→bullet→typed plain.
-        { id: 'rp' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '123' }] }] } },
-      ],
-      groups: [
-        { id: 'gS' as GroupId, kind: 'section', role: 'projects' },
-        { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId },
-      ],
-    };
-    const state = makeStateFromV3(doc);
-    const eff = effectiveGidsFromState(state);
-    // Indices: 0 heading, 1 title, 2 bullet, 3 bullet, 4 typed plain.
-    expect(eff[0]).toBe('gS');
-    expect(eff[1]).toBe('gE');
-    expect(eff[2]).toBe('gE');
-    expect(eff[3]).toBe('gE');
-    // The fix: typed plain "123" inherits the entry's gid.
-    expect(eff[4]).toBe('gE');
-  });
-
-  it('PM-state variant: empty plain row has effective gid null', () => {
-    const doc: ResumeDocV3 = {
-      schemaVersion: 3,
-      rows: [
-        { id: 'rh' as RowId, kind: 'section.heading', semanticGroupId: 'gS' as GroupId, content: { text: 'A' } },
-        { id: 'rt' as RowId, kind: 'entry.title', semanticGroupId: 'gE' as GroupId, content: { text: 'Title' } },
-        { id: 'rb' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] } },
-        { id: 'rp' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
-      ],
-      groups: [
-        { id: 'gS' as GroupId, kind: 'section', role: 'projects' },
-        { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId },
-      ],
-    };
-    const state = makeStateFromV3(doc);
-    const eff = effectiveGidsFromState(state);
-    expect(eff[3]).toBeNull();
-  });
-
-  it('typed plain after header.contact (which has no gid) → null', () => {
-    const doc: ResumeDocV3 = {
-      schemaVersion: 3,
-      rows: [
-        { id: 'r1' as RowId, kind: 'header.contact', content: { type: 'text', value: 'a@b.c' } },
-        { id: 'r2' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'orphan body' }] }] } },
+        headerName('rh', 'Alice'),
+        typedPlain('rp', 'subtitle'),
       ],
       groups: [],
     };
     expect(effectiveGid(doc, 1)).toBeNull();
+  });
+
+  it('typed plain after header.contact → null', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        headerContact('rc', 'a@b.c'),
+        typedPlain('rp', 'orphan'),
+      ],
+      groups: [],
+    };
+    expect(effectiveGid(doc, 1)).toBeNull();
+  });
+
+  it('typed plain at doc start → null', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [typedPlain('rp', 'lone')],
+      groups: [],
+    };
+    expect(effectiveGid(doc, 0)).toBeNull();
+  });
+
+  it('empty plain at doc start → null', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [emptyPlain('rp')],
+      groups: [],
+    };
+    expect(effectiveGid(doc, 0)).toBeNull();
+  });
+
+  it('header area: typed plain right after typed plain that has null gid → null', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        headerName('rh', 'Alice'),
+        typedPlain('rp1', 'a'),
+        typedPlain('rp2', 'b'),
+      ],
+      groups: [],
+    };
+    // p1 → header.name has no gid → null. p2 → recurses on p1 → null.
+    expect(effectiveGid(doc, 1)).toBeNull();
+    expect(effectiveGid(doc, 2)).toBeNull();
+  });
+
+  it('header area: empty plain breaks adjacency for next typed plain', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        headerName('rh', 'Alice'),
+        emptyPlain('re'),
+        typedPlain('rp', 'after empty'),
+      ],
+      groups: [],
+    };
+    expect(effectiveGid(doc, 2)).toBeNull();
+  });
+});
+
+describe('effectiveGidsFromState — PM-state mirror of containment rule', () => {
+  it('typed plain after entry bullets inherits entry gid (Bug A — primary case)', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        sec('rs', 'gS', 'PROJECTS'),
+        entryTitle('rt', 'gE', 'CareerOps Pro'),
+        bullet('rb1', 'gE', 'first'),
+        bullet('rb2', 'gE', 'second'),
+        typedPlain('rp', '123'),
+      ],
+      groups: [sectionGroup('gS'), entryGroup('gE', 'gS')],
+    };
+    const eff = effectiveGidsFromState(makeStateFromV3(doc));
+    expect(eff[0]).toBe('gS');
+    expect(eff[1]).toBe('gE');
+    expect(eff[2]).toBe('gE');
+    expect(eff[3]).toBe('gE');
+    expect(eff[4]).toBe('gE');
+  });
+
+  it('typed plain N blanks below last bullet of entry → still entry gid', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        sec('rs', 'gS', 'A'),
+        entryTitle('rt', 'gE', 'T'),
+        bullet('rb', 'gE', 'b'),
+        emptyPlain('re1'),
+        emptyPlain('re2'),
+        emptyPlain('re3'),
+        typedPlain('rp', 'tail text'),
+      ],
+      groups: [sectionGroup('gS'), entryGroup('gE', 'gS')],
+    };
+    const eff = effectiveGidsFromState(makeStateFromV3(doc));
+    expect(eff[6]).toBe('gE');
+    // Empties inside the entry block also attribute (any plain inside block).
+    expect(eff[3]).toBe('gE');
+    expect(eff[4]).toBe('gE');
+    expect(eff[5]).toBe('gE');
+  });
+
+  it('typed plain in section pre-entry area → section gid', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        sec('rs', 'gS', 'Summary'),
+        typedPlain('rp', 'lead'),
+      ],
+      groups: [sectionGroup('gS')],
+    };
+    const eff = effectiveGidsFromState(makeStateFromV3(doc));
+    expect(eff[1]).toBe('gS');
   });
 });

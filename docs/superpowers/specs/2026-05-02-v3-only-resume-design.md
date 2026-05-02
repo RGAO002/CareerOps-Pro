@@ -38,31 +38,41 @@ This works for plain rows that sit BETWEEN entries (independent paragraphs). It 
 
 **Proposed:** Lazy gid computation. The schema attribute `semanticGroupId` on `plain` rows is unused (always omitted). At every consumption point, compute `effectiveGid(doc, rowIndex)`.
 
-**Revision (2026-05-02):** the original "typed plain inherits previous row's effectiveGid (recursive)" rule produced a visual surprise — a typed plain sitting one blank line below an entry would show as outside the entry's scope, because the intervening empty plain returned `null` and stopped the recursion. The new rule uses a bounded upward lookback so a single blank line of breathing room doesn't break attribution, while two consecutive blanks remain a clear "I want this paragraph standalone" signal.
+**Revision history:**
+- v1 ("recursive lookback"): typed plain inherits previous row's effectiveGid; empty plain breaks the chain. **Rejected** — a typed plain one blank below an entry's last bullet appeared outside the entry's scope.
+- v2 ("bounded 2-row lookback"): scan up to 2 rows; first non-null wins. **Rejected** — N>2 blanks still broke attribution; the rule was sensitive to how many blanks the user happened to type.
+- **v3 (current — containment model)**: a plain row is part of an entry/section if it sits **inside that block**, regardless of how many blank lines precede or follow it within the block. Both empty and typed plains use this rule.
 
 ```
-TYPED_PLAIN_LOOKBACK = 2
-
 effectiveGid(doc, i):
   row = doc.row[i]
-  if row.kind != 'plain':           return row.semanticGroupId   (stored attribute)
-  if row.content is empty:          return null                  ("empty = independent")
-  // Typed plain: scan up to TYPED_PLAIN_LOOKBACK rows above for an anchor.
-  for step in 1..TYPED_PLAIN_LOOKBACK:
-    j = i - step
-    if j < 0: break
-    gid = effectiveGid(doc, j)
-    if gid: return gid
-  return null
+  if row.kind != 'plain':
+    return row.semanticGroupId   (stored attribute, may be null)
+
+  // Rule 1: containment (applies to EMPTY and TYPED plains alike).
+  // An entry block extends from its entry.title row up to (but not
+  // including) the next entry.title or section.heading or doc end.
+  // A section block extends from its section.heading row up to the
+  // next section.heading or doc end.
+  if i lies inside some entry block:    return that entry's gid
+  if i lies inside some section block:  return that section's gid
+
+  // Rule 2: adjacency fallback — only reached for plains in the
+  // header area (no preceding section.heading). Mirrors the old v1
+  // rule, but its blast radius is now tiny.
+  if row is empty plain:                return null
+  prev = doc.row[i - 1]
+  if prev is non-plain:                 return prev.semanticGroupId or null
+  if prev is empty plain:               return null   (intervening blank breaks contact)
+  if prev is typed plain:               return effectiveGid(doc, i - 1)
 ```
 
 Properties:
-- Empty plain rows: always `null` (independent, doc-order rendered)
-- Typed plain rows: inherit the nearest non-null effectiveGid found within 2 rows above (`i-1` then `i-2`)
-- One empty plain between an anchor and a typed plain does NOT break attribution (the lookback covers `i-2`)
-- Two consecutive empties above a typed plain DO make it independent (lookback exhausted)
-- Deleting all text from a plain row flips it back to `null` (and may cascade if downstream typed plains relied on it through the lookback window)
-- No PM transaction overhead (computed on read, not stored)
+- Plain rows inside an entry block (between an `entry.title` and the next `entry.title`/`section.heading`/EOF) — empty OR typed — get that entry's gid.
+- Plain rows inside a section but before its first entry get the section's gid.
+- Plain rows in the header area (no section yet) follow the old adjacency rule: typed inherits if the immediately previous row is non-empty content; empties and gaps stay null.
+- Boundary anchors are `entry.title` and `section.heading` only. Bullets and other rows do NOT define new boundaries (they're consumed by whichever entry/section block they fall in). Orphan bullets — bullets with a stored gid pointing to an entry group that has no `entry.title` row — are not visible to Rule 1; plain rows around them attribute to the surrounding entry block by position. Acceptable degenerate case.
+- No PM transaction overhead (computed on read, not stored).
 
 ## 3. Out of Scope (explicit non-changes)
 
