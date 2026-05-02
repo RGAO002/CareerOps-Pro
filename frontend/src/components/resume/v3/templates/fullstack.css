@@ -23,6 +23,72 @@
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* ─── EXPERIMENTAL: two-column sidebar layout ──────────────────────────────
+ *
+ * Targets the ProseMirror content root (.tiptap / .ProseMirror) inside a
+ * canvas root that has the template-fullstack class. We turn it into a
+ * CSS Grid with 36% sidebar / 64% main, then place each .row by its
+ * data-template-col attribute (set by applyTemplateColumns.ts on every
+ * editor transaction).
+ *
+ * Caveats (acknowledged):
+ *   • PaginationPlugin breaks. It assumes vertical accumulation in a
+ *     single column and inserts page-break decorations at row boundaries.
+ *     With grid layout, rows flow into two columns independently; the
+ *     plugin's break decisions no longer correspond to visual breaks.
+ *     For a single-page resume this still mostly works; multi-page will
+ *     produce visual artifacts.
+ *   • Visual order ≠ source order. Skills section can appear in the
+ *     left sidebar even if its source row is later in the doc — CSS
+ *     Grid places by attribute, not by source position.
+ *   • This is a "see what it looks like" sketch, not production layout.
+ */
+.template-fullstack .tiptap,
+.template-fullstack .ProseMirror {
+  display: grid !important;
+  grid-template-columns: 36% 64%;
+  /* Backgrounds: sidebar gets the soft gray Fullstack uses */
+  background:
+    linear-gradient(to right, #f9fafb 0, #f9fafb 36%, white 36%, white 100%);
+  align-content: start;
+  /* Inner padding kept similar to Fullstack 2rem on each side, but
+     we let each row's column-specific padding handle horizontal spacing. */
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.template-fullstack .row[data-template-col='sidebar'] {
+  grid-column: 1;
+  padding-left: 32px;
+  padding-right: 24px;
+}
+.template-fullstack .row[data-template-col='main'] {
+  grid-column: 2;
+  padding-left: 32px;
+  padding-right: 32px;
+}
+/* Untagged rows (e.g. before the effect runs once) default to main column */
+.template-fullstack .row:not([data-template-col]) {
+  grid-column: 2;
+  padding-left: 32px;
+  padding-right: 32px;
+}
+
+/* Sidebar uses smaller / muted typography for Skills entries */
+.template-fullstack .row[data-template-col='sidebar'] .row-content {
+  color: #4b5563;
+}
+.template-fullstack .row[data-template-col='sidebar'].row-section-heading .row-content {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #1f2937;
+}
+.template-fullstack .row[data-template-col='sidebar'].row-section-heading {
+  border-bottom: 1px solid #d1d5db;
+  padding-top: 16px;
+}
+
 /* ─── Default body text color + size for the resume content area ────── */
 .template-fullstack .row-content {
   color: #374151;

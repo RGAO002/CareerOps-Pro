@@ -45,6 +45,7 @@ import type { Schema } from '@tiptap/pm/model';
 import { FontSize } from '../v2/extensions/FontSize';
 import './EditorPageV3.css';
 import './templates/fullstack.css';
+import { applyTemplateColumns } from './templates/applyTemplateColumns';
 
 // Restrict the doc node to the v3 row group only — same pattern used by
 // integration tests + V3TestHarness. Print mode is structurally identical.
@@ -198,6 +199,17 @@ export function PrintCanvasV3({ doc, templateId = 'minimal' }: PrintCanvasV3Prop
     requestAnimationFrame(tryEmit);
     return () => { if (cleanup) cleanup(); };
   }, [editor]);
+
+  // Tag rows for the Fullstack two-column template (sidebar / main).
+  // No-op for minimal template (clears the attribute).
+  React.useEffect(() => {
+    if (!editor) return;
+    const enabled = templateId === 'fullstack';
+    const tag = () => applyTemplateColumns(editor.view, enabled);
+    tag();
+    editor.on('transaction', tag);
+    return () => { editor.off('transaction', tag); };
+  }, [editor, templateId]);
 
   // data-paginated pipeline.
   React.useEffect(() => {
