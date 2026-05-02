@@ -6,15 +6,21 @@ import { type ResumeFileV3, v3FileToEditorBody } from './schema/v3Envelope';
 
 interface Props {
   resume: ResumeFileV3;
-  /** Template selected at print time. Provided by the server component
-   * (which reads `?template=` from searchParams) so SSR + client first
-   * render agree — no hydration mismatch and no PaginationPlugin
-   * "measure with minimal then re-flow with fullstack" race that would
-   * leave the PDF using stale geometry. */
-  templateId?: 'minimal' | 'fullstack';
 }
 
-export function PrintCanvasClientV3({ resume, templateId = 'minimal' }: Props) {
+function readTemplateFromUrl(): 'minimal' | 'fullstack' {
+  if (typeof window === 'undefined') return 'minimal';
+  try {
+    const t = new URL(window.location.href).searchParams.get('template');
+    if (t === 'fullstack') return 'fullstack';
+  } catch {}
+  return 'minimal';
+}
+
+export function PrintCanvasClientV3({ resume }: Props) {
   const doc = React.useMemo(() => v3FileToEditorBody(resume), [resume]);
+  // Template is passed via URL query (?template=fullstack) so the editor's
+  // selected template propagates to headless-Chromium PDF generation.
+  const [templateId] = React.useState<'minimal' | 'fullstack'>(readTemplateFromUrl);
   return <PrintCanvasV3 doc={doc} templateId={templateId} />;
 }

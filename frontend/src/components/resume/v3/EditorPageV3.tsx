@@ -61,7 +61,6 @@ import { MarkdownInputRules } from '../v2/extensions/MarkdownInputRules';
 
 import './EditorPageV3.css';
 import './templates/fullstack.css';
-import { applyTemplateColumns } from './templates/applyTemplateColumns';
 
 export type TemplateId = 'minimal' | 'fullstack';
 const TEMPLATE_CLASS: Record<TemplateId, string | null> = {
@@ -269,21 +268,6 @@ export function EditorPageV3({ initialResume }: Props) {
       editor.off('transaction', updatePageCount);
     };
   }, [editor]);
-
-  // Tag rows with data-template-col so the Fullstack two-column CSS can
-  // assign sidebar vs main column. Re-runs on every transaction (rows
-  // can be added/removed/role changed). The util is a no-op when
-  // !enabled — it just clears the attribute.
-  React.useEffect(() => {
-    if (!editor) return;
-    const enabled = templateId === 'fullstack';
-    const tag = () => applyTemplateColumns(editor.view, enabled);
-    tag();
-    editor.on('transaction', tag);
-    return () => {
-      editor.off('transaction', tag);
-    };
-  }, [editor, templateId]);
 
   /**
    * Build the next v3 API envelope from current editor state, plus the
