@@ -73,17 +73,20 @@ async def list_resumes() -> dict:
 
 @router.get("/{resume_id}")
 async def get_resume(resume_id: str) -> dict:
-    """Get one resume in full, in v2-shaped form.
+    """Get one resume in full, v3-shaped.
 
-    v1 docs on disk are auto-migrated through ``resume_store.load_dict``;
-    the on-disk file is NOT rewritten — only an explicit save (CLI migration
-    or PUT) flips the on-disk version.
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 4.
+
+    Files on disk MUST be schema_version: 3 (migration runs offline before
+    deployment — see § 7). Older formats are rejected with 500 to surface
+    the inconsistency rather than silently auto-migrate.
     """
     _ensure_valid_id(resume_id)
     try:
-        return resume_store.load_dict(resume_id)
+        raw = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
+    return raw
 
 
 @router.put("/{resume_id}")

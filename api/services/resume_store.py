@@ -157,6 +157,24 @@ def save_v3_dict(resume_v3: dict) -> None:
     )
 
 
+def load_v3_dict(resume_id: str) -> dict:
+    """Load a resume as a v3-shaped dict. Refuses to migrate older formats —
+    see spec § 7 (offline migration is the only supported v2→v3 path).
+    """
+    _validate_id(resume_id)
+    path = _path_for(resume_id)
+    if not path.exists():
+        raise FileNotFoundError(f"Resume {resume_id} not found")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    version = raw.get("schema_version")
+    if version != 3:
+        raise ValueError(
+            f"Resume {resume_id} on disk has schema_version={version}, "
+            f"expected 3. Run scripts/run-migration.sh before deploying."
+        )
+    return raw
+
+
 def list_all_dict() -> list[dict]:
     """List all resumes as v2-shaped dicts, newest updated_at first.
 
