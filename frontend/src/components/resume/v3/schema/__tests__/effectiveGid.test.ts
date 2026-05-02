@@ -95,7 +95,13 @@ describe('effectiveGid', () => {
     expect(effectiveGid(doc, 3)).toBe('gSum');
   });
 
-  it('cascade: empty plain in middle of chain breaks inheritance for downstream typed plains', () => {
+  it('typed plain across ONE empty row still inherits (lookback window covers i-2)', () => {
+    // Revised rule (spec § 2.2): typed plain looks up to 2 rows above for
+    // the first non-null effectiveGid. So a single empty row between an
+    // entry/section anchor and a typed plain does NOT break inheritance.
+    // This addresses the visual surprise where "123" sat right under an
+    // entry but, due to a single intervening blank line, was excluded
+    // from the entry's scope.
     const doc: ResumeDocV3 = {
       schemaVersion: 3,
       rows: [
@@ -108,8 +114,30 @@ describe('effectiveGid', () => {
     };
     expect(effectiveGid(doc, 1)).toBe('gSum');
     expect(effectiveGid(doc, 2)).toBeNull();
-    // r4 looks at r3 (empty → null) → r4 inherits null
-    expect(effectiveGid(doc, 3)).toBeNull();
+    // r4 looks at r3 (empty → null), then r2 (typed → gSum) → r4 inherits gSum.
+    expect(effectiveGid(doc, 3)).toBe('gSum');
+  });
+
+  it('two empty rows above a typed plain → independent (out of lookback window)', () => {
+    // Two consecutive empties are treated as an intentional separator.
+    // The typed plain after them is independent (null effectiveGid),
+    // letting users explicitly start a new free-form paragraph.
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'r1' as RowId, kind: 'section.heading', semanticGroupId: 'gSum' as GroupId, content: { text: 'Summary' } },
+        { id: 'r2' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] } },
+        { id: 'r3' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
+        { id: 'r4' as RowId, kind: 'plain', content: { type: 'doc', content: [] } }, // empty
+        { id: 'r5' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'standalone' }] }] } },
+      ],
+      groups: [
+        { id: 'gSum' as GroupId, kind: 'section', role: 'summary' },
+        { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gSum' as GroupId },
+      ],
+    };
+    // r5 looks at r4 (empty → null) and r3 (empty → null) → window exhausted → null.
+    expect(effectiveGid(doc, 4)).toBeNull();
   });
 
   it('PM-state variant: typed plain after entry bullets inherits entry gid (Bug A)', () => {

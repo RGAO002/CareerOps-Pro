@@ -5,15 +5,22 @@ import type { ResumeDocV3, GroupId } from './types';
 /**
  * Compute the effective semanticGroupId for a row at the given index.
  *
- * Rules (spec § 2.2):
+ * Rules (spec § 2.2, revised 2026-05-02):
  *  - Non-plain rows: return their stored semanticGroupId attribute
  *  - Empty plain rows: null (independent)
- *  - Typed plain rows: inherit the previous row's effectiveGid (recursive)
- *  - Doc start (i === 0) typed plain: null
+ *  - Typed plain rows: look at most TYPED_PLAIN_LOOKBACK rows above
+ *    (i-1, i-2). Inherit the first non-null effectiveGid found in that
+ *    window. If both are null (or out of bounds), null (independent).
+ *  - Doc start (i < lookback) typed plain: null when not enough rows above.
  *
- * O(n) worst case (a chain of typed plains all the way back to the start).
- * For typical resume docs (<200 rows) this is acceptable on every read.
+ * Why bounded lookback: an empty plain represents an intentional visual
+ * gap. Two empties in a row signal "I want this paragraph standalone";
+ * one empty is just minor breathing room before continuing the same
+ * entry. The 2-row window captures that intent without forcing users to
+ * understand the "empty plain breaks attribution" rule.
  */
+const TYPED_PLAIN_LOOKBACK = 2;
+
 export function effectiveGid(doc: ResumeDocV3, i: number): GroupId | null {
   if (i < 0 || i >= doc.rows.length) return null;
   const row = doc.rows[i];
@@ -22,9 +29,14 @@ export function effectiveGid(doc: ResumeDocV3, i: number): GroupId | null {
   }
   // Empty plain: independent.
   if (isPlainRowEmpty(row)) return null;
-  // Typed plain: inherit from previous row.
-  if (i === 0) return null;
-  return effectiveGid(doc, i - 1);
+  // Typed plain: scan up to TYPED_PLAIN_LOOKBACK rows above for an anchor.
+  for (let step = 1; step <= TYPED_PLAIN_LOOKBACK; step++) {
+    const j = i - step;
+    if (j < 0) break;
+    const gid = effectiveGid(doc, j);
+    if (gid) return gid;
+  }
+  return null;
 }
 
 function isPlainRowEmpty(row: { content: { content?: unknown[] } }): boolean {
@@ -74,9 +86,13 @@ function effectiveGidForNode(
   }
   // Empty plain (no inline children) → independent.
   if (node.content.size === 0) return null;
-  // Typed plain → inherit from previous row.
-  if (i === 0) return null;
-  const prev = memo[i - 1];
-  // Memo is filled left-to-right, so memo[i-1] is already resolved.
-  return prev;
+  // Typed plain → scan up to TYPED_PLAIN_LOOKBACK rows above. Memo is
+  // filled left-to-right, so memo[i-step] is already resolved for step ≥ 1.
+  for (let step = 1; step <= TYPED_PLAIN_LOOKBACK; step++) {
+    const j = i - step;
+    if (j < 0) break;
+    const prev = memo[j];
+    if (prev) return prev;
+  }
+  return null;
 }

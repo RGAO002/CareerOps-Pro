@@ -36,21 +36,32 @@ Two lossy translation seams (`v2Adapter.ts`) cause:
 
 This works for plain rows that sit BETWEEN entries (independent paragraphs). It fails for plain rows that sit INSIDE an entry's body (between two bullets) — they get extracted from the entry on serialization and orphan above/below it on reload, breaking visual position.
 
-**Proposed:** Lazy gid computation. The schema attribute `semanticGroupId` on `plain` rows is unused (always omitted). At every consumption point, compute `effectiveGid(doc, rowIndex)`:
+**Proposed:** Lazy gid computation. The schema attribute `semanticGroupId` on `plain` rows is unused (always omitted). At every consumption point, compute `effectiveGid(doc, rowIndex)`.
+
+**Revision (2026-05-02):** the original "typed plain inherits previous row's effectiveGid (recursive)" rule produced a visual surprise — a typed plain sitting one blank line below an entry would show as outside the entry's scope, because the intervening empty plain returned `null` and stopped the recursion. The new rule uses a bounded upward lookback so a single blank line of breathing room doesn't break attribution, while two consecutive blanks remain a clear "I want this paragraph standalone" signal.
 
 ```
+TYPED_PLAIN_LOOKBACK = 2
+
 effectiveGid(doc, i):
   row = doc.row[i]
   if row.kind != 'plain':           return row.semanticGroupId   (stored attribute)
   if row.content is empty:          return null                  ("empty = independent")
-  prev = doc.row[i-1]   (or null if i==0)
-  return effectiveGid(doc, i-1)     (recurse — typed plain inherits from previous row)
+  // Typed plain: scan up to TYPED_PLAIN_LOOKBACK rows above for an anchor.
+  for step in 1..TYPED_PLAIN_LOOKBACK:
+    j = i - step
+    if j < 0: break
+    gid = effectiveGid(doc, j)
+    if gid: return gid
+  return null
 ```
 
 Properties:
 - Empty plain rows: always `null` (independent, doc-order rendered)
-- Typed plain rows: inherit the previous row's effective gid (transparent — they extend the surrounding context)
-- Deleting all text from a plain row flips it back to `null` (and cascades downstream typed plains)
+- Typed plain rows: inherit the nearest non-null effectiveGid found within 2 rows above (`i-1` then `i-2`)
+- One empty plain between an anchor and a typed plain does NOT break attribution (the lookback covers `i-2`)
+- Two consecutive empties above a typed plain DO make it independent (lookback exhausted)
+- Deleting all text from a plain row flips it back to `null` (and may cascade if downstream typed plains relied on it through the lookback window)
 - No PM transaction overhead (computed on read, not stored)
 
 ## 3. Out of Scope (explicit non-changes)
