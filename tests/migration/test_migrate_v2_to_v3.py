@@ -14,9 +14,17 @@ from api.models.resume_v3 import ResumeV3
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "v2"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Resolve npx at import time so subprocess can always find it, even when
+# Resolve npx at import time, preferring Node >=20 so tsx works even when
 # pytest is launched without nvm in PATH (e.g. from an IDE or CI shell).
-_NPX = shutil.which("npx") or "/Users/fred/.nvm/versions/node/v20.20.0/bin/npx"
+_NODE20_BIN = Path("/Users/fred/.nvm/versions/node/v20.20.0/bin")
+if _NODE20_BIN.exists():
+    _NPX = str(_NODE20_BIN / "npx")
+    import os as _os
+    _NODE20_PATH_ENV = str(_NODE20_BIN) + _os.pathsep + _os.environ.get("PATH", "")
+else:
+    _NPX = shutil.which("npx") or "npx"
+    import os as _os
+    _NODE20_PATH_ENV = _os.environ.get("PATH", "")
 
 
 def test_migration_succeeds_for_all_golden_fixtures(tmp_path):
@@ -34,6 +42,7 @@ def test_migration_succeeds_for_all_golden_fixtures(tmp_path):
         cwd=REPO_ROOT / "scripts",
         capture_output=True,
         text=True,
+        env={**_os.environ, "PATH": _NODE20_PATH_ENV},
     )
     assert result.returncode == 0, f"Migration failed: stdout={result.stdout}\nstderr={result.stderr}"
 
@@ -62,6 +71,7 @@ def test_summary_fixture_preserves_summary_text(tmp_path):
         [_NPX, "tsx", str(REPO_ROOT / "scripts" / "migrate-v2-to-v3.ts"), str(src), str(out)],
         cwd=REPO_ROOT / "scripts",
         check=True,
+        env={**_os.environ, "PATH": _NODE20_PATH_ENV},
     )
 
     doc = json.loads((out / "01-summary-only.json").read_text(encoding="utf-8"))
@@ -87,6 +97,7 @@ def test_plain_rows_have_no_stored_gid(tmp_path):
         [_NPX, "tsx", str(REPO_ROOT / "scripts" / "migrate-v2-to-v3.ts"), str(src), str(out)],
         cwd=REPO_ROOT / "scripts",
         check=True,
+        env={**_os.environ, "PATH": _NODE20_PATH_ENV},
     )
 
     doc = json.loads((out / "04-empty-bullets-spacers.json").read_text(encoding="utf-8"))

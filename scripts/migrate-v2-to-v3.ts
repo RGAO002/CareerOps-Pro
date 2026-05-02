@@ -283,6 +283,17 @@ function v2ToV3(v2: ResumeDocV2): ResumeDocV3 {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Metadata helpers
+// ──────────────────────────────────────────────────────────────────────
+
+function normalizeMetadataField(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return new Date(v).toISOString();
+  // Missing or unexpected type — produce current ISO timestamp as a safe default.
+  return new Date().toISOString();
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Migration entry point
 // ──────────────────────────────────────────────────────────────────────
 
@@ -323,6 +334,14 @@ function migrate(source: string, dest: string): { ok: number; failed: string[] }
       });
 
       // Wrap with v3 doc envelope.
+      const sourceMetadata = (raw.metadata ?? {}) as Record<string, unknown>;
+      const metadata = {
+        created_at: normalizeMetadataField(sourceMetadata.created_at),
+        updated_at: normalizeMetadataField(sourceMetadata.updated_at),
+        ...(sourceMetadata.target_company ? { target_company: sourceMetadata.target_company } : {}),
+        ...(sourceMetadata.target_role ? { target_role: sourceMetadata.target_role } : {}),
+        ...(sourceMetadata.parent_id ? { parent_id: sourceMetadata.parent_id } : {}),
+      };
       const v3Doc = {
         schema_version: 3,
         id: raw.id,
@@ -330,7 +349,7 @@ function migrate(source: string, dest: string): { ok: number; failed: string[] }
         template_id: raw.template_id ?? 'minimal-single-column',
         rows: v3.rows,
         groups: v3.groups,
-        metadata: raw.metadata ?? { created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+        metadata,
         ...(raw.alignments ? { alignments: raw.alignments } : {}),
       };
 
