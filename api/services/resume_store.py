@@ -176,24 +176,36 @@ def load_v3_dict(resume_id: str) -> dict:
 
 
 def list_all_dict() -> list[dict]:
-    """List all resumes as v2-shaped dicts, newest updated_at first.
+    """List all resumes as dicts, newest updated_at first.
 
-    Both v1 and v2 files on disk are returned in v2 shape (v1 is auto-migrated
-    via load_dict). Files that fail to load are silently skipped.
+    v3 files are returned as-is (load_v3_dict). v1/v2 files are returned via
+    the legacy load_dict path (auto-migrated to v2). Files that fail to load
+    are silently skipped.
 
-    Sort key prefers v2 ``metadata.updated_at`` (ISO string) when present and
-    falls back to v1 ``updated_at`` (epoch ms) — comparable lexically for ISO
-    strings; falls back gracefully when types mix.
+    After the offline v2→v3 migration (Task 2.5), all files on disk will be
+    v3 and the legacy branch becomes unreachable, but it's kept for safety
+    during the transition window.
+
+    Sort key uses ``metadata.updated_at`` (ISO string) when present, falling
+    back to legacy ``updated_at`` (epoch ms).
     """
     _ensure_dir()
     resumes: list[dict] = []
     for f in RESUMES_DIR.glob("*.json"):
         if f.parent != RESUMES_DIR:
             continue  # skip snapshots subdir
+        # Skip rolling-backup files written by save_v3_dict.
+        if f.name.endswith(".backup.json"):
+            continue
         try:
             rid = f.stem
             _validate_id(rid)
-            resumes.append(load_dict(rid))
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            version = raw.get("schema_version", 1)
+            if version == 3:
+                resumes.append(raw)
+            else:
+                resumes.append(load_dict(rid))
         except (json.JSONDecodeError, ValueError, FileNotFoundError):
             continue
 

@@ -69,3 +69,22 @@ def test_put_creates_backup_on_overwrite(client, tmp_path):
     client.put("/api/resume/test-backup", json=second)
     backup = json.loads((tmp_path / "test-backup.backup.json").read_text(encoding="utf-8"))
     assert backup["title"] == "v1"
+
+
+def test_create_blank_returns_v3(client):
+    r = client.post("/api/resume/", json={"title": "Blank"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["schema_version"] == 3
+    assert "rows" in body
+    assert "groups" in body
+
+
+def test_variant_returns_v3(client, tmp_path):
+    base = {**V3_DOC, "id": "base"}
+    client.put("/api/resume/base", json=base)
+    r = client.post("/api/resume/base/variant", json={"title": "Variant"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["schema_version"] == 3
+    assert body["id"] != "base"
