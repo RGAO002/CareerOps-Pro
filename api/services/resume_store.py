@@ -13,8 +13,6 @@ from api.models.resume import Resume
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 RESUMES_DIR = PROJECT_ROOT / "saved_sessions" / "resumes"
-# Internal alias — monkeypatchable in tests without breaking the public name.
-_RESUMES_DIR = RESUMES_DIR
 
 
 _VALID_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -31,13 +29,13 @@ def _validate_id(resume_id: str) -> None:
 
 
 def _ensure_dir() -> None:
-    _RESUMES_DIR.mkdir(parents=True, exist_ok=True)
-    (_RESUMES_DIR / "snapshots").mkdir(exist_ok=True)
+    RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+    (RESUMES_DIR / "snapshots").mkdir(exist_ok=True)
 
 
 def _path_for(resume_id: str) -> Path:
     _validate_id(resume_id)
-    return _RESUMES_DIR / f"{resume_id}.json"
+    return RESUMES_DIR / f"{resume_id}.json"
 
 
 def save(resume: Resume) -> None:
@@ -145,7 +143,7 @@ def save_v3_dict(resume_v3: dict) -> None:
     _validate_id(resume_v3["id"])
     _ensure_dir()
     main_path = _path_for(resume_v3["id"])
-    backup_path = _RESUMES_DIR / f"{resume_v3['id']}.backup.json"
+    backup_path = RESUMES_DIR / f"{resume_v3['id']}.backup.json"
     if main_path.exists():
         try:
             backup_path.write_text(main_path.read_text(encoding="utf-8"), encoding="utf-8")

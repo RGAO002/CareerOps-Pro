@@ -11,7 +11,7 @@ from api.services import resume_store
 @pytest.fixture
 def isolated_store(tmp_path, monkeypatch):
     """Point resume_store at a temp directory."""
-    monkeypatch.setattr(resume_store, "_RESUMES_DIR", tmp_path)
+    monkeypatch.setattr(resume_store, "RESUMES_DIR", tmp_path)
     return tmp_path
 
 
