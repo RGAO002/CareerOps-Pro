@@ -60,6 +60,13 @@ import { FontSize } from '../v2/extensions/FontSize';
 import { MarkdownInputRules } from '../v2/extensions/MarkdownInputRules';
 
 import './EditorPageV3.css';
+import './templates/fullstack.css';
+
+export type TemplateId = 'minimal' | 'fullstack';
+const TEMPLATE_CLASS: Record<TemplateId, string | null> = {
+  minimal: null,
+  fullstack: 'template-fullstack',
+};
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 const SAVE_DEBOUNCE_MS = 1200;
@@ -166,6 +173,21 @@ export function EditorPageV3({ initialResume }: Props) {
   const latestSnapshotRef = React.useRef('');
   const [saveStatus, setSaveStatus] = React.useState<SaveStatus>('idle');
   const [pageCount, setPageCount] = React.useState(1);
+  // Template selection — visual-only CSS class swap on the canvas root.
+  // Persists in localStorage per-resume so reload remembers user's choice;
+  // not yet stored in the v3 doc (would need a schema field).
+  const [templateId, setTemplateId] = React.useState<TemplateId>('minimal');
+  React.useEffect(() => {
+    try {
+      const k = `v3-template:${initialResume.id}`;
+      const v = window.localStorage.getItem(k);
+      if (v === 'fullstack' || v === 'minimal') setTemplateId(v);
+    } catch {}
+  }, [initialResume.id]);
+  const setTemplate = React.useCallback((next: TemplateId) => {
+    setTemplateId(next);
+    try { window.localStorage.setItem(`v3-template:${initialResume.id}`, next); } catch {}
+  }, [initialResume.id]);
 
   const editor = useEditor({
     extensions: [
@@ -364,11 +386,12 @@ export function EditorPageV3({ initialResume }: Props) {
     try {
       await flushSave();
       const origin = encodeURIComponent(window.location.origin);
-      window.location.href = `${API_BASE}/api/resume/${encodeURIComponent(initialResume.id)}/pdf?frontend_base=${origin}`;
+      const tpl = templateId !== 'minimal' ? `&template=${templateId}` : '';
+      window.location.href = `${API_BASE}/api/resume/${encodeURIComponent(initialResume.id)}/pdf?frontend_base=${origin}${tpl}`;
     } catch (err) {
       alert(`Couldn't save before export: ${(err as Error).message}`);
     }
-  }, [flushSave, initialResume.id]);
+  }, [flushSave, initialResume.id, templateId]);
 
   // AppShell unused on v3 editor — full-bleed shell below mirrors AppShell's
   // structure (Sidebar + TopBar + Assistant + PreferencesDrawer) but drops
@@ -384,6 +407,8 @@ export function EditorPageV3({ initialResume }: Props) {
     pageCount={pageCount}
     onExport={exportPdf}
     editor={editor}
+    templateId={templateId}
+    onTemplateChange={setTemplate}
   />;
 }
 
@@ -393,6 +418,8 @@ function EditorPageV3FullBleed(props: {
   targetRole: string | null;
   saveStatus: SaveStatus; pageCount: number; onExport: () => void;
   editor: Editor | null;
+  templateId: TemplateId;
+  onTemplateChange: (next: TemplateId) => void;
 }) {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const { editor } = props;
@@ -496,6 +523,8 @@ function EditorPageV3FullBleed(props: {
           saveStatus={props.saveStatus}
           pageCount={props.pageCount}
           onExport={props.onExport}
+          templateId={props.templateId}
+          onTemplateChange={props.onTemplateChange}
           formatToolbar={editor ? <FormatToolbarV3 editor={editor} /> : null}
         >
           {/* Override v3-editor-stage's defaults:
@@ -520,7 +549,7 @@ function EditorPageV3FullBleed(props: {
             }}
           >
             <div
-              className="v3-editor-canvas-root"
+              className={`v3-editor-canvas-root${TEMPLATE_CLASS[props.templateId] ? ' ' + TEMPLATE_CLASS[props.templateId] : ''}`}
               style={{
                 // Force canvas-root to be at least as tall as the entire
                 // page-card stack. Page cards are absolutely positioned with

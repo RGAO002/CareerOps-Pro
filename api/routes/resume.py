@@ -401,7 +401,7 @@ async def create_variant(resume_id: str, body: VariantRequest) -> dict:
 
 
 @router.get("/{resume_id}/pdf")
-async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
+async def export_pdf(resume_id: str, frontend_base: Optional[str] = None, template: Optional[str] = None):
     """Render the resume to PDF (headless Chromium) and stream it back as a
     download.
 
@@ -430,7 +430,12 @@ async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
     base = frontend_base or os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
     if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", base):
         base = os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
-    print_url = f"{base}/resume/{resume_id}/print"
+    # Forward template choice so the print page applies the same CSS as
+    # the editor was using when the user clicked Export.
+    tpl_q = ""
+    if template and template in ("fullstack", "minimal"):
+        tpl_q = f"?template={template}"
+    print_url = f"{base}/resume/{resume_id}/print{tpl_q}"
 
     pdf_bytes = await url_to_pdf_chrome(print_url)
     if pdf_bytes is None:

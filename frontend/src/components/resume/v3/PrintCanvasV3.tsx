@@ -44,6 +44,7 @@ import type { ResumeDocV3 } from './schema/types';
 import type { Schema } from '@tiptap/pm/model';
 import { FontSize } from '../v2/extensions/FontSize';
 import './EditorPageV3.css';
+import './templates/fullstack.css';
 
 // Restrict the doc node to the v3 row group only — same pattern used by
 // integration tests + V3TestHarness. Print mode is structurally identical.
@@ -104,9 +105,12 @@ function emitStaticPageRuleFromTokens(canvasRoot: HTMLElement): () => void {
 
 export interface PrintCanvasV3Props {
   doc: ResumeDocV3;
+  /** Visual template — applies a CSS class to the canvas root, no layout
+   * algorithm change. Driven by the `?template=` URL param on /print. */
+  templateId?: 'minimal' | 'fullstack';
 }
 
-export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
+export function PrintCanvasV3({ doc, templateId = 'minimal' }: PrintCanvasV3Props) {
   const canvasRootRef = React.useRef<HTMLDivElement | null>(null);
   const readyRef = React.useRef(false);
 
@@ -240,7 +244,7 @@ export function PrintCanvasV3({ doc }: PrintCanvasV3Props) {
   return (
     <div
       ref={canvasRootRef}
-      className="v3-print-canvas-root v3-editor-canvas-root"
+      className={`v3-print-canvas-root v3-editor-canvas-root${templateId === 'fullstack' ? ' template-fullstack' : ''}`}
       style={{
         // Inline tokens: parity with v3-poc/poc.css. These mirror the values
         // baked into the @page rule injected from getComputedStyle.

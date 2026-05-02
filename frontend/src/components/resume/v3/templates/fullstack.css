@@ -1,0 +1,145 @@
+/* templates/fullstack.css
+ *
+ * Visual-only template that mirrors the styles in
+ * /Users/fred/Desktop/Fullstack.html. Applied via the `template-fullstack`
+ * class on the canvas root (works for both .v3-editor-canvas-root and
+ * .v3-print-canvas-root).
+ *
+ * NOTE: This is a CSS-only template swap on top of the existing v3
+ * single-column row flow. Fullstack.html's sidebar (left column for
+ * skills/contacts) is a multi-column layout that the current schema
+ * doesn't support — that requires a per-template layout component
+ * (architecture-2 work). Here we apply only typography, colors, spacing,
+ * bullet style, and section-heading treatment.
+ *
+ * Anything that affects line geometry (font-size, line-height, padding
+ * that shifts content, min-height) needs to live HERE rather than in
+ * EditorPageV3.css to avoid stomping the default minimal template.
+ */
+
+/* ─── Page background + paper card ─────────────────────────────────────── */
+.template-fullstack {
+  background-color: #f3f4f6;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ─── Default body text color + size for the resume content area ────── */
+.template-fullstack .row-content {
+  color: #374151;
+}
+
+/* ─── Header (name) — Fullstack uses a left-aligned 4xl bold name ───── */
+.template-fullstack .row-header-name .row-content {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #1f2937;
+  text-align: left;
+  line-height: 1.15;
+}
+.template-fullstack .row-header-name {
+  justify-content: flex-start;
+  padding-bottom: 4px;
+}
+
+/* Header contacts — left aligned, smaller */
+.template-fullstack .row-header-contact .row-content {
+  font-size: 14px;
+  color: #4b5563;
+  text-align: left;
+  line-height: 1.6;
+}
+.template-fullstack .row-header-contact {
+  justify-content: flex-start;
+  padding-bottom: 2px;
+}
+
+/* ─── Section heading — Fullstack h2 style: border-bottom + larger ───── */
+.template-fullstack .row-section-heading {
+  display: block;
+  padding-top: 24px;
+  padding-bottom: 0;
+  margin-bottom: 12px;
+  border-bottom: 2px solid #e5e7eb;
+}
+.template-fullstack .row-section-heading .row-content {
+  margin-left: 22px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #111827;
+  padding-bottom: 6px;
+}
+/* Hide the default <hr> divider — Fullstack uses border-bottom on h2 */
+.template-fullstack .section-divider {
+  display: none;
+}
+
+/* ─── Entry title — Fullstack h3 style: 1.1rem semibold ─────────────── */
+.template-fullstack .row-entry-title {
+  padding-top: 12px;
+}
+.template-fullstack .row-entry-title .row-content {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+}
+
+/* ─── Entry meta — Fullstack uses a smaller gray text below title ───── */
+.template-fullstack .row-entry-meta .row-content {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4b5563;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.template-fullstack .row-entry-meta {
+  padding-bottom: 6px;
+}
+
+/* ─── Bullets — Fullstack uses ■ (filled square) instead of • dot ───── */
+.template-fullstack .row-bullet .row-content,
+.template-fullstack .row-plain .row-content {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+}
+.template-fullstack .row-bullet .row-content {
+  padding-left: 18px;
+}
+.template-fullstack .row-bullet {
+  padding-bottom: 8px;
+}
+.template-fullstack .row-marker {
+  /* Replace the small grey circle with a small grey filled square */
+  position: absolute;
+  left: 27.6px;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  background: #6b7280;
+  border-radius: 0;
+  font-size: 0;
+  color: transparent;
+  pointer-events: none;
+}
+
+/* ─── Strong / em / link colors mirror Fullstack ────────────────────── */
+.template-fullstack strong { color: #111827; font-weight: 700; }
+.template-fullstack em { font-style: italic; }
+.template-fullstack a {
+  color: #2563eb;
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+.template-fullstack a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* Plain rows — same body typography as bullets but no marker */
+.template-fullstack .row-plain {
+  padding-bottom: 6px;
+}

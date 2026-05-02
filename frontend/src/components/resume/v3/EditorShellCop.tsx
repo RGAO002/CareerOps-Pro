@@ -663,6 +663,10 @@ export interface EditorShellCopProps {
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
   pageCount: number;
   onExport: () => void;
+  /** Visual-only template switcher. Reflects which CSS template is applied
+   * to the canvas root (and propagated to print/PDF via URL param). */
+  templateId?: 'minimal' | 'fullstack';
+  onTemplateChange?: (next: 'minimal' | 'fullstack') => void;
 }
 
 /**
@@ -869,7 +873,7 @@ function useShrinkScroll() {
   return { scrollRef, hostRef };
 }
 
-export function EditorShellCop({ formatToolbar, children, title, saveStatus, pageCount, onExport }: EditorShellCopProps) {
+export function EditorShellCop({ formatToolbar, children, title, saveStatus, pageCount, onExport, templateId = 'minimal', onTemplateChange }: EditorShellCopProps) {
   const [railCollapsed, setRailCollapsed] = React.useState(false);
   // Delay entrance animations until the page has finished its initial paint
   // (font load + React hydration + TipTap mount). Without this gate, the
@@ -1206,6 +1210,31 @@ export function EditorShellCop({ formatToolbar, children, title, saveStatus, pag
                 <span style={{ font: '500 10.5px/1 "JetBrains Mono", monospace', color: T.fgM, letterSpacing: '0.04em', flexShrink: 0 }}>
                   {pageCount} {pageCount === 1 ? 'PAGE' : 'PAGES'}
                 </span>
+                {/* Template switcher — visual-only CSS swap. The label
+                    shows the active template; clicking cycles to the next.
+                    Cheap MVP UI; replace with a proper popover/dropdown
+                    once we have >2 templates. */}
+                {onTemplateChange && (
+                  <button
+                    type="button"
+                    onClick={() => onTemplateChange(templateId === 'minimal' ? 'fullstack' : 'minimal')}
+                    title="Switch template"
+                    style={{
+                      height: 28, padding: '0 10px', borderRadius: 6,
+                      background: '#fff', border: '1px solid rgba(0,0,0,0.12)',
+                      font: '500 11.5px/1 Inter', color: T.fg, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" rx="1"/>
+                      <rect x="14" y="3" width="7" height="7" rx="1"/>
+                      <rect x="3" y="14" width="7" height="7" rx="1"/>
+                      <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                    {templateId === 'minimal' ? 'Minimal' : 'Fullstack'}
+                  </button>
+                )}
                 <button onClick={onExport} style={{
                   height: 28, padding: '0 12px', borderRadius: 6, background: 'rgb(20,20,20)',
                   font: '500 12px/1 Inter', color: '#fff', border: 0, cursor: 'pointer',
