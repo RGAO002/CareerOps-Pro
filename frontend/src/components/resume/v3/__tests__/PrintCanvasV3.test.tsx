@@ -113,6 +113,45 @@ describe('PrintCanvasV3', () => {
     expect(cssSource).not.toMatch(/\.v3-print-canvas-root \.row-[\w-]+\.is-empty[^{]*\{\s*display:\s*none !important/s);
   });
 
+  it('print canvas matches editor typography so empty plain rows render at the same height (Bug B)', async () => {
+    // The print canvas inherits the page-level body font (16px / line-height
+    // normal) unless we explicitly set typography. Without parity rules,
+    // empty plain rows in print render shorter than in the editor and
+    // multiple consecutive empty rows compound into a visible gap mismatch
+    // — exactly the user-reported "5 New line rows visible in editor but
+    // gone from PDF" bug.
+    //
+    // Pin the rule set: print canvas must declare a body font-size + line-
+    // height matching the editor (14px / 1.5), AND the per-row-kind layout
+    // rules (display:flex on .row, padding-bottom:6px) so PaginationPlugin
+    // measures rows at the same height the editor draws.
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const cssSource = await fs.readFile(path.resolve(here, '..', 'EditorPageV3.css'), 'utf-8');
+
+    // Body typography on the print prosemirror surface.
+    expect(cssSource).toMatch(
+      /\.v3-print-canvas-root \.tiptap[^}]*\.v3-print-canvas-root \.ProseMirror\s*\{[^}]*font-size:\s*14px/s,
+    );
+    expect(cssSource).toMatch(
+      /\.v3-print-canvas-root \.tiptap[^}]*\.v3-print-canvas-root \.ProseMirror\s*\{[^}]*line-height:\s*1\.5/s,
+    );
+
+    // Row layout parity (.row is flex with padding-bottom:6px and min-height).
+    expect(cssSource).toMatch(/\.v3-print-canvas-root \.row\s*\{[^}]*display:\s*flex/s);
+    expect(cssSource).toMatch(/\.v3-print-canvas-root \.row\s*\{[^}]*padding-bottom:\s*6px/s);
+    expect(cssSource).toMatch(/\.v3-print-canvas-root \.row\s*\{[^}]*min-height:\s*16px/s);
+
+    // Plain row content typography parity.
+    expect(cssSource).toMatch(
+      /\.v3-print-canvas-root \.row-plain \.row-content[^{]*\{[^}]*font-size:\s*14px/s,
+    );
+    expect(cssSource).toMatch(
+      /\.v3-print-canvas-root \.row-plain \.row-content[^{]*\{[^}]*line-height:\s*1\.5/s,
+    );
+  });
+
   it('data-paginated="false" initially, flips to "true" after layout + fonts.ready', async () => {
     // Provide a deterministic fonts.ready promise.
     Object.defineProperty(document, 'fonts', {

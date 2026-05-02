@@ -1,3 +1,5 @@
+import type { EditorState } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import type { ResumeDocV3, GroupId } from './types';
 
 /**
@@ -35,4 +37,46 @@ function isPlainRowEmpty(row: { content: { content?: unknown[] } }): boolean {
     if (inline.length > 0) return false;
   }
   return true;
+}
+
+/**
+ * PM-doc variant of `effectiveGid` — same lazy rule, but reads from a live
+ * ProseMirror `EditorState` instead of a serialized v3 doc.
+ *
+ * Use this from in-editor consumers (hover/scope, atom-aware decorations)
+ * so typed plain rows correctly inherit their predecessor's gid even
+ * though the schema attribute on plain nodes is always null.
+ *
+ * Returns one entry per top-level row in document order; index N corresponds
+ * to the Nth `.row` element under the editor DOM.
+ */
+export function effectiveGidsFromState(state: EditorState): (string | null)[] {
+  const rows: PMNode[] = [];
+  state.doc.forEach((node) => rows.push(node));
+  const result: (string | null)[] = new Array(rows.length).fill(null);
+  for (let i = 0; i < rows.length; i++) {
+    result[i] = effectiveGidForNode(rows, i, result);
+  }
+  return result;
+}
+
+function effectiveGidForNode(
+  rows: PMNode[],
+  i: number,
+  memo: (string | null)[],
+): string | null {
+  if (i < 0 || i >= rows.length) return null;
+  const node = rows[i];
+  const isPlain = node.type.name === 'plain';
+  if (!isPlain) {
+    const gid = (node.attrs.semanticGroupId as string | null | undefined) ?? null;
+    return gid || null;
+  }
+  // Empty plain (no inline children) → independent.
+  if (node.content.size === 0) return null;
+  // Typed plain → inherit from previous row.
+  if (i === 0) return null;
+  const prev = memo[i - 1];
+  // Memo is filled left-to-right, so memo[i-1] is already resolved.
+  return prev;
 }

@@ -22,6 +22,7 @@ import type { DropIndicator } from './interaction/DragController';
 import { InteractionLayer } from './layers/InteractionLayer';
 import type { RowId, GroupId } from './schema/types';
 import { groupsPluginKey } from './plugins/GroupsPlugin';
+import { effectiveGidsFromState } from './schema/effectiveGid';
 import { useAssistantStore } from '@/stores/assistant';
 
 // Resolve which rows should be highlighted when the user hovers `targetRow`.
@@ -30,11 +31,21 @@ import { useAssistantStore } from '@/stores/assistant';
 // light up just themselves. Mirrors v2's atom-aware hover scopes.
 function resolveHoverGroup(view: EditorView, targetRow: HTMLElement): HTMLElement[] {
   const kind = targetRow.getAttribute('data-row-kind');
-  const gid = targetRow.getAttribute('data-group-id') || null;
   const rows = Array.from(view.dom.querySelectorAll<HTMLElement>(':scope > div > .row'));
+  // Compute the effective gid per row from PM state (NOT from data-group-id
+  // DOM attr). Plain rows store null in their schema attribute; their
+  // effective gid is computed lazily via the inheritance rule in
+  // schema/effectiveGid.ts. Reading data-group-id directly causes typed plain
+  // rows that should belong to an entry/section to drop out of the highlight
+  // scope. Spec § 2.2.
+  const effGids = effectiveGidsFromState(view.state);
+  const targetIdx = rows.indexOf(targetRow);
+  const gid = (targetIdx >= 0 ? effGids[targetIdx] : null) || null;
 
   if (kind === 'section.heading' && gid) {
-    // Section: heading row + all entry rows whose parentSectionGroupId === gid.
+    // Section: heading row + all entry rows whose parentSectionGroupId === gid,
+    // plus any plain rows whose effective gid resolves into the section
+    // (via empty-plain → null cascade rule, typed plains under section heading).
     const groupsState = groupsPluginKey.getState(view.state);
     const memberEntryGids = new Set<string>();
     if (groupsState) {
@@ -44,19 +55,22 @@ function resolveHoverGroup(view: EditorView, targetRow: HTMLElement): HTMLElemen
         }
       }
     }
-    return rows.filter((r) => {
+    return rows.filter((r, i) => {
       if (r === targetRow) return true;
-      const rgid = r.getAttribute('data-group-id') || null;
+      const rgid = effGids[i];
       return rgid !== null && (rgid === gid || memberEntryGids.has(rgid));
     });
   }
 
   if ((kind === 'entry.title' || kind === 'entry.meta') && gid) {
-    // Entry: all rows tagged with this entry's gid.
-    return rows.filter((r) => r.getAttribute('data-group-id') === gid);
+    // Entry: all rows whose effective gid === this entry's gid (includes
+    // typed plain rows that lazily inherit from the previous row).
+    return rows.filter((_r, i) => effGids[i] === gid);
   }
 
-  // Single-row hover for bullet / plain / header.* — just the hovered row.
+  // bullet / plain / header.* — single-row hover. Plain rows that effectively
+  // belong to a section/entry STILL only highlight themselves on hover; the
+  // wider section/entry scope is reserved for the heading/title/meta.
   return [targetRow];
 }
 
