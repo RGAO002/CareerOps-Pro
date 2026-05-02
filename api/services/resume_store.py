@@ -13,6 +13,8 @@ from api.models.resume import Resume
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 RESUMES_DIR = PROJECT_ROOT / "saved_sessions" / "resumes"
+# Internal alias — monkeypatchable in tests without breaking the public name.
+_RESUMES_DIR = RESUMES_DIR
 
 
 _VALID_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -29,13 +31,13 @@ def _validate_id(resume_id: str) -> None:
 
 
 def _ensure_dir() -> None:
-    RESUMES_DIR.mkdir(parents=True, exist_ok=True)
-    (RESUMES_DIR / "snapshots").mkdir(exist_ok=True)
+    _RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+    (_RESUMES_DIR / "snapshots").mkdir(exist_ok=True)
 
 
 def _path_for(resume_id: str) -> Path:
     _validate_id(resume_id)
-    return RESUMES_DIR / f"{resume_id}.json"
+    return _RESUMES_DIR / f"{resume_id}.json"
 
 
 def save(resume: Resume) -> None:
@@ -121,6 +123,38 @@ def save_v2_dict(resume_v2: dict) -> None:
     _ensure_dir()
     _path_for(resume_v2["id"]).write_text(
         json.dumps(resume_v2, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def save_v3_dict(resume_v3: dict) -> None:
+    """Write a v3-shaped resume dict to disk, with backup-on-write.
+
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 7.3.
+
+    Sequence:
+      1. Validate id present.
+      2. If main file exists, copy it to {id}.backup.json (overwrite).
+      3. Write new content to {id}.json.
+
+    Backup write failure logs a warning but does not block main write — the
+    backup subsystem must never prevent the user from saving their work.
+    """
+    if "id" not in resume_v3:
+        raise ValueError("missing id")
+    _validate_id(resume_v3["id"])
+    _ensure_dir()
+    main_path = _path_for(resume_v3["id"])
+    backup_path = _RESUMES_DIR / f"{resume_v3['id']}.backup.json"
+    if main_path.exists():
+        try:
+            backup_path.write_text(main_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError as e:
+            # Log but don't block — see spec § 7.3 failure semantics.
+            import logging
+            logging.getLogger(__name__).warning("backup write failed for %s: %s", resume_v3["id"], e)
+    main_path.write_text(
+        json.dumps(resume_v3, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
