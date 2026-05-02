@@ -601,11 +601,119 @@ git commit -m "test(api): ResumeV3 — all row kinds + group validation"
 
 ---
 
+### Task 0.6: Pydantic ↔ TS isomorphism check
+
+**Files:**
+- Create: `tests/migration/fixtures/v3/canonical-all-kinds.json` — a canonical v3 doc covering all 7 row kinds + section + entry groups, hand-written to match what TS `ResumeFileV3` would emit
+- Create: `tests/api/test_pydantic_ts_isomorphism.py`
+
+**Why:** Without this gate, TS frontend may save a v3 doc whose shape Pydantic rejects (silent field-name or required-field drift). The fixture is the single canonical doc shape that BOTH sides must accept.
+
+- [ ] **Step 1: Write the canonical v3 fixture**
+
+```json
+// tests/migration/fixtures/v3/canonical-all-kinds.json
+{
+  "schema_version": 3,
+  "id": "canonical-1",
+  "title": "Canonical Doc",
+  "template_id": "minimal-single-column",
+  "rows": [
+    {"id": "h-name", "kind": "header.name", "content": {"text": "Alice"}},
+    {"id": "h-c1", "kind": "header.contact", "content": {"type": "text", "value": "alice@example.com"}},
+    {"id": "h-c2", "kind": "header.contact", "content": {"type": "link", "label": "site", "url": "https://x"}},
+    {"id": "s1", "kind": "section.heading", "semanticGroupId": "gS1", "content": {"text": "Experience"}},
+    {"id": "e1-t", "kind": "entry.title", "semanticGroupId": "gE1", "content": {"text": "Engineer @ X"}},
+    {"id": "e1-m", "kind": "entry.meta", "semanticGroupId": "gE1", "content": {"text": "2026"}},
+    {"id": "e1-b1", "kind": "bullet", "semanticGroupId": "gE1", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "shipped X"}]}]}},
+    {"id": "p1", "kind": "plain", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "free para"}]}]}},
+    {"id": "p2", "kind": "plain", "content": {"type": "doc", "content": []}}
+  ],
+  "groups": [
+    {"id": "gS1", "kind": "section", "role": "experience", "label": "Experience"},
+    {"id": "gE1", "kind": "entry", "parentSectionGroupId": "gS1"}
+  ],
+  "metadata": {
+    "created_at": "2026-05-02T00:00:00Z",
+    "updated_at": "2026-05-02T00:00:00Z"
+  }
+}
+```
+
+- [ ] **Step 2: Write the Pydantic side test**
+
+```python
+# tests/api/test_pydantic_ts_isomorphism.py
+"""Verify the canonical v3 fixture (the shape TS frontend emits) validates
+against the Python Pydantic ResumeV3 model. Catches required/optional field
+drift between the two implementations.
+"""
+import json
+from pathlib import Path
+
+from api.models.resume_v3 import ResumeV3
+
+FIXTURE = Path(__file__).resolve().parents[1] / "migration" / "fixtures" / "v3" / "canonical-all-kinds.json"
+
+
+def test_canonical_v3_fixture_validates_in_pydantic():
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    doc = ResumeV3.model_validate(raw)
+    # All 7 row kinds present.
+    kinds = {r.kind for r in doc.rows}
+    expected = {"header.name", "header.contact", "section.heading", "entry.title", "entry.meta", "bullet", "plain"}
+    assert kinds == expected, f"missing kinds: {expected - kinds}"
+    # Both group kinds present.
+    group_kinds = {g.kind for g in doc.groups}
+    assert group_kinds == {"section", "entry"}
+```
+
+- [ ] **Step 3: Write the TS side test**
+
+```ts
+// frontend/src/components/resume/v3/schema/__tests__/canonicalFixture.test.ts
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { ResumeFileV3 } from '../types';
+
+describe('canonical v3 fixture round-trip in TS', () => {
+  it('parses cleanly into ResumeFileV3', () => {
+    const path = resolve(__dirname, '../../../../../../../tests/migration/fixtures/v3/canonical-all-kinds.json');
+    const raw = JSON.parse(readFileSync(path, 'utf-8')) as ResumeFileV3;
+    expect(raw.schema_version).toBe(3);
+    expect(raw.rows.length).toBe(9);
+    expect(raw.groups.length).toBe(2);
+    // All 7 row kinds.
+    const kinds = new Set(raw.rows.map(r => r.kind));
+    expect(kinds.size).toBe(7);
+  });
+});
+```
+
+- [ ] **Step 4: Run both tests**
+
+```bash
+pytest tests/api/test_pydantic_ts_isomorphism.py -v
+cd frontend && npx vitest run src/components/resume/v3/schema/__tests__/canonicalFixture.test.ts
+```
+
+Expected: PASS in both. If Pydantic rejects a field that TS allows (or vice versa), the canonical fixture has caught a drift bug — fix the model that's wrong.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/migration/fixtures/v3/canonical-all-kinds.json tests/api/test_pydantic_ts_isomorphism.py frontend/src/components/resume/v3/schema/__tests__/canonicalFixture.test.ts
+git commit -m "test(v3): canonical fixture for Pydantic ↔ TS shape isomorphism"
+```
+
+---
+
 ### Phase 0 Checkpoint
 
 - [ ] Run all relevant tests:
   - `cd frontend && npx vitest run src/components/resume/v3/schema`
-  - `pytest api/services/__tests__/test_resume_v3_models.py -v`
+  - `pytest api/services/__tests__/test_resume_v3_models.py tests/api/test_pydantic_ts_isomorphism.py -v`
 - [ ] Both should be GREEN. No other code paths touched. Editor still runs on v2.
 
 ---
@@ -613,6 +721,57 @@ git commit -m "test(api): ResumeV3 — all row kinds + group validation"
 # Phase 1 — Migration Scripts + Golden Fixtures
 
 **Checkpoint:** Migration script can convert real `saved_sessions/*.json` files to v3 in a temp directory. Validation passes for all converted files. Production data is untouched (we run on a copy, not in place).
+
+**Architecture decision (review feedback #1):** Migration CLI is **self-contained from day one** — `v2ToV3` logic is INLINED into `scripts/migrate-v2-to-v3.ts`, NOT imported from `frontend/src/components/resume/v3/schema/v2Adapter.ts`. This avoids "write import in Phase 1, refactor it away in Phase 5" thrash and means Phase 5 deletion of `v2Adapter.ts` requires zero changes to the migration script.
+
+---
+
+### Task 1.0: scripts/ npm setup + tsx install
+
+**Files:**
+- Create: `scripts/package.json`
+- Create: `.gitignore` (append `scripts/node_modules/` if not present)
+
+- [ ] **Step 1: Bootstrap the scripts npm env**
+
+```bash
+mkdir -p scripts
+cat > scripts/package.json <<'EOF'
+{
+  "name": "scripts",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}
+EOF
+cd scripts && npm install && cd ..
+```
+
+Expected: `scripts/node_modules/.bin/tsx` exists.
+
+- [ ] **Step 2: Add to .gitignore**
+
+```bash
+grep -q "^scripts/node_modules" .gitignore || echo "scripts/node_modules/" >> .gitignore
+```
+
+- [ ] **Step 3: Verify tsx works**
+
+```bash
+echo 'console.log("tsx ok")' > /tmp/_smoke.ts
+cd scripts && npx tsx /tmp/_smoke.ts
+```
+
+Expected: `tsx ok`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add scripts/package.json scripts/package-lock.json .gitignore
+git commit -m "build(migration): scripts/ npm env with tsx for v3 migration CLI"
+```
 
 ---
 
@@ -821,32 +980,23 @@ git commit -m "test(migration): golden v2 fixtures (5 representative shapes)"
 
 ---
 
-### Task 1.2: Migration script — Node CLI invoking TS v2ToV3
+### Task 1.2: Migration script — self-contained Node CLI
 
 **Files:**
 - Create: `scripts/migrate-v2-to-v3.ts`
-- Create: `scripts/package.json` (if not exists, for `tsx` dep)
 
-- [ ] **Step 1: Set up `scripts/` Node env**
+**Architecture note (review feedback #1):** v2→v3 logic is **INLINED** into this script directly, NOT imported from the frontend. The script is self-contained so that Phase 5's deletion of `v2Adapter.ts` requires no script changes.
 
-If `scripts/` doesn't have its own package.json, add one with `tsx`:
+- [ ] **Step 1: Write the self-contained migration script**
 
-```bash
-mkdir -p scripts
-cat > scripts/package.json <<'EOF'
-{
-  "name": "scripts",
-  "private": true,
-  "type": "module",
-  "devDependencies": {
-    "tsx": "^4.0.0"
-  }
-}
-EOF
-cd scripts && npm install --no-save tsx && cd ..
-```
+The full body of `v2ToV3` (and its helpers `dedupeId`, `richTextToV2BulletDoc`, `toRichText`, `toPlainText`, `textContactToV2`, `asRowId`, etc.) from `frontend/src/components/resume/v3/schema/v2Adapter.ts` is COPIED into this script. The implementer should:
 
-- [ ] **Step 2: Write the migration script**
+1. Open `frontend/src/components/resume/v3/schema/v2Adapter.ts`
+2. Copy the `v2ToV3` function and ALL helper functions it transitively calls (NOT `v3ToV2` — we don't need that direction in the migration)
+3. Paste them as top-level functions in `scripts/migrate-v2-to-v3.ts`
+4. Inline the relevant types from `frontend/src/components/resume/v3/schema/types.ts` (`ResumeRow`, `SemanticGroup`, `ResumeDocV3`, etc.) — make them local to the script
+
+This is intentional code duplication. The migration script must run forever as a one-time tool against historical v2 data, even after the live v2Adapter is deleted.
 
 ```ts
 // scripts/migrate-v2-to-v3.ts
@@ -854,6 +1004,12 @@ cd scripts && npm install --no-save tsx && cd ..
  * Big-bang migration: convert all v2 saved_sessions JSONs to v3.
  *
  * Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 7.
+ * Plan ref: 2026-05-02-v3-only-resume.md Task 1.2.
+ *
+ * SELF-CONTAINED: v2→v3 logic is inlined below. Do NOT import from
+ * frontend/src/components/resume/v3/schema/v2Adapter.ts — that file is
+ * deleted in Phase 5, but this script must keep working for archival
+ * v2 file migration.
  *
  * Usage:
  *   tsx scripts/migrate-v2-to-v3.ts <source-dir> <dest-dir>
@@ -861,16 +1017,34 @@ cd scripts && npm install --no-save tsx && cd ..
  * For each *.json in source-dir:
  *   1. Read, assert schema_version === 2
  *   2. Write source/<id>.v2-backup.json (untouched original)
- *   3. Call v2ToV3 from frontend/src/components/resume/v3/schema/v2Adapter.ts
+ *   3. Call inline v2ToV3 (no external import)
  *   4. Strip stored semanticGroupId from all plain rows (lazy gid rule)
- *   5. Add schema_version: 3 metadata fields
+ *   5. Wrap with v3 envelope (schema_version: 3, metadata, alignments)
  *   6. Write to dest-dir/<id>.json
  *
- * Files that are NOT v2 (e.g. *.suggestions.json, *.v2-backup.json) are skipped.
+ * Files that are NOT v2 resumes (e.g. *.suggestions.json, *.v2-backup.json,
+ * *.backup.json) are skipped.
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { v2ToV3 } from '../frontend/src/components/resume/v3/schema/v2Adapter.js';
+
+// ──────────────────────────────────────────────────────────────────────
+// INLINED FROM frontend/src/components/resume/v3/schema/v2Adapter.ts
+// (Phase 5 deletes that file. This script keeps the logic alive.)
+// ──────────────────────────────────────────────────────────────────────
+
+// [paste v2Adapter.ts types + v2ToV3 + helper functions here]
+// Approx 250 LOC. Implementer: literal copy-paste from the source file,
+// stripped of v3ToV2 (we don't need it) and `import` statements.
+
+function v2ToV3(v2: any): { schemaVersion: 3; rows: any[]; groups: any[] } {
+  // ... inlined body
+  throw new Error('replace with inlined v2ToV3 from v2Adapter.ts');
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Migration entry point
+// ──────────────────────────────────────────────────────────────────────
 
 function isResumeJson(name: string): boolean {
   if (!name.endsWith('.json')) return false;
@@ -959,8 +1133,8 @@ Expected: file at `/tmp/v3-migrate-test/out/01-summary-only.json` exists with `"
 - [ ] **Step 4: Commit**
 
 ```bash
-git add scripts/migrate-v2-to-v3.ts scripts/package.json
-git commit -m "feat(migration): Node CLI v2→v3 invoking existing TS v2Adapter"
+git add scripts/migrate-v2-to-v3.ts
+git commit -m "feat(migration): self-contained Node CLI v2→v3 (inlined v2Adapter logic)"
 ```
 
 ---
@@ -1678,13 +1852,23 @@ async def create_blank_resume(body: CreateResumeRequest) -> dict:
 ```python
 # Existing parser produces v2 dict. Wrap it inline:
 v2_dict = parse_resume(...)  # existing call
-# Inline conversion via the same Node CLI used in migration is overkill here
-# — keep a minimal Python v2→v3 wrapper for parse output OR refactor the
-# parser to produce v3 directly. For Phase 2 we use the wrapper:
 v3_dict = _python_v2_to_v3(v2_dict)
 ```
 
 The `_python_v2_to_v3` helper lives in `api/services/parse_v2_to_v3.py` (NEW, ~80 LOC) and only handles the parser's specific output shape (no orphan rows, no plain bullets — parsed resumes are always clean).
+
+**⚠️ Known technical debt (review feedback #6):** This means the parse path KEEPS a v2-shape intermediate inside the backend (`v2_dict` → `_python_v2_to_v3` → v3). The codebase is NOT 100% v2-free after Phase 5 — it's "v2-free in storage and runtime data flow, but parse-output transient remains".
+
+To reach 100% zero-v2, a follow-up task would be: **rewrite `parse_resume` to emit v3 rows + groups directly**. That's significant parser refactor work outside this plan's scope. Filed as follow-up issue:
+
+```
+TODO (post-v3-migration): refactor api/services/resume_parser.py to emit
+ResumeFileV3 directly. Until then, parse_v2_to_v3.py remains as a v2-shape
+intermediate. Tracked in: docs/superpowers/plans/2026-05-02-v3-followups.md
+(create if not exists when first followup is filed)
+```
+
+Phase 5 acceptance criteria EXPLICITLY exempts `parse_v2_to_v3.py` from "delete all v2-related code" — see Phase 5 grep step.
 
 - [ ] **Step 4: Run all API tests**
 
@@ -1730,7 +1914,42 @@ mkdir -p saved_sessions/resumes_v3_staging
 
 Expected: ALL files convert + validate. Exit 0.
 
-- [ ] **Step 4: Atomic swap**
+- [ ] **Step 3.5: 🛑 HUMAN GATE — manual sign-off before atomic swap 🛑**
+
+This is the only step in the entire plan that touches **production data destructively**. Before continuing:
+
+1. **Spot-check 3 random files** in `saved_sessions/resumes_v3_staging/`:
+   ```bash
+   ls saved_sessions/resumes_v3_staging/ | shuf -n 3 | xargs -I{} python -c "
+   import json, sys
+   d = json.load(open('saved_sessions/resumes_v3_staging/{}'))
+   print('  id:', d['id'])
+   print('  schema_version:', d['schema_version'])
+   print('  rows:', len(d['rows']))
+   print('  groups:', len(d['groups']))
+   print('  first 3 row kinds:', [r['kind'] for r in d['rows'][:3]])
+   "
+   ```
+   For each, mentally verify against the corresponding v2 file in `saved_sessions/resumes/` — does the row count make sense? Are header/section/entry rows present? No obvious data loss?
+
+2. **Verify the rollback path works** by simulating it:
+   ```bash
+   # Pick one resume id (REPLACE <ID>):
+   diff <(python -c "import json; d=json.load(open('saved_sessions/resumes/<ID>.json')); print(json.dumps(d, indent=2))") \
+        <(python -c "import json; d=json.load(open('saved_sessions/resumes/<ID>.v2-backup.json')); print(json.dumps(d, indent=2))")
+   ```
+   Expected: identical (the .v2-backup.json is a cp of the original v2). If different, the migration script wrote into the source file by accident — STOP, investigate.
+
+3. **Check disk free space** before swap:
+   ```bash
+   du -sh saved_sessions/resumes/ saved_sessions/resumes_v3_staging/
+   df -h saved_sessions/
+   ```
+   Need at least 2× the resumes/ size free for the archive copy.
+
+4. **STOP and explicitly confirm with user before proceeding**. If running under subagent-driven-development, the controller should request user approval here before dispatching the next subagent. Do NOT proceed to Step 4 automatically.
+
+- [ ] **Step 4: Atomic swap (only after Step 3.5 approval)**
 
 ```bash
 # Move v2 originals (already backed up as .v2-backup.json next to them).
@@ -1778,6 +1997,15 @@ git commit -m "data: migrate saved_sessions/resumes/ to v3 (v2 archived alongsid
 
 **Files:**
 - Modify: `frontend/src/components/resume/v3/schema/types.ts`
+
+**SoT clarification (review feedback #2):** Two distinct types live side-by-side. Anywhere code touches "a resume" it must pick one explicitly:
+
+| Type | Where it lives | Contains |
+|---|---|---|
+| `ResumeFileV3` | Disk (`saved_sessions/*.json`), API request/response, AI fetch outside editor | envelope (id, title, template_id, metadata, alignments) **+** rows + groups |
+| `ResumeDocV3` | PM EditorView state, `serializeEditorState` output, `hydrateInitialState` input, AI in-editor reads | rows + groups only |
+
+Conversion is via two pure helpers (added below): `fileToDoc(file)` strips envelope; `docToFile(doc, prevFile)` re-attaches envelope and bumps `metadata.updated_at`. Anywhere else reading "the doc" must use one of these — no ad-hoc field copying.
 
 - [ ] **Step 1: Add `ResumeFileV3` type (top-level disk/API shape)**
 
@@ -2118,47 +2346,126 @@ git commit -m "feat(v3): landing page + hero use v3 file shape"
 
 ---
 
-### Task 3.6: rowContainer uses effectiveGid for plain row data attribute
+### Task 3.6: Update hover/scope consumers to compute effectiveGid for plain rows (Option B)
 
 **Files:**
-- Modify: `frontend/src/components/resume/v3/nodeviews/rowContainer.tsx`
+- Modify: `frontend/src/components/resume/v3/ResumeCanvasV3.tsx` — `resolveHoverGroup` + click/scope handlers
+- Modify: `frontend/src/components/resume/v3/nodeviews/rowContainer.tsx` — add doc comment only
+- Test: `frontend/src/components/resume/v3/__tests__/effectiveGidHover.test.tsx` (new)
 
-- [ ] **Step 1: Read current behavior**
+**Architecture decision (review feedback #3):** **Option B selected** — `data-group-id` for plain rows stays empty in the DOM. UI consumers that need "what entry does this plain belong to?" call `effectiveGid(doc, rowIndex)` directly. Rationale:
+- Schema is the single source of truth; DOM stays a thin projection
+- Avoids per-render compute in NodeView
+- Only 2 consumers to update (hover, click — both in ResumeCanvasV3)
 
-```bash
-grep -n "data-group-id\|semanticGroupId" frontend/src/components/resume/v3/nodeviews/rowContainer.tsx
-```
-
-Current behavior: emits `data-group-id` from `node.attrs.semanticGroupId`. For plain rows (which now have null gid stored), this produces empty data-group-id, but consumers (hover highlight) might expect the effective gid.
-
-- [ ] **Step 2: Decide whether to update**
-
-Check what consumes `data-group-id`:
+- [ ] **Step 1: Audit current data-group-id consumers**
 
 ```bash
-grep -rn "data-group-id\|getAttribute('data-group-id')" frontend/src/components/resume/v3 | head -10
+grep -rn "data-group-id\|getAttribute('data-group-id')" frontend/src/components/resume/v3 | grep -v __tests__ | head -10
 ```
 
-If a consumer (e.g. hover highlight in `ResumeCanvasV3`) reads `data-group-id` and expects it to reflect "what entry am I in" for plain rows, we'd need effectiveGid here. If no consumer relies on it for plain rows, leave as-is.
+Expected hits in `ResumeCanvasV3.tsx` (resolveHoverGroup, scope click handler). For each plain-row code path, replace the DOM read with effectiveGid lookup.
 
-For this task: **leave as-is unless a consumer breaks**. Add a TODO comment in rowContainer.tsx noting the design choice.
+- [ ] **Step 2: Write the failing test**
 
-- [ ] **Step 3: Add TODO comment**
+```ts
+// frontend/src/components/resume/v3/__tests__/effectiveGidHover.test.tsx
+import { describe, it, expect } from 'vitest';
+import { effectiveGid } from '../schema/effectiveGid';
+import type { ResumeDocV3, RowId, GroupId } from '../schema/types';
+
+describe('effectiveGid drives hover scope for plain rows', () => {
+  it('typed plain inside an entry hovers as that entry', () => {
+    const doc: ResumeDocV3 = {
+      schemaVersion: 3,
+      rows: [
+        { id: 'h' as RowId, kind: 'section.heading', semanticGroupId: 'gS' as GroupId, content: { text: 'Exp' } },
+        { id: 't' as RowId, kind: 'entry.title', semanticGroupId: 'gE' as GroupId, content: { text: 'X' } },
+        { id: 'm' as RowId, kind: 'entry.meta', semanticGroupId: 'gE' as GroupId, content: { text: '2026' } },
+        { id: 'b1' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] } },
+        { id: 'p' as RowId, kind: 'plain', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'middle' }] }] } },
+        { id: 'b2' as RowId, kind: 'bullet', semanticGroupId: 'gE' as GroupId, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] } },
+      ],
+      groups: [
+        { id: 'gS' as GroupId, kind: 'section', role: 'experience' },
+        { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId },
+      ],
+    };
+    // Hover index 4 (the plain) → effective gid is gE → hover scope highlights all gE rows.
+    expect(effectiveGid(doc, 4)).toBe('gE');
+  });
+});
+```
+
+- [ ] **Step 3: Run test to verify it fails OR passes**
+
+```bash
+cd frontend && npx vitest run src/components/resume/v3/__tests__/effectiveGidHover.test.tsx
+```
+
+If `effectiveGid` from Phase 0 is already implemented correctly, this test PASSES immediately — that's expected (it's a sanity check, not a new branch). If FAIL, debug effectiveGid.
+
+- [ ] **Step 4: Update ResumeCanvasV3.tsx — `resolveHoverGroup`**
+
+Open `frontend/src/components/resume/v3/ResumeCanvasV3.tsx`. Find `resolveHoverGroup` and any function that reads `data-group-id` from a row element. Currently it likely does:
+
+```typescript
+const gid = rowEl.getAttribute('data-group-id');
+const sameGroupRows = rows.filter(r => r.getAttribute('data-group-id') === gid);
+```
+
+Replace plain-row paths with effectiveGid lookup. Pattern:
+
+```typescript
+import { effectiveGid } from './schema/effectiveGid';
+import { serializeEditorState } from './schema/serialize';
+
+function resolveEffectiveGidForRow(view: EditorView, rowEl: HTMLElement): string | null {
+  const rowId = rowEl.getAttribute('data-row-id');
+  if (!rowId) return null;
+  // Cheap path: non-plain rows have stored gid in DOM.
+  const stored = rowEl.getAttribute('data-group-id');
+  const isPlain = rowEl.getAttribute('data-row-kind') === 'plain';
+  if (!isPlain) return stored || null;
+  // Plain row: compute via effectiveGid against the live PM doc.
+  const doc = serializeEditorState(view.state);
+  const idx = doc.rows.findIndex(r => r.id === rowId);
+  return idx >= 0 ? effectiveGid(doc, idx) : null;
+}
+```
+
+Then in `resolveHoverGroup`:
+
+```typescript
+const targetGid = resolveEffectiveGidForRow(view, hoveredRowEl);
+const sameGroupRows = Array.from(view.dom.querySelectorAll<HTMLElement>('.row')).filter(r => {
+  return resolveEffectiveGidForRow(view, r) === targetGid;
+});
+```
+
+(Implementer: adapt to the actual function signatures in ResumeCanvasV3.tsx. The principle: any place a row's "membership" matters and a plain row could be the target, route through `resolveEffectiveGidForRow`.)
+
+- [ ] **Step 5: Add doc comment to rowContainer.tsx**
 
 In `frontend/src/components/resume/v3/nodeviews/rowContainer.tsx`, near the data-group-id emission:
 
 ```typescript
-// NOTE (spec § 2.2): plain rows have no stored semanticGroupId. If a UI
-// consumer needs to know "which entry does this plain visually belong to?"
-// it should call effectiveGid(doc, rowIndex) — NOT read data-group-id.
-// data-group-id on plain rows will always be empty.
+// NOTE (spec § 2.2): plain rows have no stored semanticGroupId in PM
+// schema. data-group-id will be empty for plain rows. UI consumers that
+// need "what entry does this plain visually belong to?" must call
+// effectiveGid(doc, rowIndex) — see ResumeCanvasV3 resolveEffectiveGidForRow
+// for the pattern.
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Visual smoke test**
+
+Open editor in browser, type into an empty plain row that sits between two bullets of the same entry. Hover the plain row — entire entry should highlight. Click the row's drag handle — scope selection should cover the entry, not just the plain row.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/components/resume/v3/nodeviews/rowContainer.tsx
-git commit -m "docs(v3): rowContainer note re: plain row gid via effectiveGid helper"
+git add frontend/src/components/resume/v3/ResumeCanvasV3.tsx frontend/src/components/resume/v3/nodeviews/rowContainer.tsx frontend/src/components/resume/v3/__tests__/effectiveGidHover.test.tsx
+git commit -m "feat(v3): hover/scope use effectiveGid for plain rows (Option B)"
 ```
 
 ---
@@ -2643,37 +2950,29 @@ grep -rln "v2Adapter\|v2ToV3\|v3ToV2" frontend/src 2>/dev/null
 
 Expected: empty (after Phase 3+4). If hits remain, fix them first.
 
-- [ ] **Step 2: Check the migration script — does it still need v2Adapter?**
+- [ ] **Step 2: Verify migration script is already self-contained**
 
-The migration script `scripts/migrate-v2-to-v3.ts` imports `v2ToV3` from `frontend/src/components/resume/v3/schema/v2Adapter.ts`. **This is the one consumer left**. Decide:
-- Option A: keep v2Adapter.ts in repo for the migration script's sake (mark deprecated)
-- Option B: copy v2ToV3 into the migration script itself (self-contained)
+Phase 1 Task 1.2 inlined `v2ToV3` into `scripts/migrate-v2-to-v3.ts` from day one. Confirm:
 
-Choose **Option B** — copy the function inline into `scripts/migrate-v2-to-v3.ts`. This decouples migration from the live frontend code and lets us truly delete v2Adapter.
-
-(Implementer: copy the body of `v2ToV3` from `frontend/src/components/resume/v3/schema/v2Adapter.ts` into the migration script as a top-level function. Same for any helpers it depends on, e.g. `dedupeId`, `richTextToV2BulletDoc`. Total ~200 LOC inlined.)
-
-Update the import in `scripts/migrate-v2-to-v3.ts`:
-
-```typescript
-// Replace:
-//   import { v2ToV3 } from '../frontend/src/components/resume/v3/schema/v2Adapter.js';
-// With the inlined function (and its helpers).
+```bash
+grep -E "import.*v2Adapter|from '.*v2Adapter" scripts/migrate-v2-to-v3.ts
 ```
 
-- [ ] **Step 3: Verify migration tests still pass after inlining**
+Expected: empty output (no import). If hits exist, the Phase 1 self-contained rule was violated — fix Phase 1 first.
+
+- [ ] **Step 3: Delete v2Adapter from frontend**
+
+```bash
+git rm frontend/src/components/resume/v3/schema/v2Adapter.ts frontend/src/components/resume/v3/schema/__tests__/v2Adapter.test.ts
+```
+
+- [ ] **Step 4: Verify migration tests still pass (script unaffected)**
 
 ```bash
 pytest tests/migration/ -v
 ```
 
 Expected: GREEN.
-
-- [ ] **Step 4: Delete v2Adapter from frontend**
-
-```bash
-git rm frontend/src/components/resume/v3/schema/v2Adapter.ts frontend/src/components/resume/v3/schema/__tests__/v2Adapter.test.ts
-```
 
 - [ ] **Step 5: Type-check + frontend tests**
 
@@ -2687,8 +2986,8 @@ Expected: GREEN.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add -A scripts/ frontend/src/components/resume/v3/schema/
-git commit -m "refactor(v3): inline v2ToV3 into migration script + delete v2Adapter.ts"
+git add -A frontend/src/components/resume/v3/schema/
+git commit -m "refactor(v3): delete v2Adapter.ts (migration script is self-contained)"
 ```
 
 ---
@@ -2812,15 +3111,20 @@ git commit -m "docs: update README + dev.sh for v3-only / no Streamlit"
 
 ### Task 5.7: Final acceptance check
 
-- [ ] **Step 1: Zero hits on forbidden references**
+- [ ] **Step 1: Zero hits on forbidden references (with documented exemption)**
 
 Run each command, expect EMPTY output:
 
 ```bash
-git grep -E "ResumeV2|v2Adapter|useResumeStore|html_renderer|streamlit" -- '*.ts' '*.tsx' '*.py' ':!*.lock' ':!docs/**' ':!*.v2-backup.json' ':!*v2_archive*'
+git grep -E "ResumeV2|v2Adapter|useResumeStore|html_renderer|streamlit" -- '*.ts' '*.tsx' '*.py' \
+  ':!*.lock' ':!docs/**' ':!*.v2-backup.json' ':!*v2_archive*' \
+  ':!api/services/parse_v2_to_v3.py' ':!api/services/__tests__/test_parse_v2_to_v3.py' \
+  ':!api/routes/resume.py'  # parse endpoint imports parse_v2_to_v3 — that's the one allowed v2 reference
 ```
 
-If any hit appears in production code (not docs, not archives), fix before proceeding.
+**Documented exemption (review feedback #6):** `parse_v2_to_v3.py` is intentionally retained as a transient adapter for the parser output. It's the ONLY v2-shape code remaining post-cleanup. Tracked as follow-up: rewrite parser to emit v3 directly.
+
+If any other hit appears in production code (not docs, not archives), fix before proceeding.
 
 - [ ] **Step 2: All saved_sessions are v3**
 
