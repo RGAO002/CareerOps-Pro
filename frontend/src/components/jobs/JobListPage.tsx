@@ -1,17 +1,39 @@
 "use client";
 
+import { useEffect } from "react";
 import { useJobMatchStore } from "@/stores/jobMatch";
 import { EmbeddingConstellation } from "./EmbeddingConstellation";
 import { MatchFilterBar } from "./MatchFilterBar";
 import { JobCard } from "./JobCard";
 
-interface Props { animateIn?: boolean; }
+interface Props { animateIn?: boolean; resumeId?: string | null; }
 
-export function JobListPage({ animateIn = false }: Props) {
+export function JobListPage({ animateIn = false, resumeId }: Props) {
+  const fetch   = useJobMatchStore((s) => s.fetch);
   const matches = useJobMatchStore((s) => s.matches);
+  const loading = useJobMatchStore((s) => s.loading);
+  const filter  = useJobMatchStore((s) => s.filter);
+  const sort    = useJobMatchStore((s) => s.sort);
+
+  useEffect(() => {
+    if (resumeId) fetch(resumeId);
+  }, [resumeId, fetch]);
   const strongCount  = matches.filter((j) => j.tier === "A").length;
   const goodCount    = matches.filter((j) => j.tier === "B").length;
   const stretchCount = matches.filter((j) => j.tier === "C").length;
+
+  const visible = matches
+    .filter((j) => {
+      if (filter === "spons")  return j.sponsorshipSignal === "friendly" || j.sponsorshipSignal === "company_history";
+      if (filter === "remote") return j.workType === "remote";
+      if (filter === "strong") return j.tier === "A";
+      return true;
+    })
+    .slice()
+    .sort((a, b) => {
+      if (sort === "match") return b.matchScore - a.matchScore;
+      return 0;
+    });
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "oklch(0.97 0.008 55)", fontFamily: "Inter, system-ui, sans-serif", color: "oklch(0.20 0.020 45)", overflow: "hidden" }}>
@@ -88,13 +110,17 @@ export function JobListPage({ animateIn = false }: Props) {
 
       {/* JOB GRID */}
       <div style={{ flex: 1, overflowY: "auto", padding: "0 28px 100px" }}>
-        {matches.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "oklch(0.48 0.012 50)", fontFamily: "Inter, sans-serif", fontSize: 14 }}>
+            Fetching your matches…
+          </div>
+        ) : visible.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "oklch(0.48 0.012 50)", fontFamily: "Inter, sans-serif", fontSize: 14 }}>
             No matches yet — try broadening your search.
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-            {matches.map((job, i) => (
+            {visible.map((job, i) => (
               <JobCard key={job.id} job={job} index={i} animateIn={animateIn} />
             ))}
           </div>
@@ -108,7 +134,7 @@ export function JobListPage({ animateIn = false }: Props) {
             <span key={c} style={{ width: 6, height: 6, borderRadius: 999, background: c }} />
           ))}
         </span>
-        3 agents matched {matches.length} roles
+        3 agents matched {visible.length} roles
         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10, opacity: 0.55, padding: "3px 6px", borderRadius: 4, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.16)" }}>⌘K</span>
       </div>
     </div>

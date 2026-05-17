@@ -6,6 +6,7 @@ import { Upload, Loader2, Check, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useResumeStore } from "@/stores/resume";
 import { useTransitionStore } from "@/stores/transition";
+import { parseResumeFile } from "@/lib/api";
 import {
   motion,
   AnimatePresence,
@@ -81,10 +82,15 @@ export function LandingHero() {
       const file = files[0];
       if (!file) return;
       setParsing(true);
-      await new Promise((r) => setTimeout(r, 2000));
-      setResumeData({ name: "Demo" }, file.name);
-      setParsing(false);
-      useTransitionStore.getState().start("demo-resume-id");
+      try {
+        const v3 = await parseResumeFile(file);
+        const resumeId = v3.id as string;
+        setResumeData(v3, file.name);
+        setParsing(false);
+        useTransitionStore.getState().start(resumeId);
+      } catch {
+        setParsing(false);
+      }
     },
     [setParsing, setResumeData],
   );

@@ -6,9 +6,9 @@ import { Assistant } from "@/components/ai/assistant";
 import { PreferencesDrawer } from "@/components/layout/PreferencesDrawer";
 import { JobListPage } from "./JobListPage";
 
-interface Props { animateIn: boolean; }
+interface Props { animateIn: boolean; resumeId: string | null; }
 
-export function JobsShell({ animateIn }: Props) {
+export function JobsShell({ animateIn, resumeId }: Props) {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
 
   return (
@@ -22,7 +22,7 @@ export function JobsShell({ animateIn }: Props) {
           position: "relative",
         }}
       >
-        <JobListPage animateIn={animateIn} />
+        <JobListPage animateIn={animateIn} resumeId={resumeId} />
       </div>
       <Assistant />
       <PreferencesDrawer />

@@ -97,21 +97,26 @@ export function JobCard({ job, index, animateIn = false }: Props) {
             {reason}
           </li>
         ))}
-        <li style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, lineHeight: 1.45, color: "oklch(0.48 0.012 50)", position: "relative", paddingLeft: 14 }}>
-          <span style={{ position: "absolute", left: 0, top: 7, width: 6, height: 1, background: "oklch(0.50 0.14 35)", opacity: 0.5 }} />
-          <span style={{ color: "oklch(0.50 0.14 35)", fontWeight: 500 }}>Gap:</span> {job.gap}
-        </li>
+        {job.gap && (
+          <li style={{ fontFamily: "Inter, sans-serif", fontSize: 11.5, lineHeight: 1.45, color: "oklch(0.48 0.012 50)", position: "relative", paddingLeft: 14 }}>
+            <span style={{ position: "absolute", left: 0, top: 7, width: 6, height: 1, background: "oklch(0.50 0.14 35)", opacity: 0.5 }} />
+            <span style={{ color: "oklch(0.50 0.14 35)", fontWeight: 500 }}>Gap:</span> {job.gap}
+          </li>
+        )}
       </ul>
 
       {/* Footer: tags + tailor button */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid oklch(0.94 0.012 48)" }}>
         {job.tags.map((tag) => (
-          <span key={tag} style={{ fontFamily: "Inter, sans-serif", fontSize: 10, fontWeight: 500, padding: "4px 8px", borderRadius: 4, letterSpacing: "0.02em", background: tag.includes("H1B") ? "oklch(0.62 0.13 38 / 0.08)" : "oklch(0.96 0.010 50)", border: `1px solid ${tag.includes("H1B") ? "oklch(0.62 0.13 38 / 0.30)" : "oklch(0.90 0.008 50)"}`, color: tag.includes("H1B") ? "oklch(0.50 0.14 35)" : "oklch(0.48 0.012 50)" }}>
+          <span key={tag} style={{ fontFamily: "Inter, sans-serif", fontSize: 10, fontWeight: 500, padding: "4px 8px", borderRadius: 4, letterSpacing: "0.02em", background: tag.includes("H-1B") ? "oklch(0.62 0.13 38 / 0.08)" : "oklch(0.96 0.010 50)", border: `1px solid ${tag.includes("H-1B") ? "oklch(0.62 0.13 38 / 0.30)" : "oklch(0.90 0.008 50)"}`, color: tag.includes("H-1B") ? "oklch(0.50 0.14 35)" : "oklch(0.48 0.012 50)" }}>
             {tag}
           </span>
         ))}
         <span style={{ flex: 1 }} />
-        <button style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 6, background: hover ? "oklch(0.20 0.020 45)" : "transparent", color: hover ? "#fff" : "oklch(0.20 0.020 45)", border: hover ? "none" : "1px solid oklch(0.90 0.008 50)", fontFamily: "Inter, sans-serif", fontSize: 11, fontWeight: 500, cursor: "pointer", transition: "all 0.2s" }}>
+        <button
+          onClick={() => job.applyUrl && window.open(job.applyUrl, "_blank", "noopener")}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 6, background: hover ? "oklch(0.20 0.020 45)" : "transparent", color: hover ? "#fff" : "oklch(0.20 0.020 45)", border: hover ? "none" : "1px solid oklch(0.90 0.008 50)", fontFamily: "Inter, sans-serif", fontSize: 11, fontWeight: 500, cursor: "pointer", transition: "all 0.2s" }}
+        >
           <Sparkle size={10} color={hover ? "#fff" : "oklch(0.62 0.13 38)"} />
           Tailor & open
           <span style={{ opacity: 0.5 }}>→</span>

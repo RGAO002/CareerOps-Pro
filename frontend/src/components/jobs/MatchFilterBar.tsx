@@ -4,7 +4,7 @@ import { useJobMatchStore, type FilterType, type SortType } from "@/stores/jobMa
 
 const FILTERS: { id: FilterType; label: string; count: number; accent?: boolean }[] = [
   { id: "all",    label: "All",          count: 247 },
-  { id: "spons",  label: "Sponsors H1B", count: 38, accent: true },
+  { id: "spons",  label: "Sponsors H-1B", count: 38, accent: true },
   { id: "remote", label: "Remote OK",    count: 64 },
   { id: "strong", label: "Strong fit",   count: 12 },
   { id: "recent", label: "Posted 7d",    count: 89 },
