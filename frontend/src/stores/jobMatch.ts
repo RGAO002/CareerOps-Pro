@@ -39,18 +39,22 @@ const MOCK_JOBS: Job[] = [
   { id: "j10", title: "Sr. PM, Income",            company: "Plaid",     location: "San Francisco · Hybrid", workType: "hybrid",  salary: "$190–235k", applyUrl: "", sponsorshipSignal: "",                 matchScore: 66, agentScores: { recruiter: 64, hm: 70, coach: 64 }, matchReasons: ["Alum signal", "Banks API fluency"],                                              gap: "Underwriting/credit unfamiliar",     tags: ["Stretch"],                     tier: "C" },
 ];
 
-function itemToJob(item: MatchResultItem): Job {
+function itemToJob(item: MatchResultItem, rank: number, total: number): Job {
   const score100 = Math.round(item.score * 100);
+
+  // Tier is relative to position in the sorted result set
+  const tierA = Math.max(1, Math.round(total * 0.2));   // top 20%
+  const tierB = Math.max(2, Math.round(total * 0.55));  // next 35%
+  const tier: "A" | "B" | "C" = rank < tierA ? "A" : rank < tierB ? "B" : "C";
+
   const tags: string[] = [];
   if (item.sponsorship_signal === "friendly" || item.sponsorship_signal === "company_history") {
     tags.push("Sponsors H-1B");
   }
   if (item.work_type === "remote") tags.push("Remote OK");
-  if (score100 >= 85) tags.push("Strong fit");
-  else if (score100 >= 70) tags.push("Good fit");
+  if (tier === "A") tags.push("Strong fit");
+  else if (tier === "B") tags.push("Good fit");
   else tags.push("Worth exploring");
-
-  const tier: "A" | "B" | "C" = score100 >= 85 ? "A" : score100 >= 70 ? "B" : "C";
 
   const spread = Math.round(score100 * 0.05);
   return {
@@ -99,7 +103,7 @@ export const useJobMatchStore = create<JobMatchState>((set) => ({
     try {
       const res = await matchJobsForResume(resumeId, { needs_sponsorship: true }, 20);
       if (res.results.length > 0) {
-        const jobs = res.results.map(itemToJob);
+        const jobs = res.results.map((item, i) => itemToJob(item, i, res.results.length));
         const sig = jobs.slice(0, 5).map((j) =>
           j.company + (j.location ? ` · ${j.location.split("·")[0].trim()}` : "")
         );

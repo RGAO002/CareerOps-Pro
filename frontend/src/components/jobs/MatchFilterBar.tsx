@@ -2,24 +2,34 @@
 
 import { useJobMatchStore, type FilterType, type SortType } from "@/stores/jobMatch";
 
-const FILTERS: { id: FilterType; label: string; count: number; accent?: boolean }[] = [
-  { id: "all",    label: "All",          count: 247 },
-  { id: "spons",  label: "Sponsors H-1B", count: 38, accent: true },
-  { id: "remote", label: "Remote OK",    count: 64 },
-  { id: "strong", label: "Strong fit",   count: 12 },
-  { id: "recent", label: "Posted 7d",    count: 89 },
-];
-
 export function MatchFilterBar() {
+  const matches   = useJobMatchStore((s) => s.matches);
   const filter    = useJobMatchStore((s) => s.filter);
   const sort      = useJobMatchStore((s) => s.sort);
   const setFilter = useJobMatchStore((s) => s.setFilter);
   const setSort   = useJobMatchStore((s) => s.setSort);
 
+  const counts = {
+    all:    matches.length,
+    spons:  matches.filter((j) => j.sponsorshipSignal === "friendly" || j.sponsorshipSignal === "company_history").length,
+    remote: matches.filter((j) => j.workType === "remote").length,
+    strong: matches.filter((j) => j.tier === "A").length,
+    recent: matches.length, // posted_at not available in Job interface yet
+  };
+
+  const FILTERS: { id: FilterType; label: string; accent?: boolean }[] = [
+    { id: "all",    label: "All" },
+    { id: "spons",  label: "Sponsors H-1B", accent: true },
+    { id: "remote", label: "Remote OK" },
+    { id: "strong", label: "Strong fit" },
+    { id: "recent", label: "Posted 7d" },
+  ];
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       {FILTERS.map((f) => {
         const active = filter === f.id;
+        const count = counts[f.id];
         return (
           <button
             key={f.id}
@@ -37,7 +47,7 @@ export function MatchFilterBar() {
             {f.id === "spons" && <span>★</span>}
             {f.label}
             <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5, opacity: active ? 0.7 : 0.5 }}>
-              {f.count}
+              {count}
             </span>
           </button>
         );
