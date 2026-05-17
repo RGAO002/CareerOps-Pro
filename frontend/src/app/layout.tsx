@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Outfit, Instrument_Serif, Inter, Manrope, Plus_Jakarta_Sans } from "next/font/google";
+import { Outfit, Instrument_Serif, Inter, Manrope, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
@@ -39,6 +39,13 @@ const plusJakarta = Plus_Jakarta_Sans({
   weight: ["400", "500", "600", "700", "800"],
 });
 
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+  weight: ["400", "500"],
+});
+
 const display = Instrument_Serif({
   subsets: ["latin"],
   variable: "--font-display",
@@ -58,7 +65,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${body.variable} ${display.variable} ${inter.variable} ${manrope.variable} ${plusJakarta.variable} ${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" className={`${body.variable} ${display.variable} ${inter.variable} ${manrope.variable} ${plusJakarta.variable} ${jetbrainsMono.variable} ${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-[family-name:var(--font-body)] antialiased">
         {children}
       </body>

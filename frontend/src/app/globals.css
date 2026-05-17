@@ -137,6 +137,19 @@
     --space-2xl: 48px;
     --space-3xl: 64px;
     --space-4xl: 96px;
+
+    /* ── Job Match tokens ── */
+    --terracotta:      oklch(0.62 0.13 38);
+    --terracotta-deep: oklch(0.50 0.14 35);
+    --warm:            oklch(0.78 0.12 42);
+    --warn:            oklch(0.65 0.13 70);
+    --recruit:         oklch(0.62 0.14 32);
+    --hm:              oklch(0.55 0.14 150);
+    --coach:           oklch(0.55 0.12 260);
+    --p-base:          oklch(0.13 0.025 34);
+    --ease-expo:       cubic-bezier(0.7, 0, 0.3, 1);
+    --ease-overlay:    cubic-bezier(0.7, 0, 0.3, 1);
+    --ease-pop:        cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
 @layer base {
@@ -613,4 +626,31 @@ body.cop-editor-fullbleed *::-webkit-scrollbar-corner {
   user-select: none;
   -webkit-user-select: none;
   z-index: 4;
+}
+
+/* ── Job Match animations ── */
+@keyframes arc-draw {
+  from { stroke-dashoffset: 160; }
+  to   { stroke-dashoffset: 0;   }
+}
+@keyframes pop-in {
+  from { transform: scale(0.3); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes aurora {
+  0%, 100% { transform: translate(0, 0);        }
+  50%       { transform: translate(40px, -20px); }
+}
+@keyframes flow {
+  0%   { transform: translate(0, 0) scale(1);       }
+  50%  { transform: translate(10%, -5%) scale(1.05); }
+  100% { transform: translate(-5%, 5%) scale(0.95);  }
+}
+@keyframes beacon {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 12px oklch(0.62 0.13 38); }
+  50%       { opacity: 0.4; box-shadow: 0 0 4px  oklch(0.62 0.13 38); }
 }
