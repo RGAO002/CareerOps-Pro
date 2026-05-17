@@ -1,0 +1,12 @@
+api/
+services/
+pages/
+utils/
+scripts/
+data/
+tests/
+saved_sessions/
+app.py
+dev.sh
+requirements.txt
+*.py
