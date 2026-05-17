@@ -14,6 +14,7 @@ Endpoints:
   POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
 import copy
+import json
 import os
 import re
 import uuid
@@ -254,6 +255,30 @@ async def parse_pdf(file: UploadFile = File(...)) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"v3 validation after parse failed: {e}") from e
     resume_store.save_v3_dict(v3_dict)
+
+    # Also write a flat-format record to SQLite so the matching service can
+    # load this resume by ID. The matcher's compose_resume_text expects
+    # role/summary/skills/experience/education at the top level — exactly
+    # what parsed_raw already provides.
+    try:
+        import aiosqlite
+        from api.db import DB_PATH
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO resumes (id, name, role, filename, resume_data)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    rid,
+                    raw_title,
+                    str(parsed_raw.get("role") or ""),
+                    file.filename or "",
+                    json.dumps(parsed_raw),
+                ),
+            )
+            await db.commit()
+    except Exception:
+        pass  # non-fatal: matching will degrade gracefully
+
     return v3_dict
 
 

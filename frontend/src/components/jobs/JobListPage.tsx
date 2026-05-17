@@ -15,6 +15,19 @@ export function JobListPage({ animateIn = false, resumeId }: Props) {
   const filter  = useJobMatchStore((s) => s.filter);
   const sort    = useJobMatchStore((s) => s.sort);
 
+  const CLUSTER_POS = [
+    {  x:  72, y: -36 },
+    {  x: 110, y:  18 },
+    {  x: -68, y: -28 },
+    {  x: -98, y:  22 },
+    {  x:  46, y:  60 },
+  ];
+  const clusters = matches.slice(0, 5).map((j, i) => ({
+    ...CLUSTER_POS[i],
+    label: j.company,
+    score: j.matchScore,
+  }));
+
   useEffect(() => {
     if (resumeId) fetch(resumeId);
   }, [resumeId, fetch]);
@@ -95,7 +108,7 @@ export function JobListPage({ animateIn = false, resumeId }: Props) {
         <div style={{ position: "relative", height: 160, marginTop: 8, borderRadius: 12, overflow: "hidden", background: "linear-gradient(180deg, oklch(0.97 0.008 55) 0%, oklch(0.95 0.012 55) 100%)", border: "1px solid oklch(0.90 0.008 50)" }}>
           <div style={{ position: "absolute", inset: 0, opacity: 0.4, backgroundImage: "radial-gradient(oklch(0.85 0.010 50) 0.5px, transparent 0.5px)", backgroundSize: "14px 14px" }} />
           <div style={{ position: "absolute", left: "30%", top: "-40%", width: 380, height: 380, borderRadius: "50%", pointerEvents: "none", background: "radial-gradient(circle, oklch(0.82 0.14 35 / 0.18), transparent 70%)", animation: "aurora 16s ease-in-out infinite" }} />
-          <EmbeddingConstellation phase={3} dark={false} compact />
+          <EmbeddingConstellation phase={3} dark={false} compact clusters={clusters} />
           <div style={{ position: "absolute", right: 14, bottom: 10, display: "flex", gap: 14, fontFamily: '"JetBrains Mono", monospace', fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "oklch(0.48 0.012 50)" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "oklch(0.62 0.13 38)" }} />You</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "oklch(0.55 0.12 150)" }} />Strong cluster</span>

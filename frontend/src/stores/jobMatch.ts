@@ -99,7 +99,11 @@ export const useJobMatchStore = create<JobMatchState>((set) => ({
     try {
       const res = await matchJobsForResume(resumeId, { needs_sponsorship: true }, 20);
       if (res.results.length > 0) {
-        set({ matches: res.results.map(itemToJob), loading: false });
+        const jobs = res.results.map(itemToJob);
+        const sig = jobs.slice(0, 5).map((j) =>
+          j.company + (j.location ? ` · ${j.location.split("·")[0].trim()}` : "")
+        );
+        set({ matches: jobs, signature: sig, loading: false });
       } else {
         set({ matches: MOCK_JOBS, loading: false });
       }
