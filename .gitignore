@@ -37,6 +37,7 @@ saved_sessions/
 
 # Data directory — raw DOL/USCIS files + SQLite DB (large binary, not in VCS)
 data/
+data
 
 # TypeScript build info (generated artifact)
 frontend/tsconfig.tsbuildinfo
