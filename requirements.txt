@@ -19,8 +19,15 @@ fastapi
 uvicorn[standard]
 websockets
 python-multipart>=0.0.9
+aiosqlite
+ddgs
+httpx>=0.27
+pandas
+openpyxl
+rapidfuzz
+apscheduler
+typer
 
 # Testing
 pytest>=8.0
-httpx>=0.27
 playwright>=1.40

@@ -1,0 +1,8 @@
+{
+  "name": "scripts",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  }
+}

@@ -125,25 +125,87 @@ def save_v2_dict(resume_v2: dict) -> None:
     )
 
 
+def save_v3_dict(resume_v3: dict) -> None:
+    """Write a v3-shaped resume dict to disk, with backup-on-write.
+
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 7.3.
+
+    Sequence:
+      1. Validate id present.
+      2. If main file exists, copy it to {id}.backup.json (overwrite).
+      3. Write new content to {id}.json.
+
+    Backup write failure logs a warning but does not block main write — the
+    backup subsystem must never prevent the user from saving their work.
+    """
+    if "id" not in resume_v3:
+        raise ValueError("missing id")
+    _validate_id(resume_v3["id"])
+    _ensure_dir()
+    main_path = _path_for(resume_v3["id"])
+    backup_path = RESUMES_DIR / f"{resume_v3['id']}.backup.json"
+    if main_path.exists():
+        try:
+            backup_path.write_text(main_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError as e:
+            # Log but don't block — see spec § 7.3 failure semantics.
+            import logging
+            logging.getLogger(__name__).warning("backup write failed for %s: %s", resume_v3["id"], e)
+    main_path.write_text(
+        json.dumps(resume_v3, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def load_v3_dict(resume_id: str) -> dict:
+    """Load a resume as a v3-shaped dict. Refuses to migrate older formats —
+    see spec § 7 (offline migration is the only supported v2→v3 path).
+    """
+    _validate_id(resume_id)
+    path = _path_for(resume_id)
+    if not path.exists():
+        raise FileNotFoundError(f"Resume {resume_id} not found")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    version = raw.get("schema_version")
+    if version != 3:
+        raise ValueError(
+            f"Resume {resume_id} on disk has schema_version={version}, "
+            f"expected 3. Run scripts/run-migration.sh before deploying."
+        )
+    return raw
+
+
 def list_all_dict() -> list[dict]:
-    """List all resumes as v2-shaped dicts, newest updated_at first.
+    """List all resumes as dicts, newest updated_at first.
 
-    Both v1 and v2 files on disk are returned in v2 shape (v1 is auto-migrated
-    via load_dict). Files that fail to load are silently skipped.
+    v3 files are returned as-is (load_v3_dict). v1/v2 files are returned via
+    the legacy load_dict path (auto-migrated to v2). Files that fail to load
+    are silently skipped.
 
-    Sort key prefers v2 ``metadata.updated_at`` (ISO string) when present and
-    falls back to v1 ``updated_at`` (epoch ms) — comparable lexically for ISO
-    strings; falls back gracefully when types mix.
+    After the offline v2→v3 migration (Task 2.5), all files on disk will be
+    v3 and the legacy branch becomes unreachable, but it's kept for safety
+    during the transition window.
+
+    Sort key uses ``metadata.updated_at`` (ISO string) when present, falling
+    back to legacy ``updated_at`` (epoch ms).
     """
     _ensure_dir()
     resumes: list[dict] = []
     for f in RESUMES_DIR.glob("*.json"):
         if f.parent != RESUMES_DIR:
             continue  # skip snapshots subdir
+        # Skip rolling-backup files written by save_v3_dict.
+        if f.name.endswith(".backup.json"):
+            continue
         try:
             rid = f.stem
             _validate_id(rid)
-            resumes.append(load_dict(rid))
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            version = raw.get("schema_version", 1)
+            if version == 3:
+                resumes.append(raw)
+            else:
+                resumes.append(load_dict(rid))
         except (json.JSONDecodeError, ValueError, FileNotFoundError):
             continue
 

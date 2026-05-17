@@ -2,6 +2,7 @@
 
 import {
   Home,
+  Compass,
   BarChart3,
   PenLine,
   FileText,
@@ -19,6 +20,7 @@ import { NavItem } from "./NavItem";
 
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
+  { href: "/jobs", icon: Compass, label: "Discover" },
   { href: "/analysis", icon: BarChart3, label: "Analysis", disabled: true },
   { href: "/upload", icon: PenLine, label: "Editor" },
   { href: "/cover-letter", icon: FileText, label: "Cover Letter", disabled: true },

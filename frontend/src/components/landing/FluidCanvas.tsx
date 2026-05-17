@@ -28,6 +28,9 @@ const FRAGMENT_SRC = `
   uniform float u_w1;
   uniform float u_w2;
   uniform float u_w3;
+  uniform vec2 u_o1;
+  uniform vec2 u_o2;
+  uniform vec2 u_o3;
 
   // Agent colors
   const vec3 c1 = vec3(${COLORS.recruiter.join(", ")});
@@ -97,15 +100,15 @@ const FRAGMENT_SRC = `
     vec2 center1 = vec2(
       0.3 * aspect + 0.15 * sin(t * 1.2) + 0.1 * fbm(vec2(t * 0.5, 0.0)),
       0.7 + 0.12 * cos(t * 0.9) + 0.08 * fbm(vec2(0.0, t * 0.4))
-    );
+    ) + u_o1;
     vec2 center2 = vec2(
       0.7 * aspect + 0.12 * cos(t * 0.8) + 0.1 * fbm(vec2(t * 0.3, 3.0)),
       0.35 + 0.15 * sin(t * 1.1) + 0.08 * fbm(vec2(3.0, t * 0.5))
-    );
+    ) + u_o2;
     vec2 center3 = vec2(
       0.5 * aspect + 0.18 * sin(t * 0.6 + 2.0) + 0.1 * fbm(vec2(t * 0.4, 6.0)),
       0.5 + 0.12 * cos(t * 1.4 + 1.0) + 0.08 * fbm(vec2(6.0, t * 0.3))
-    );
+    ) + u_o3;
 
     // Push blobs toward mouse
     center1 += (mouse - center1) * mouseInfluence * 0.15;
@@ -158,6 +161,19 @@ const FRAGMENT_SRC = `
   }
 `;
 
+const OFFSCREEN_OFFSETS = {
+  recruit: [-0.55, 0.16],
+  hm: [0.58, -0.12],
+  coach: [0.08, 0.58],
+} as const;
+
+type AgentKey = keyof typeof OFFSCREEN_OFFSETS;
+type Offset = [number, number];
+
+function offsetFor(weight: number, key: AgentKey): Offset {
+  return weight > 0 ? [0, 0] : [...OFFSCREEN_OFFSETS[key]];
+}
+
 export function FluidCanvas({
   className,
   forceAnimate = false,
@@ -194,12 +210,27 @@ export function FluidCanvas({
     hm: hmWeight,
     coach: coachWeight,
   });
+  const targetOffsetsRef = useRef<Record<AgentKey, Offset>>({
+    recruit: offsetFor(recruitWeight, "recruit"),
+    hm: offsetFor(hmWeight, "hm"),
+    coach: offsetFor(coachWeight, "coach"),
+  });
+  const displayOffsetsRef = useRef<Record<AgentKey, Offset>>({
+    recruit: offsetFor(recruitWeight, "recruit"),
+    hm: offsetFor(hmWeight, "hm"),
+    coach: offsetFor(coachWeight, "coach"),
+  });
 
   useEffect(() => {
     targetWeightsRef.current = {
       recruit: recruitWeight,
       hm: hmWeight,
       coach: coachWeight,
+    };
+    targetOffsetsRef.current = {
+      recruit: offsetFor(recruitWeight, "recruit"),
+      hm: offsetFor(hmWeight, "hm"),
+      coach: offsetFor(coachWeight, "coach"),
     };
   }, [recruitWeight, hmWeight, coachWeight]);
 
@@ -272,6 +303,9 @@ export function FluidCanvas({
     const uW1 = gl.getUniformLocation(program, "u_w1");
     const uW2 = gl.getUniformLocation(program, "u_w2");
     const uW3 = gl.getUniformLocation(program, "u_w3");
+    const uO1 = gl.getUniformLocation(program, "u_o1");
+    const uO2 = gl.getUniformLocation(program, "u_o2");
+    const uO3 = gl.getUniformLocation(program, "u_o3");
 
     // Resize handler
     const resize = () => {
@@ -300,10 +334,17 @@ export function FluidCanvas({
       lastFrameAt = now;
       const targetWeights = targetWeightsRef.current;
       const displayWeights = displayWeightsRef.current;
+      const targetOffsets = targetOffsetsRef.current;
+      const displayOffsets = displayOffsetsRef.current;
       const ease = prefersReducedMotion ? 1 : 1 - Math.exp(-deltaMs / 420);
+      const offsetEase = prefersReducedMotion ? 1 : 1 - Math.exp(-deltaMs / 520);
       displayWeights.recruit += (targetWeights.recruit - displayWeights.recruit) * ease;
       displayWeights.hm += (targetWeights.hm - displayWeights.hm) * ease;
       displayWeights.coach += (targetWeights.coach - displayWeights.coach) * ease;
+      (Object.keys(displayOffsets) as AgentKey[]).forEach((key) => {
+        displayOffsets[key][0] += (targetOffsets[key][0] - displayOffsets[key][0]) * offsetEase;
+        displayOffsets[key][1] += (targetOffsets[key][1] - displayOffsets[key][1]) * offsetEase;
+      });
 
       const elapsed = (Date.now() - startTimeRef.current) / 1000;
       gl.uniform1f(uTime, prefersReducedMotion ? 0 : elapsed);
@@ -314,6 +355,9 @@ export function FluidCanvas({
       gl.uniform1f(uW1, displayWeights.recruit);
       gl.uniform1f(uW2, displayWeights.hm);
       gl.uniform1f(uW3, displayWeights.coach);
+      gl.uniform2f(uO1, displayOffsets.recruit[0], displayOffsets.recruit[1]);
+      gl.uniform2f(uO2, displayOffsets.hm[0], displayOffsets.hm[1]);
+      gl.uniform2f(uO3, displayOffsets.coach[0], displayOffsets.coach[1]);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!prefersReducedMotion) {
         rafRef.current = requestAnimationFrame(render);

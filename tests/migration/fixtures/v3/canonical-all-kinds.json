@@ -1,0 +1,25 @@
+{
+  "schema_version": 3,
+  "id": "canonical-1",
+  "title": "Canonical Doc",
+  "template_id": "minimal-single-column",
+  "rows": [
+    {"id": "h-name", "kind": "header.name", "content": {"text": "Alice"}},
+    {"id": "h-c1", "kind": "header.contact", "content": {"type": "text", "value": "alice@example.com"}},
+    {"id": "h-c2", "kind": "header.contact", "content": {"type": "link", "label": "site", "url": "https://x"}},
+    {"id": "s1", "kind": "section.heading", "semanticGroupId": "gS1", "content": {"text": "Experience"}},
+    {"id": "e1-t", "kind": "entry.title", "semanticGroupId": "gE1", "content": {"text": "Engineer @ X"}},
+    {"id": "e1-m", "kind": "entry.meta", "semanticGroupId": "gE1", "content": {"text": "2026"}},
+    {"id": "e1-b1", "kind": "bullet", "semanticGroupId": "gE1", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "shipped X"}]}]}},
+    {"id": "p1", "kind": "plain", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "free para"}]}]}},
+    {"id": "p2", "kind": "plain", "content": {"type": "doc", "content": []}}
+  ],
+  "groups": [
+    {"id": "gS1", "kind": "section", "role": "experience", "label": "Experience"},
+    {"id": "gE1", "kind": "entry", "parentSectionGroupId": "gS1"}
+  ],
+  "metadata": {
+    "created_at": "2026-05-02T00:00:00Z",
+    "updated_at": "2026-05-02T00:00:00Z"
+  }
+}

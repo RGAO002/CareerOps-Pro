@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "id": "fixture-orphan",
+  "title": "Orphan",
+  "template_id": "minimal-single-column",
+  "header": {"id": "h5", "name": "Eve", "contact_lines": []},
+  "sections": [
+    {
+      "id": "sec-exp",
+      "role": "experience",
+      "heading": "Experience",
+      "entries": [
+        {
+          "id": "ent-real",
+          "title": "Engineer @ Y",
+          "meta": "2023",
+          "bullets": [
+            {"id": "b1", "kind": "bullet", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Real bullet"}]}]}}
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
+}

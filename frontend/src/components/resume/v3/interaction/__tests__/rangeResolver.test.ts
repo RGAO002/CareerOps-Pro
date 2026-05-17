@@ -65,6 +65,19 @@ describe('rangeResolver (§ 5.2)', () => {
     expect(r.rowIds).toEqual(['r1', 'r2', 'r3']);
   });
 
+  it('entry.title includes empty plain rows when they carry the entry group id', () => {
+    const state = makeState(
+      [
+        { kind: 'entry_title', id: 'r1', gid: 'gE', text: 'X' },
+        { kind: 'plain', id: 'r2', gid: 'gE' },
+        { kind: 'bullet', id: 'r3', gid: 'gE', text: 'b' },
+      ],
+      [{ type: 'create', group: { id: 'gE' as GroupId, kind: 'entry' } }],
+    );
+    const r = resolveBlockRange(state, 'r1' as RowId);
+    expect(r.rowIds).toEqual(['r1', 'r2', 'r3']);
+  });
+
   it('entry.meta -> returns all rows in entry group', () => {
     const state = makeState(
       [
@@ -91,6 +104,23 @@ describe('rangeResolver (§ 5.2)', () => {
         { type: 'create', group: { id: 'gS' as GroupId, kind: 'section', role: 'experience' } },
         { type: 'create', group: { id: 'gE1' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId } },
         { type: 'create', group: { id: 'gE2' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId } },
+      ],
+    );
+    const r = resolveBlockRange(state, 'r1' as RowId);
+    expect(r.rowIds).toEqual(['r1', 'r2', 'r3', 'r4']);
+  });
+
+  it('section.heading includes empty plain rows when they carry an entry group id', () => {
+    const state = makeState(
+      [
+        { kind: 'section_heading', id: 'r1', gid: 'gS', text: 'Exp' },
+        { kind: 'entry_title', id: 'r2', gid: 'gE', text: 'A' },
+        { kind: 'plain', id: 'r3', gid: 'gE' },
+        { kind: 'bullet', id: 'r4', gid: 'gE', text: 'a' },
+      ],
+      [
+        { type: 'create', group: { id: 'gS' as GroupId, kind: 'section', role: 'experience' } },
+        { type: 'create', group: { id: 'gE' as GroupId, kind: 'entry', parentSectionGroupId: 'gS' as GroupId } },
       ],
     );
     const r = resolveBlockRange(state, 'r1' as RowId);

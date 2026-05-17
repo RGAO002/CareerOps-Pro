@@ -35,6 +35,18 @@ build/
 # Saved sessions (user data)
 saved_sessions/
 
+# Data directory — raw DOL/USCIS files + SQLite DB (large binary, not in VCS)
+data/
+data
+
+# TypeScript build info (generated artifact)
+frontend/tsconfig.tsbuildinfo
+
 2captcha-python/
 .superpowers/
 .worktrees/
+scripts/node_modules/
+node_modules/
+frontend/job_match_page/
+services/services/
+scripts/scripts/

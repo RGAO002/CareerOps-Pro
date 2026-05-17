@@ -14,6 +14,7 @@ Endpoints:
   POST   /:id/ai/rewrite-bullet   AI tool dispatch
 """
 import copy
+import json
 import os
 import re
 import uuid
@@ -43,6 +44,7 @@ def _ensure_valid_id(value: str) -> None:
 
 class CreateResumeRequest(BaseModel):
     title: str = "Untitled resume"
+    id: Optional[str] = None
 
 
 @router.get("/")
@@ -73,42 +75,53 @@ async def list_resumes() -> dict:
 
 @router.get("/{resume_id}")
 async def get_resume(resume_id: str) -> dict:
-    """Get one resume in full, in v2-shaped form.
+    """Get one resume in full, v3-shaped.
 
-    v1 docs on disk are auto-migrated through ``resume_store.load_dict``;
-    the on-disk file is NOT rewritten — only an explicit save (CLI migration
-    or PUT) flips the on-disk version.
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 4.
+
+    Files on disk MUST be schema_version: 3 (migration runs offline before
+    deployment — see § 7). Older formats are rejected with 500 to surface
+    the inconsistency rather than silently auto-migrate.
     """
     _ensure_valid_id(resume_id)
     try:
-        return resume_store.load_dict(resume_id)
+        raw = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
+    return raw
 
 
 @router.put("/{resume_id}")
 async def upsert_resume(resume_id: str, payload: dict) -> dict:
-    """Create or replace a resume with a v2-shaped doc. URL id always wins.
+    """Create or replace a resume with a v3-shaped doc. URL id always wins.
 
-    The body must declare ``schema_version: 2`` — the route does not accept
-    legacy v1 payloads. The frontend (post-Task 38) always writes v2.
+    Spec ref: docs/superpowers/specs/2026-05-02-v3-only-resume-design.md § 4 + § 7.3.
+
+    The body must declare schema_version: 3. v2 payloads are rejected — the
+    frontend writes v3 directly after Phase 3.
     """
     _ensure_valid_id(resume_id)
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Body must be a JSON object")
-    if payload.get("schema_version") != 2:
+    if payload.get("schema_version") != 3:
         raise HTTPException(
             status_code=400,
-            detail="Only v2 resumes accepted (schema_version must be 2)",
+            detail="Only v3 resumes accepted (schema_version must be 3)",
         )
     payload["id"] = resume_id
     metadata = payload.get("metadata")
     if not isinstance(metadata, dict):
         raise HTTPException(status_code=400, detail="metadata is required")
-    # Refresh updated_at server-side to a current ISO-8601 timestamp.
+    # Pydantic validate the full doc.
+    from api.models.resume_v3 import ResumeV3
+    try:
+        ResumeV3.model_validate(payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"v3 validation failed: {e}")
+    # Refresh updated_at server-side.
     from datetime import datetime, timezone
     metadata["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    resume_store.save_v2_dict(payload)
+    resume_store.save_v3_dict(payload)
     return payload
 
 
@@ -119,36 +132,32 @@ def _now_ms() -> int:
 
 @router.post("/")
 async def create_blank_resume(body: CreateResumeRequest) -> dict:
-    """Create a new blank v2 resume.
+    """Create a new blank v3 resume.
 
-    Writes a v2-shaped doc directly via ``save_v2_dict`` so freshly-created
-    resumes never enter the legacy v1 → v2 migration path on first read.
+    Writes a v3-shaped doc via ``save_v3_dict`` (which auto-creates a rolling
+    backup on subsequent writes). Validates via ResumeV3 before persisting.
     """
     from datetime import datetime, timezone
+    from api.models.resume_v3 import ResumeV3
 
-    rid = str(uuid.uuid4())
+    rid = body.id or str(uuid.uuid4())
+    _ensure_valid_id(rid)
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    v2_doc = {
-        "schema_version": 2,
+    doc = {
+        "schema_version": 3,
         "id": rid,
-        "title": body.title,
+        "title": body.title or "Untitled Resume",
         "template_id": "minimal-single-column",
-        "header": {
-            "id": str(uuid.uuid4()),
-            "name": "",
-            "contact_lines": [],
-        },
-        "sections": [],
+        "rows": [],
+        "groups": [],
         "metadata": {
             "created_at": now_iso,
             "updated_at": now_iso,
-            "target_company": None,
-            "target_role": None,
-            "parent_id": None,
         },
     }
-    resume_store.save_v2_dict(v2_doc)
-    return v2_doc
+    ResumeV3.model_validate(doc)
+    resume_store.save_v3_dict(doc)
+    return doc
 
 
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
@@ -168,8 +177,13 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
 
 
 @router.post("/parse")
-async def parse_pdf(file: UploadFile = File(...)) -> Resume:
-    """Upload a PDF, parse it, persist as a new Resume."""
+async def parse_pdf(file: UploadFile = File(...)) -> dict:
+    """Upload a PDF, parse it, persist as a new v3 Resume.
+
+    Conversion chain (parser raw → v1 PM doc → v2 → v3) reuses the
+    legacy migration helpers. Tracked as cleanup to collapse into a
+    single parser-raw → v3 pass once v2 is removed.
+    """
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
@@ -204,20 +218,68 @@ async def parse_pdf(file: UploadFile = File(...)) -> Resume:
         err = (result or {}).get("error", "unknown") if isinstance(result, dict) else "invalid shape"
         raise HTTPException(status_code=500, detail=f"Parse failed: {err}")
 
-    legacy = result.get("data") or {}
-    if not isinstance(legacy, dict) or not legacy:
+    parsed_raw = result.get("data") or {}
+    if not isinstance(parsed_raw, dict) or not parsed_raw:
         raise HTTPException(status_code=500, detail="Parser returned no data")
 
-    doc = legacy_json_to_tiptap_doc(legacy)
-    rid = str(uuid.uuid4())
-    now = _now_ms()
-    title = (legacy.get("name") or file.filename or "Imported resume").strip()
-    if title.lower().endswith(".pdf"):
-        title = title[:-4]
+    # Derive title from parser output / filename before conversion.
+    raw_title = (parsed_raw.get("name") or parsed_raw.get("title") or file.filename or "Imported resume").strip()
+    if raw_title.lower().endswith(".pdf"):
+        raw_title = raw_title[:-4]
 
-    r = Resume(id=rid, title=title or "Imported resume", created_at=now, updated_at=now, doc=doc)
-    resume_store.save(r)
-    return r
+    rid = str(uuid.uuid4())
+
+    # Conversion chain: parser raw → v1 PM doc → v2 → v3.
+    # parse_resume returns the legacy parser shape (name/contact/experience/...),
+    # NOT canonical v2 (header/sections). Reuse the same legacy → v1 → v2
+    # path the editor used pre-Task-2.4, then run our v2 → v3 adapter.
+    from datetime import datetime, timezone
+    from api.services.migration_v1_to_v2 import migrate_one_dict
+    from api.services.parse_v2_to_v3 import _python_v2_to_v3
+    from api.models.resume_v3 import ResumeV3
+
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    v1_pm_doc = legacy_json_to_tiptap_doc(parsed_raw)
+    v1_envelope = {
+        "id": rid,
+        "title": raw_title or "Imported resume",
+        "doc": v1_pm_doc,
+        "created_at": now_iso,
+    }
+    v2_dict = migrate_one_dict(v1_envelope)
+    v3_dict = _python_v2_to_v3(v2_dict, resume_id=rid)
+    # Override title with the cleaned-up name.
+    v3_dict["title"] = raw_title or "Imported resume"
+    try:
+        ResumeV3.model_validate(v3_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"v3 validation after parse failed: {e}") from e
+    resume_store.save_v3_dict(v3_dict)
+
+    # Also write a flat-format record to SQLite so the matching service can
+    # load this resume by ID. The matcher's compose_resume_text expects
+    # role/summary/skills/experience/education at the top level — exactly
+    # what parsed_raw already provides.
+    try:
+        import aiosqlite
+        from api.db import DB_PATH
+        async with aiosqlite.connect(str(DB_PATH)) as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO resumes (id, name, role, filename, resume_data)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    rid,
+                    raw_title,
+                    str(parsed_raw.get("role") or ""),
+                    file.filename or "",
+                    json.dumps(parsed_raw),
+                ),
+            )
+            await db.commit()
+    except Exception:
+        pass  # non-fatal: matching will degrade gracefully
+
+    return v3_dict
 
 
 class SnapshotRequest(BaseModel):
@@ -231,12 +293,11 @@ class SnapshotRequest(BaseModel):
 async def create_snapshot(resume_id: str, body: SnapshotRequest) -> ResumeSnapshot:
     _ensure_valid_id(resume_id)
     try:
-        r = resume_store.load_dict(resume_id)
+        r = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
-    # Snapshot ``doc`` field carries the entire v2 resume dict so restore can
-    # round-trip it back through save_v2_dict. (For v1 files on disk, load_dict
-    # already migrated to v2 in-memory.)
+    # Snapshot ``doc`` field carries the entire v3 resume dict so restore can
+    # round-trip it back through save_v3_dict.
     snap = ResumeSnapshot(
         id=str(uuid.uuid4()),
         resume_id=resume_id,
@@ -274,7 +335,7 @@ async def restore_snapshot(resume_id: str, body: RestoreRequest) -> dict:
     # Re-read the resume right before mutating so an autosave that landed
     # between request arrival and now is captured by the pre-restore checkpoint.
     try:
-        current = resume_store.load_dict(resume_id)
+        current = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -282,37 +343,41 @@ async def restore_snapshot(resume_id: str, body: RestoreRequest) -> dict:
         id=str(uuid.uuid4()),
         resume_id=resume_id,
         created_at=_now_ms(),
-        trigger="checkpoint",  # was "auto" — preserve forever so users can recover
+        trigger="checkpoint",  # preserve forever so users can recover
         label=f"Pre-restore (snap {body.snapshot_id[:8]})",
         diff_summary=f"Pre-restore checkpoint (restored to {body.snapshot_id})",
         doc=current,
     )
     snapshot_store.save(pre)
 
-    # snap.doc may be a full v2 resume dict (post-fix C-1) or a legacy v1
-    # ProseMirror doc (pre-fix snapshots on disk). If it's v2-shaped, write
-    # it back wholesale; otherwise auto-migrate via migrate_one_dict.
+    # snap.doc must be a v3-shaped dict. Snapshots created after this task
+    # always store v3. Legacy v1/v2 snapshots are not supported on the v3
+    # restore path — reject gracefully rather than silently corrupt.
     snap_doc = snap.doc or {}
-    if snap_doc.get("schema_version") == 2:
-        restored = dict(snap_doc)
-    else:
-        # Legacy snapshot: synthesize a v1-shaped dict and migrate it.
-        from api.services.migration_v1_to_v2 import migrate_one_dict
-        legacy_v1 = {
-            "id": resume_id,
-            "title": current.get("title", "Untitled"),
-            "doc": snap_doc,
-            "created_at": current.get("metadata", {}).get("created_at"),
-            "updated_at": current.get("metadata", {}).get("updated_at"),
-        }
-        restored = migrate_one_dict(legacy_v1)
+    if snap_doc.get("schema_version") != 3:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Snapshot {body.snapshot_id} has schema_version="
+                f"{snap_doc.get('schema_version')} — only v3 snapshots "
+                "can be restored after the v3 migration."
+            ),
+        )
 
     # URL id always wins.
+    restored = dict(snap_doc)
     restored["id"] = resume_id
     meta = restored.setdefault("metadata", {})
     from datetime import datetime, timezone
     meta["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    resume_store.save_v2_dict(restored)
+
+    from api.models.resume_v3 import ResumeV3
+    try:
+        ResumeV3.model_validate(restored)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Snapshot v3 validation failed: {e}") from e
+
+    resume_store.save_v3_dict(restored)
     snapshot_store.enforce_retention(resume_id)
     return restored
 
@@ -328,7 +393,7 @@ class VariantRequest(BaseModel):
 async def create_variant(resume_id: str, body: VariantRequest) -> dict:
     _ensure_valid_id(resume_id)
     try:
-        parent = resume_store.load_dict(resume_id)
+        parent = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Parent resume not found")
 
@@ -347,28 +412,21 @@ async def create_variant(resume_id: str, body: VariantRequest) -> dict:
         meta["target_company"] = body.target_company
     if body.target_role is not None:
         meta["target_role"] = body.target_role
-    # target_company_domain isn't part of v2 ResumeMetadataV2; preserve under
-    # metadata for forward-compat (the model permits unknown keys when loaded
-    # as a dict).
     if body.target_company_domain is not None:
         meta["target_company_domain"] = body.target_company_domain
 
-    resume_store.save_v2_dict(variant)
+    from api.models.resume_v3 import ResumeV3
+    try:
+        ResumeV3.model_validate(variant)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"v3 validation failed: {e}") from e
 
-    # Preserve the legacy contract field ``parent_id`` / ``is_base`` at the
-    # top level for the response so the frontend list view (which still keys
-    # off them) keeps working.
-    response = dict(variant)
-    response["parent_id"] = parent["id"]
-    response["is_base"] = False
-    response["target_company"] = meta.get("target_company")
-    response["target_company_domain"] = meta.get("target_company_domain")
-    response["target_role"] = meta.get("target_role")
-    return response
+    resume_store.save_v3_dict(variant)
+    return variant
 
 
 @router.get("/{resume_id}/pdf")
-async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
+async def export_pdf(resume_id: str, frontend_base: Optional[str] = None, template: Optional[str] = None):
     """Render the resume to PDF (headless Chromium) and stream it back as a
     download.
 
@@ -383,7 +441,7 @@ async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
     """
     _ensure_valid_id(resume_id)
     try:
-        r = resume_store.load_dict(resume_id)
+        r = resume_store.load_v3_dict(resume_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -397,7 +455,12 @@ async def export_pdf(resume_id: str, frontend_base: Optional[str] = None):
     base = frontend_base or os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
     if not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", base):
         base = os.environ.get("CAREEROPS_FRONTEND_BASE", "http://localhost:3000")
-    print_url = f"{base}/resume/{resume_id}/print"
+    # Forward template choice so the print page applies the same CSS as
+    # the editor was using when the user clicked Export.
+    tpl_q = ""
+    if template and template in ("fullstack", "minimal"):
+        tpl_q = f"?template={template}"
+    print_url = f"{base}/resume/{resume_id}/print{tpl_q}"
 
     pdf_bytes = await url_to_pdf_chrome(print_url)
     if pdf_bytes is None:

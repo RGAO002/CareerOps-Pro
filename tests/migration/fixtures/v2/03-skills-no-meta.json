@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "id": "fixture-skills",
+  "title": "Skills",
+  "template_id": "minimal-single-column",
+  "header": {"id": "h3", "name": "Carol", "contact_lines": []},
+  "sections": [
+    {
+      "id": "sec-skills",
+      "role": "skills",
+      "heading": "Skills",
+      "entries": [
+        {
+          "id": "ent-prog",
+          "title": "Programming",
+          "meta": "",
+          "bullets": [
+            {"id": "b1", "kind": "bullet", "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "TypeScript, Python"}]}]}}
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
+}

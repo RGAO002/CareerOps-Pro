@@ -139,6 +139,62 @@ describe('Enter keymap (§ 3.5)', () => {
     handleEnter(view);
     expect(view.state.doc.childCount).toBe(1);
     expect(view.state.doc.child(0).type.name).toBe('plain');
+    // INDEPENDENT-PLAIN RULE: even though the bullet had gE, the downgraded
+    // plain is independent — gid=null. See gidForNewRow doc in enter.ts.
+    expect(view.state.doc.child(0).attrs.semanticGroupId).toBeNull();
+  });
+
+  // ─── Independent-plain rule (regression suite for "empty plain attaches to
+  //     wrong entry on save") ─────────────────────────────────────────────
+  // Every plain row created by Enter — regardless of the row it was created
+  // from — must have semanticGroupId === null. Plain rows are section-level
+  // independent paragraphs; they don't belong to any entry. See enter.ts
+  // `gidForNewRow` for the rule body.
+
+  it('plain created via Enter on plain inherits null gid (continues independence)', () => {
+    const view = makeView([{ kind: 'plain', id: 'r1', gid: null, text: 'hello' }]);
+    placeAtEnd(view, 0);
+    handleEnter(view);
+    expect(view.state.doc.childCount).toBe(2);
+    expect(view.state.doc.child(1).type.name).toBe('plain');
+    expect(view.state.doc.child(1).attrs.semanticGroupId).toBeNull();
+  });
+
+  it('plain created via mid-row split of plain: BOTH halves keep gid=null', () => {
+    const view = makeView([{ kind: 'plain', id: 'r1', gid: null, text: 'helloworld' }]);
+    placeCursor(view, 0, 5);
+    handleEnter(view);
+    expect(view.state.doc.child(0).attrs.semanticGroupId).toBeNull();
+    expect(view.state.doc.child(1).attrs.semanticGroupId).toBeNull();
+  });
+
+  it('plain created above section_heading via at-start Enter has gid=null', () => {
+    const view = makeView(
+      [{ kind: 'section_heading', id: 'r1', gid: 'gS', text: 'Experience' }],
+      [{ type: 'create', group: { id: 'gS' as GroupId, kind: 'section', role: 'experience' } }],
+    );
+    placeCursor(view, 0, 0);
+    handleEnter(view);
+    expect(view.state.doc.child(0).type.name).toBe('plain');
+    expect(view.state.doc.child(0).attrs.semanticGroupId).toBeNull();
+  });
+
+  it('regression: empty plain row created from Enter never carries inherited entry gid', () => {
+    // The bug we're guarding against: cursor sits in a plain row that
+    // somehow carries gE (e.g. from a stale doc loaded before this rule
+    // shipped). Pressing Enter must NOT propagate gE forward — the new
+    // plain must be independent.
+    const view = makeView([
+      { kind: 'entry_meta', id: 'rm', gid: 'gE', text: '2026' },
+      { kind: 'plain', id: 'rp', gid: 'gE', text: 'legacy' }, // stale gid on plain
+    ]);
+    placeAtEnd(view, 1);
+    handleEnter(view);
+    // child(2) is the freshly-created plain — must be independent regardless
+    // of the stale gE on the source row.
+    expect(view.state.doc.childCount).toBe(3);
+    expect(view.state.doc.child(2).type.name).toBe('plain');
+    expect(view.state.doc.child(2).attrs.semanticGroupId).toBeNull();
   });
 
   it('Enter mid-row splits and new row inherits same kind', () => {

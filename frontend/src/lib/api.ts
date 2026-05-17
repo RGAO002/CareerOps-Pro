@@ -4,6 +4,8 @@ import type {
   JobMatchResult,
   JobMatch,
   SessionMeta,
+  MatchPreferences,
+  MatchResponse,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -26,7 +28,34 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/* ─── resume ─── */
+/* ─── resume v3 ─── */
+
+export async function parseResumeFile(
+  file: File,
+): Promise<Record<string, unknown>> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/api/resume/parse`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function matchJobsForResume(
+  resumeId: string,
+  preferences?: MatchPreferences,
+  topK?: number,
+): Promise<MatchResponse> {
+  return post<MatchResponse>("/api/jobs/match", {
+    resume_id: resumeId,
+    preferences,
+    top_k: topK,
+  });
+}
+
+/* ─── legacy resume ─── */
 
 export async function uploadResume(
   file: File,
