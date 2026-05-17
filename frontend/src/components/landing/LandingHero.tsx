@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { Upload, Loader2, Check, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useResumeStore } from "@/stores/resume";
+import { useTransitionStore } from "@/stores/transition";
 import {
   motion,
   AnimatePresence,
@@ -83,6 +84,7 @@ export function LandingHero() {
       await new Promise((r) => setTimeout(r, 2000));
       setResumeData({ name: "Demo" }, file.name);
       setParsing(false);
+      useTransitionStore.getState().start("demo-resume-id");
     },
     [setParsing, setResumeData],
   );
