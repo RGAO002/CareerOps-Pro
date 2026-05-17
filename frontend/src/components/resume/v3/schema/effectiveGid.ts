@@ -51,10 +51,12 @@ export function effectiveGid(doc: ResumeDocV3, i: number): GroupId | null {
   return computeForPlain(doc.rows, i, row);
 }
 
+type PlainRow = Extract<ResumeRow, { kind: 'plain' }>;
+
 function computeForPlain(
   rows: ResumeRow[],
   i: number,
-  row: ResumeRow,
+  row: PlainRow,
 ): GroupId | null {
   const pIdx = nearestNonPlainAbove(rows, i);
   const qIdx = nearestNonPlainBelow(rows, i);
