@@ -3,6 +3,7 @@ import { Outfit, Instrument_Serif, Inter, Manrope, Plus_Jakarta_Sans, JetBrains_
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
+import { TransitionProvider } from "@/components/transitions/TransitionProvider";
 
 // Inter is the resume canvas font. Loading it here ensures the editor
 // uses the SAME font that the PDF endpoint loads via Google Fonts, so
@@ -68,6 +69,7 @@ export default function RootLayout({
     <html lang="en" className={`${body.variable} ${display.variable} ${inter.variable} ${manrope.variable} ${plusJakarta.variable} ${jetbrainsMono.variable} ${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-[family-name:var(--font-body)] antialiased">
         {children}
+        <TransitionProvider />
       </body>
     </html>
   );
