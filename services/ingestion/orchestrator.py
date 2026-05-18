@@ -62,10 +62,12 @@ async def _start_ingest_run(db, pipeline: str, source: str, company_id: int) -> 
         """
         INSERT INTO ingest_runs (pipeline, source, company_id, status)
         VALUES (?, ?, ?, 'running')
+        RETURNING id
         """,
         (pipeline, source, company_id),
     )
-    return cursor.lastrowid
+    row = await cursor.fetchone()
+    return row["id"]
 
 
 async def _finish_ingest_run(

@@ -202,26 +202,21 @@ async def browse_public_jobs(
 
     if posted_within_days:
         clauses.append(
-            f"COALESCE(jl.posted_at, jl.first_seen_at) "
-            f">= datetime('now', '-{posted_within_days} days')"
+            f"COALESCE(NULLIF(jl.posted_at, '')::date, jl.first_seen_at::date) "
+            f">= (CURRENT_DATE - INTERVAL '{posted_within_days} days')::date"
         )
 
     if min_lca_count > 0:
         clauses.append("COALESCE(c.h1b_lca_count_1y, 0) >= ?")
         params.append(min_lca_count)
 
-    # FTS5 search uses the virtual table to get row ids first.
+    # Full-text search via PostgreSQL tsvector.
     fts_clause = ""
     if q and q.strip():
-        # Escape special FTS characters by quoting each term.
         terms = [t for t in q.strip().split() if t]
         if terms:
-            fts_query = " ".join(f'"{t}"' for t in terms)
-            fts_clause = (
-                " AND jl.id IN (SELECT rowid FROM job_listings_fts "
-                "WHERE job_listings_fts MATCH ?)"
-            )
-            params.append(fts_query)
+            fts_clause = " AND jl.search_vector @@ plainto_tsquery('english', ?)"
+            params.append(" ".join(terms))
 
     where_sql = " AND ".join(clauses) + fts_clause
 

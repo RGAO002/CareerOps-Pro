@@ -13,22 +13,21 @@ Latency budget on the current 3742-row pool:
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 from services.matching import embed as _embed
-from services.matching.embed import DB_PATH, compose_resume_text
+from services.matching.embed import compose_resume_text
 from services.matching.hard_filter import build_where_clause
 from services.matching.rerank import rerank
+from services.sync_db import get_sync_db
 
 
-def _load_resume(resume_id: str, db_path: Path) -> dict:
-    conn = sqlite3.connect(str(db_path))
+def _load_resume(resume_id: str, db_path: Path = None) -> dict:
+    conn = get_sync_db()
     try:
-        conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT id, name, role, resume_data FROM resumes WHERE id = ?",
             (resume_id,),
@@ -68,7 +67,7 @@ def match(
     preferences: Optional[dict] = None,
     top_k: int = 20,
     recall_k: int = 100,
-    db_path: Path = DB_PATH,
+    db_path: Path = None,
     return_pool_size: bool = False,
 ) -> list[dict] | tuple[list[dict], int]:
     """Run the full pipeline and return top_k jobs with score breakdown.
@@ -92,13 +91,13 @@ def match(
 
     # ── Step 1.5: load candidate pool (one query) ──
     ids, matrix, rows = _embed.load_pool_matrix(
-        where_extra=where_extra, params=params, db_path=db_path,
+        where_extra=where_extra, params=params,
     )
     if not ids:
         return []
 
     # ── Step 1.6: embed the resume + preferences ──
-    resume_data = _load_resume(resume_id, db_path)
+    resume_data = _load_resume(resume_id)
     resume_text = compose_resume_text(resume_data, preferences)
     resume_vec = _embed.embed_texts([resume_text])[0]   # shape (1536,)
 

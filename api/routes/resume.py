@@ -261,12 +261,18 @@ async def parse_pdf(file: UploadFile = File(...)) -> dict:
     # role/summary/skills/experience/education at the top level — exactly
     # what parsed_raw already provides.
     try:
-        import aiosqlite
-        from api.db import DB_PATH
-        async with aiosqlite.connect(str(DB_PATH)) as db:
+        from api.db import get_db
+        db = await get_db()
+        try:
             await db.execute(
-                """INSERT OR REPLACE INTO resumes (id, name, role, filename, resume_data)
-                   VALUES (?, ?, ?, ?, ?)""",
+                """INSERT INTO resumes (id, name, role, filename, resume_data)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       name = excluded.name,
+                       role = excluded.role,
+                       filename = excluded.filename,
+                       resume_data = excluded.resume_data,
+                       updated_at = CURRENT_TIMESTAMP""",
                 (
                     rid,
                     raw_title,
@@ -275,7 +281,8 @@ async def parse_pdf(file: UploadFile = File(...)) -> dict:
                     json.dumps(parsed_raw),
                 ),
             )
-            await db.commit()
+        finally:
+            await db.close()
     except Exception:
         pass  # non-fatal: matching will degrade gracefully
 

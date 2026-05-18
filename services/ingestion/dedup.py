@@ -145,7 +145,7 @@ async def retire_stale_for_company(
     await db.execute("DROP TABLE IF EXISTS _seen_ids")
     await db.execute("CREATE TEMP TABLE _seen_ids (external_id TEXT PRIMARY KEY)")
     await db.executemany(
-        "INSERT OR IGNORE INTO _seen_ids (external_id) VALUES (?)",
+        "INSERT INTO _seen_ids (external_id) VALUES (?) ON CONFLICT DO NOTHING",
         [(eid,) for eid in seen],
     )
     try:

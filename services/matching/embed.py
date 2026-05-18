@@ -24,13 +24,15 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
 
 import numpy as np
 from openai import OpenAI
 
+from services.sync_db import get_sync_db
+
+# Keep DB_PATH for backward compatibility with code that imports it.
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "careeops.db"
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -43,7 +45,7 @@ BATCH_SIZE = 100  # OpenAI accepts up to ~2048 but smaller batches are easier
 # Text composition — the "fingerprint" templates.
 # ────────────────────────────────────────────────────────────────────
 
-def compose_job_text(row: dict | sqlite3.Row) -> str:
+def compose_job_text(row: dict) -> str:
     """Build a compact match-text from a job_listings row.
 
     Order matters slightly — embedding models give earlier tokens a small
@@ -248,10 +250,8 @@ def compute_all_embeddings(
                       if False, recompute everything (e.g. after changing
                       the compose template).
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sync_db()
     try:
-        conn.row_factory = sqlite3.Row
-
         where = "jl.is_active = 1"
         if only_missing:
             where += " AND jl.embedding IS NULL"
@@ -264,7 +264,6 @@ def compute_all_embeddings(
         if not rows:
             return {"computed": 0, "skipped": "nothing to do"}
 
-        # Compose all match texts once; lengths matter only for diagnostics.
         texts = [compose_job_text(r) for r in rows]
         ids = [r["id"] for r in rows]
 
@@ -290,16 +289,15 @@ def compute_all_embeddings(
 def load_pool_matrix(
     where_extra: str = "",
     params: Iterable = (),
-    db_path: Path = DB_PATH,
-) -> tuple[list[int], np.ndarray, list[sqlite3.Row]]:
+    db_path: Path = None,
+) -> tuple[list[int], np.ndarray, list[dict]]:
     """Load all (id, embedding, full row) for active jobs that have an
     embedding AND match `where_extra`.
 
     Returns: (ids, matrix shape=(N, 1536), rows)
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = get_sync_db()
     try:
-        conn.row_factory = sqlite3.Row
         where = "jl.is_active = 1 AND jl.embedding IS NOT NULL"
         if where_extra:
             where += f" AND {where_extra}"
@@ -314,12 +312,12 @@ def load_pool_matrix(
         rows = conn.execute(
             f"SELECT {cols} FROM job_listings jl JOIN companies c ON c.id = jl.company_id "
             f"WHERE {where}",
-            tuple(params),
+            tuple(params) if params else None,
         ).fetchall()
         if not rows:
             return [], np.zeros((0, EMBED_DIM), dtype=np.float32), []
         ids = [r["id"] for r in rows]
-        matrix = np.vstack([blob_to_vec(r["embedding"]) for r in rows])
+        matrix = np.vstack([blob_to_vec(bytes(r["embedding"])) for r in rows])
         return ids, matrix, rows
     finally:
         conn.close()

@@ -5,21 +5,9 @@ This runs in a thread (via asyncio.to_thread) so it can call synchronous service
 """
 import json
 import uuid
-import sqlite3
-from pathlib import Path
-
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "careeops.db"
+from services.sync_db import get_sync_db
 
 SECTIONS_TO_TAILOR = ["summary", "skills", "experience", "projects"]
-
-
-def _get_sync_db():
-    """Get a synchronous DB connection for use in threads."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
 
 
 def tailor_single_job(resume_id, job_id, model_choice, api_key, user_instructions=""):
@@ -29,7 +17,7 @@ def tailor_single_job(resume_id, job_id, model_choice, api_key, user_instruction
     from utils.pdf_utils import convert_html_to_pdf
     import copy
 
-    conn = _get_sync_db()
+    conn = get_sync_db()
     try:
         # Load resume
         row = conn.execute(
@@ -62,8 +50,11 @@ def tailor_single_job(resume_id, job_id, model_choice, api_key, user_instruction
         # Create or update tailored_resumes entry as in_progress
         tr_id = str(uuid.uuid4())
         conn.execute(
-            "INSERT OR REPLACE INTO tailored_resumes "
-            "(id, job_id, resume_id, tailored_data, status) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO tailored_resumes "
+            "(id, job_id, resume_id, tailored_data, status) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(job_id, resume_id) DO UPDATE SET"
+            " id = excluded.id, tailored_data = excluded.tailored_data,"
+            " status = excluded.status",
             (tr_id, job_id, resume_id, json.dumps(resume_data), "in_progress"),
         )
         conn.commit()

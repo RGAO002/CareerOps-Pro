@@ -24,7 +24,6 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import re
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
@@ -35,8 +34,7 @@ from services.ingestion.jd_extractor import extract as extract_jd_fields
 from services.ingestion.role_filter import evaluate as eval_role
 from services.job_matcher import fetch_jd_from_url
 from services.llm import clean_json, get_llm
-
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "careeops.db"
+from services.sync_db import get_sync_db
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -188,17 +186,17 @@ def _existing_pool_keys() -> set[tuple[str, str]]:
     """
     out: set[tuple[str, str]] = set()
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_sync_db()
         try:
-            cur = conn.execute(
+            rows = conn.execute(
                 "SELECT c.display_name, jl.title "
                 "FROM job_listings jl JOIN companies c ON c.id = jl.company_id "
                 "WHERE jl.is_active = 1"
-            )
-            for company, title in cur.fetchall():
+            ).fetchall()
+            for row in rows:
                 out.add((
-                    (company or "").strip().lower(),
-                    (title or "").strip().lower(),
+                    (row["display_name"] or "").strip().lower(),
+                    (row["title"] or "").strip().lower(),
                 ))
         finally:
             conn.close()
