@@ -78,4 +78,4 @@ ai_tools.register_all()
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.0.1"}
