@@ -11,7 +11,7 @@ import os
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 
-DEFAULT_MODEL = "gpt-5.5"
+DEFAULT_MODEL = "gpt-4o"
 
 
 def _build_openai_model(model_name: str | None = None):
