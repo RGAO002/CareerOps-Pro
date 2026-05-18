@@ -4,6 +4,7 @@ Database layer — async PostgreSQL via asyncpg (Supabase).
 import asyncpg
 import os
 import re
+import ssl
 import sys
 from typing import Optional
 from urllib.parse import urlparse, unquote
@@ -326,8 +327,13 @@ async def init_db() -> None:
         sys.exit(1)
 
     # Parse URL manually so asyncpg doesn't choke on special chars in the
-    # password (e.g. '!') and so we can pass ssl=True explicitly — asyncpg
-    # does NOT accept ssl="require" as a string in all versions.
+    # password (e.g. '!'). Use a custom SSL context that encrypts the
+    # connection but skips certificate verification — required because
+    # Supabase uses a self-signed intermediate CA that Python rejects.
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
     try:
         parsed = urlparse(raw_url)
         _pool = await asyncpg.create_pool(
@@ -338,7 +344,7 @@ async def init_db() -> None:
             database=(parsed.path or "/postgres").lstrip("/"),
             min_size=1,
             max_size=10,
-            ssl=True,
+            ssl=ssl_ctx,
         )
     except Exception as exc:
         print(f"FATAL: asyncpg pool creation failed: {exc}", file=sys.stderr, flush=True)
