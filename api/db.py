@@ -4,7 +4,9 @@ Database layer — async PostgreSQL via asyncpg (Supabase).
 import asyncpg
 import os
 import re
+import sys
 from typing import Optional
+from urllib.parse import urlparse, unquote
 
 _pool: Optional[asyncpg.Pool] = None
 
@@ -318,13 +320,38 @@ async def get_db() -> _Conn:
 async def init_db() -> None:
     """Create connection pool, apply schema, and run additive migrations."""
     global _pool
-    url = os.environ["DATABASE_URL"]
-    _pool = await asyncpg.create_pool(url, min_size=1, max_size=10, ssl="require")
+    raw_url = os.environ.get("DATABASE_URL", "")
+    if not raw_url:
+        print("FATAL: DATABASE_URL is not set", file=sys.stderr, flush=True)
+        sys.exit(1)
 
-    async with _pool.acquire() as conn:
-        for stmt in _SCHEMA_STMTS:
-            stmt = stmt.strip()
-            if stmt:
-                await conn.execute(stmt)
-        await conn.execute(_SEARCH_VECTOR_MIGRATION)
-        await conn.execute(_SEARCH_VECTOR_INDEX)
+    # Parse URL manually so asyncpg doesn't choke on special chars in the
+    # password (e.g. '!') and so we can pass ssl=True explicitly — asyncpg
+    # does NOT accept ssl="require" as a string in all versions.
+    try:
+        parsed = urlparse(raw_url)
+        _pool = await asyncpg.create_pool(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=unquote(parsed.username or ""),
+            password=unquote(parsed.password or ""),
+            database=(parsed.path or "/postgres").lstrip("/"),
+            min_size=1,
+            max_size=10,
+            ssl=True,
+        )
+    except Exception as exc:
+        print(f"FATAL: asyncpg pool creation failed: {exc}", file=sys.stderr, flush=True)
+        raise
+
+    try:
+        async with _pool.acquire() as conn:
+            for stmt in _SCHEMA_STMTS:
+                stmt = stmt.strip()
+                if stmt:
+                    await conn.execute(stmt)
+            await conn.execute(_SEARCH_VECTOR_MIGRATION)
+            await conn.execute(_SEARCH_VECTOR_INDEX)
+    except Exception as exc:
+        print(f"FATAL: schema init failed: {exc}", file=sys.stderr, flush=True)
+        raise

@@ -1,4 +1,3 @@
-streamlit
 langchain-openai
 langchain-anthropic
 langchain-google-genai
@@ -6,15 +5,12 @@ google-genai
 langchain-core
 langgraph>=0.2,<0.3
 openai
+anthropic
 pypdf
 pymupdf
 python-dotenv
-weasyprint
-audio-recorder-streamlit
-streamlit-js-eval
 requests
 beautifulsoup4
-plotly
 fastapi
 uvicorn[standard]
 websockets
@@ -28,7 +24,4 @@ openpyxl
 rapidfuzz
 apscheduler
 typer
-
-# Testing
-pytest>=8.0
 playwright>=1.40

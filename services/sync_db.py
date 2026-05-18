@@ -97,6 +97,15 @@ def _split_sql(script: str) -> list[str]:
 
 def get_sync_db() -> _SyncConn:
     """Return a sync PostgreSQL connection wrapped in the sqlite3-compatible interface."""
-    url = os.environ["DATABASE_URL"]
-    conn = psycopg2.connect(url, sslmode="require")
+    from urllib.parse import urlparse, unquote
+    raw_url = os.environ["DATABASE_URL"]
+    parsed = urlparse(raw_url)
+    conn = psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        user=unquote(parsed.username or ""),
+        password=unquote(parsed.password or ""),
+        dbname=(parsed.path or "/postgres").lstrip("/"),
+        sslmode="require",
+    )
     return _SyncConn(conn)
