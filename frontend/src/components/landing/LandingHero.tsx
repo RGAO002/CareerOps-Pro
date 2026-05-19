@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import { Upload, Loader2, Check, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useResumeStore } from "@/stores/resume";
-import { useTransitionStore } from "@/stores/transition";
 import { parseResumeFile } from "@/lib/api";
 import {
   motion,
@@ -42,6 +42,7 @@ const PARSING_MESSAGES = [
 ];
 
 export function LandingHero() {
+  const router = useRouter();
   const [hovering, setHovering] = useState(false);
   const [parsingMsgIdx, setParsingMsgIdx] = useState(0);
   const parsing = useResumeStore((s) => s.parsing);
@@ -87,12 +88,12 @@ export function LandingHero() {
         const resumeId = v3.id as string;
         setResumeData(v3, file.name);
         setParsing(false);
-        useTransitionStore.getState().start(resumeId);
+        router.push(`/jobs?from_upload=1&resume=${resumeId}`);
       } catch {
         setParsing(false);
       }
     },
-    [setParsing, setResumeData],
+    [setParsing, setResumeData, router],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

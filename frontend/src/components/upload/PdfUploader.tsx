@@ -29,7 +29,7 @@ export function PdfUploader() {
     setError(null);
     try {
       const r = await resumeApi.parsePdf(file);
-      router.push(`/resume/${r.id}?just_imported=1`);
+      router.push(`/jobs?from_upload=1&resume=${r.id}`);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
