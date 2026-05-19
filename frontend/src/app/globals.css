@@ -150,6 +150,12 @@
     --ease-expo:       cubic-bezier(0.7, 0, 0.3, 1);
     --ease-overlay:    cubic-bezier(0.7, 0, 0.3, 1);
     --ease-pop:        cubic-bezier(0.2, 1.4, 0.4, 1);
+
+    /* ── Job Stack + Tracker tokens ── */
+    --paper:             oklch(0.99 0.005 55);
+    --paper-pure:        #fefefe;
+    --border-strong:     oklch(0.85 0.010 50);
+    --subtle-foreground: oklch(0.62 0.010 55);
 }
 
 @layer base {
@@ -653,4 +659,37 @@ body.cop-editor-fullbleed *::-webkit-scrollbar-corner {
 @keyframes beacon {
   0%, 100% { opacity: 1;   box-shadow: 0 0 12px oklch(0.62 0.13 38); }
   50%       { opacity: 0.4; box-shadow: 0 0 4px  oklch(0.62 0.13 38); }
+}
+
+/* ── Job Stack + Tracker animations ── */
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes step-ring {
+  0%, 100% { transform: scale(1);    opacity: 0.35; }
+  50%       { transform: scale(1.15); opacity: 0.18; }
+}
+@keyframes cta-pulse {
+  0%, 100% {
+    box-shadow: 0 8px 28px oklch(0.62 0.13 38 / 0.55),
+                0 1px 0 oklch(1 0 0 / 0.20) inset;
+  }
+  50% {
+    box-shadow: 0 12px 40px oklch(0.62 0.13 38 / 0.75),
+                0 0 0 6px oklch(0.62 0.13 38 / 0.15),
+                0 1px 0 oklch(1 0 0 / 0.20) inset;
+  }
+}
+@keyframes cta-shimmer {
+  0%   { left: -50%; }
+  100% { left: 140%; }
+}
+@keyframes thumb-pop {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
 }
